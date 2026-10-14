@@ -259,15 +259,15 @@ const Wykresy = (() => {
       const d = pkt.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.y).toFixed(1)}`).join('');
       const obszar = el('path', { d: `${d}L${x(pkt.length - 1)},${y(Math.max(0, yMin))}L${x(0)},${y(Math.max(0, yMin))}Z`, fill: opcje.kolor, 'fill-opacity': 0.1 }, svg);
       const l = el('path', { d, fill: 'none', stroke: opcje.kolor, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
-      if (ruchOk()) {
-        const len = l.getTotalLength();
-        l.style.strokeDasharray = `${len}`; l.style.strokeDashoffset = `${len}`;
-        obszar.style.opacity = '0';
-        requestAnimationFrame(() => {
-          l.style.transition = 'stroke-dashoffset .7s ease-out'; l.style.strokeDashoffset = '0';
-          obszar.style.transition = 'opacity .7s ease-out'; obszar.style.opacity = '1';
-        });
+      // Tylko przy pierwszym rysowaniu i tylko przezroczystość: animacja „rysowania” kreską przerywana
+      // przerysowaniem (zmiana rozmiaru) zostawiała linię urwaną w połowie (zgłoszenie z 14.10, pkt 13).
+      if (ruchOk() && !ramka.dataset.pokazany) {
+        for (const e of [l, obszar]) {
+          e.style.opacity = '0';
+          requestAnimationFrame(() => { e.style.transition = 'opacity .5s ease-out'; e.style.opacity = '1'; });
+        }
       }
+      ramka.dataset.pokazany = '1';
       const ost = pkt.length - 1;
       el('circle', { cx: x(ost), cy: y(pkt[ost].y), r: 4, fill: opcje.kolor, stroke: 'var(--tlo)', 'stroke-width': 2 }, svg);
       const celownik = el('line', { y1: m.t, y2: H - m.b, class: 'celownik', visibility: 'hidden' }, svg);
