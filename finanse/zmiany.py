@@ -27,8 +27,10 @@ TYPY = {
     'klient_faktura': ('faktura', 'klient'),  # jedna faktura należy do klienta (nabywca płaci za kilku klientów)
     'koszt_regula': ('kontrahent', 'rodzaj', 'klient'),   # wszystkie płatności do kontrahenta: rodzaj i klient
     'koszt_operacja': ('operacja', 'rodzaj', 'klient'),   # jedna płatność: rodzaj i klient
+    'cel': ('klucz', 'wartosc'),              # cel controllingu: obrót roczny (grosze), marża %, rezerwa w miesiącach
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
+CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
 
 
@@ -48,6 +50,18 @@ def sprawdz(typ: str, dane) -> dict:
             v = str(v or '').strip()[:80]
             if typ in ('klient_nip', 'klient_faktura') and not v:
                 raise ValueError('brak nazwy klienta')
+        elif pole == 'klucz' and typ == 'cel':
+            if v not in CELE:
+                raise ValueError('nieznany cel')
+        elif pole == 'wartosc':
+            try:
+                v = float(str(v).replace(',', '.'))
+            except ValueError:
+                raise ValueError('wartość celu musi być liczbą')
+            lo, hi = CELE.get(dane.get('klucz'), (0, 0))
+            if not lo <= v <= hi:
+                raise ValueError('wartość celu poza zakresem')
+            v = int(v) if dane.get('klucz') == 'cel_obrot_rok' else v
         elif pole == 'rodzaj':
             if v not in RODZAJE:
                 raise ValueError('nieznany rodzaj kosztu')

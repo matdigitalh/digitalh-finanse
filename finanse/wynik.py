@@ -117,7 +117,8 @@ def wynik_zarzadczy(con, rok=None) -> dict:
         wart = {m: znak * tab[klucz][m] for m in miesiace}
         wiersze.append({'klucz': klucz, 'nazwa': nazwa, 'typ': typ, 'miesiace': wart, 'razem': sum(wart.values())})
     obrot, wyn = sum(tab['obrot'].values()), sum(tab['wynik'][m] for m in miesiace)
-    cele = ustawienia()
+    from .controlling import cele as cele_mata
+    cele = cele_mata(con)
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0]
     czesc_roku = (date.fromisoformat(dzien).timetuple().tm_yday / 365) if dzien.startswith(rok) else 1
     biuro = [dict(r) for r in con.execute(
@@ -136,7 +137,8 @@ def wynik_zarzadczy(con, rok=None) -> dict:
     niepelne = [m for m in miesiace if dzien and m >= _poprzedni(dzien[:7])]
     return {'rok': rok, 'lata': lata, 'miesiace': miesiace, 'niepelne': niepelne, 'wiersze': wiersze, 'bez_dokumentu': dict(ile_bez_dok),
             'obrot': obrot, 'wynik': wyn, 'marza_proc': round(100 * wyn / obrot, 1) if obrot else None,
-            'cele': {'obrot': cele.get('cel_obrot_rok'), 'zysk': cele.get('cel_zysk_rok'), 'czesc_roku': round(czesc_roku, 3)},
+            'cele': {'obrot': cele['cel_obrot_rok'], 'zysk': round(cele['cel_obrot_rok'] * cele['cel_marza_proc'] / 100),
+                     'czesc_roku': round(czesc_roku, 3)},
             'porownanie_z_biurem': porownanie, 'dzien_stanu': dzien}
 
 

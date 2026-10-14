@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import baza, konfig, odbudowa, wynik, zapytania, zmiany
+from . import baza, controlling, konfig, odbudowa, wynik, zapytania, zmiany
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
 BLOKADA = threading.Lock()
@@ -119,6 +119,8 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.wydatki(con, **{k: q.get(k) for k in ('rodzaj', 'klient', 'dokument', 'zrodlo', 'q', 'od', 'do', 'strona', 'ile')})
             elif sciezka == 'reguly':
                 dane = zapytania.reguly(con)
+            elif sciezka == 'controlling':
+                dane = controlling.policz(con)
             elif sciezka == 'saldo-historia':
                 dane = zapytania.historia_salda(con)
             elif sciezka == 'wynik':

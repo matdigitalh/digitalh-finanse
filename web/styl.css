@@ -250,3 +250,48 @@ tr[data-link] { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .wyk-wiersz .paski i { transition: none; } }
 @media (max-width: 700px) { .wykresy-2 { grid-template-columns: 1fr; } .wyk-wiersz { grid-template-columns: 100px 1fr 90px; } }
 .wyk-odstep { height: 28px; } /* miejsce legendy, której wykres jednej serii nie ma */
+
+/* Pulpit kontrolingowy */
+.naglowek-strony { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; max-width: 1100px; }
+.przycisk { height: 32px; padding: 0 14px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--akcent); cursor: pointer; font: inherit; }
+.przycisk:hover { border-color: var(--akcent); }
+.kontrolka { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; max-width: 1100px; margin-bottom: 14px; }
+.kafel-st { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--linia); border-left-width: 4px; border-radius: 6px; padding: 14px 16px; color: var(--tekst); background: var(--tlo); transition: border-color .15s, box-shadow .15s; }
+.kafel-st:hover { box-shadow: var(--cien); }
+.kafel-st.dobrze { border-left-color: var(--plus); }
+.kafel-st.uwaga { border-left-color: var(--ostrzezenie); }
+.kafel-st.zle { border-left-color: var(--minus); }
+.kafel-st .tytul { font-size: 12px; color: var(--tekst-2); display: flex; align-items: center; gap: 6px; }
+.kafel-st .wartosc { font-size: 24px; font-weight: 600; }
+.kafel-st .dop { font-size: 11px; color: var(--tekst-2); line-height: 1.45; }
+.chip-st { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; }
+.chip-st b { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; color: #fff; }
+.chip-st span { font-weight: 600; }
+.chip-st small { color: var(--tekst-2); font-size: 12px; }
+.chip-st.dobrze b { background: var(--plus); } .chip-st.dobrze span { color: var(--plus); }
+.chip-st.uwaga b { background: var(--ostrzezenie); } .chip-st.uwaga span { color: var(--ostrzezenie); }
+.chip-st.zle b { background: var(--minus); } .chip-st.zle span { color: var(--minus); }
+.chip-st.brak b { background: var(--tekst-2); }
+.porzadek { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; max-width: 1100px; margin: 0 0 22px; padding: 10px 14px; border-radius: 6px; background: var(--tlo-2); font-size: 12px; color: var(--tekst-2); }
+.porzadek a { color: var(--tekst-2); }
+.porzadek a.jest { color: var(--akcent); font-weight: 600; }
+
+/* Pomoc */
+.pomoc-btn { all: unset; box-sizing: border-box; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--tekst-2); color: var(--tekst-2); font-size: 10px; font-weight: 700; cursor: help; flex: none; vertical-align: middle; }
+.pomoc-btn:hover, .pomoc-btn:focus-visible { border-color: var(--akcent); color: var(--akcent); outline: none; }
+.pomoc-dymek { position: fixed; z-index: 60; max-width: 290px; padding: 8px 10px; border-radius: 6px; background: var(--tekst); color: var(--tlo); font-size: 12px; line-height: 1.45; pointer-events: none; box-shadow: var(--cien); }
+.pomoc { position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); background: var(--tlo); border-left: 1px solid var(--linia); box-shadow: var(--cien); z-index: 50; padding: 22px 24px 60px; overflow-y: auto; }
+.pomoc h2 { margin: 0 0 14px; font-size: 20px; font-weight: 300; }
+.pomoc section { padding: 14px 0; border-top: 1px solid var(--linia); scroll-margin-top: 10px; }
+.pomoc section.wybrana { background: var(--tlo-2); margin: 0 -12px; padding: 14px 12px; border-radius: 6px; }
+.pomoc h3 { margin: 0 0 4px; font-size: 14px; }
+.pomoc .krotko { margin: 0 0 8px; color: var(--tekst-2); }
+.pomoc dl { margin: 0; display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 12px; line-height: 1.5; }
+.pomoc dt { color: var(--tekst-2); }
+.pomoc dd { margin: 0; }
+.pomoc .zamknij { float: right; border: none; background: none; font-size: 20px; cursor: pointer; color: var(--tekst-2); }
+.przycisk-pomocy { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 16px; height: 40px; padding: 0 20px; margin-top: auto; color: rgba(255,255,255,.88); cursor: pointer; white-space: nowrap; }
+.przycisk-pomocy:hover, .przycisk-pomocy:focus-visible { background: rgba(255,255,255,.1); }
+.znak-pomocy { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.6px solid currentColor; font-size: 12px; font-weight: 700; }
+.przycisk-pomocy + .dol { margin-top: 0; }
+.kafel-st, .kafel-st:hover, a.kafel.klik:hover, .wiekowanie a:hover { text-decoration: none; }

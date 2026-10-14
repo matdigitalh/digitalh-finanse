@@ -159,7 +159,8 @@ function zbudujMenu() {
     if (!e.target.closest('#wysuw') && !e.target.closest('#menu')) zamknijWysuw();
     if (!e.target.closest('#karta') && !e.target.closest('tbody')) $('#karta').hidden = true;
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { zamknijWysuw(); $('#karta').hidden = true; } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { zamknijWysuw(); $('#karta').hidden = true; $('#pomoc').hidden = true; } });
+  $('#przycisk-pomocy').onclick = () => otworzPomoc('dane');
 }
 
 function otworzWysuw(id) {
@@ -259,6 +260,7 @@ const chipKwota = kwota => kwota > 0 ? '<span class="chip plus">↗ wpływy</spa
 const WIDOKI = {
   async pulpit() {
     const s = STAN;
+    const c = await api('controlling');
     Promise.all([api('saldo-historia'), api('wynik')]).then(([h, d]) => {
       if (!$('#pulpit-gotowka')) return;
       Wykresy.linia($('#pulpit-gotowka'), { punkty: h, nazwa: 'Gotówka', kolor: Wykresy.kolor('--s1'), wysokosc: 220, opis: 'Saldo gotówki',
@@ -266,26 +268,56 @@ const WIDOKI = {
         dodatkowe: p => [{ nazwa: 'w tym rachunek główny', wartosc: Wykresy.pelna(p.glowny) }, { nazwa: 'w tym online', wartosc: Wykresy.pelna(p.online) }] });
       wykresWyniku('pulpit', d, { tylkoWynik: true });
     });
-    const saldo = (r, opis) => s.salda[r] ? `<div class="kafel${r === 'główny' ? ' glowny' : ''}" title="Źródło: ${esc(s.salda[r].plik)}, wiersz ${s.salda[r].wiersz}">
-      <div class="tytul">${opis}</div><div class="wartosc">${zl(s.salda[r].saldo_po)}</div>
-      <div class="dop">saldo po ostatniej operacji z ${dataPl(s.salda[r].data_ksiegowania)}</div></div>` : '';
-    return `<h1>Pulpit</h1><div class="okruszki">Stan na podstawie plików z folderu Dane</div>
-      <div class="kafle">
-        <div class="kafel glowny"><div class="tytul">Gotówka (główny + online)</div><div class="wartosc">${zl(s.gotowka)}</div>
-          <div class="dop">bez rachunku VAT, który służy tylko do podatku</div></div>
-        ${saldo('główny', 'Rachunek główny (5263)')}${saldo('online', 'Rachunek online (5271)')}${saldo('VAT', 'Rachunek VAT (5289)')}
+    setTimeout(() => {
+      document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${Math.max(0, Math.min(100, x.dataset.w))}%`; });
+      const b = $('#ustaw-cele'); if (b) b.onclick = e => { e.stopPropagation(); kartaCelow(c.cele); };
+    });
+    if (c.brak_danych) return '<h1>Pulpit</h1><div class="pusto">Brak danych z banku.</div>';
+    const r = c.rezerwa, o = c.obrot, m = c.marza, n = c.naleznosci, pz = c.porzadek;
+    const mies1 = x => x == null ? 'brak' : `${String(x).replace('.', ',')} mies.`;
+    const brakuje = r.nadwyzka < 0 ? `brakuje ${zl(-r.nadwyzka)}` : `ponad cel ${zl(r.nadwyzka)}`;
+    const ndo = s.naleznosci?.do_weryfikacji || 0;
+    return `<div class="naglowek-strony"><div><h1>Pulpit</h1><div class="okruszki">Kontrolka finansów, stan na ${dataPl(c.dzien_stanu)} (ostatni dzień w eksporcie z ING)</div></div>
+        <button class="przycisk" id="ustaw-cele">Cele</button></div>
+      <div class="kontrolka">
+        <a class="kafel-st ${r.status}" href="#/rentownosc/koszty">
+          <div class="tytul">Rezerwa gotówki ${pytajnik('rezerwa')}</div>
+          <div class="wartosc">${mies1(r.pokrycie_miesiecy)}</div>
+          ${chipStatus(r.status, r.status === 'dobrze' ? `co najmniej ${r.miesiecy_cel} mies. kosztów` : `cel ${r.miesiecy_cel} mies., ${brakuje}`)}
+          <div class="dop">gotówka ${zl(s.gotowka)} przy średnich kosztach ${zl(r.srednie_koszty)} miesięcznie; same koszty pracy i stałe: ${mies1(r.pokrycie_stalych)}</div>
+        </a>
+        <a class="kafel-st ${o.status}" href="#/rentownosc/klienci">
+          <div class="tytul">Obrót do celu rocznego ${pytajnik('obrot')}</div>
+          <div class="wartosc">${zl(o.ytd)}</div>
+          <div class="pasek-celu"><i data-w="${100 * o.ytd / o.cel}"></i><b data-w="${100 * o.czesc_roku}"></b></div>
+          ${chipStatus(o.status, `prognoza na koniec roku ${zl(o.prognoza)}`)}
+          <div class="dop">cel ${zl(o.cel)}; na dziś plan ${zl(o.plan_na_dzis)}; do celu trzeba średnio ${zl(o.potrzeba_miesiecznie)} miesięcznie (dotąd ${zl(o.srednio_miesiecznie)})</div>
+        </a>
+        <a class="kafel-st ${m.status}" href="#/rentownosc">
+          <div class="tytul">Marża zysku ${pytajnik('marza')}</div>
+          <div class="wartosc">${procent(m.proc)}</div>
+          ${chipStatus(m.status, `cel ${procent(m.cel_proc)}`)}
+          <div class="dop">wynik zarządczy z pełnych miesięcy ${zl(m.wynik_pelne)}; w tym tempie rok zamknie się wynikiem ok. ${zl(m.prognoza_wynik)} przy celu ${zl(m.cel_zysk)}</div>
+        </a>
+        <a class="kafel-st ${n.status}" href="#/platnosci/naleznosci?po_terminie=1">
+          <div class="tytul">Należności po 30 dniach ${pytajnik('naleznosci')}</div>
+          <div class="wartosc">${zl(n.po_30_dniach)}</div>
+          ${chipStatus(n.status, `${procent(n.po_30_proc)} wszystkich należności`)}
+          <div class="dop">należności razem ${zl(n.razem)}; zielono, gdy po 30 dniach jest najwyżej 15%</div>
+        </a>
       </div>
-      <div class="kafle">
-        <div class="kafel"><div class="tytul">Operacje w banku</div><div class="wartosc">${s.liczby.operacje}</div><div class="dop">od ${dataPl(s.bank_od)} do ${dataPl(s.bank_do)}</div></div>
-        <div class="kafel"><div class="tytul">Faktury sprzedażowe</div><div class="wartosc">${s.liczby.faktury}</div><div class="dop">z najnowszego eksportu Fakturowni</div></div>
-        <div class="kafel"><div class="tytul">Dokumenty kosztowe</div><div class="wartosc">${s.liczby.zakupy}</div><div class="dop">z rejestru zakupów biura</div></div>
+      <div class="porzadek">${pytajnik('porzadek')} <span>Porządek w danych:</span>
+        <a href="#/platnosci/do-polaczenia" class="${pz.do_polaczenia ? 'jest' : ''}">${pz.do_polaczenia} wpłat do połączenia</a>
+        <a href="#/platnosci/do-weryfikacji" class="${ndo ? 'jest' : ''}">${ndo} do weryfikacji</a>
+        <a href="#/budzet/wydatki?rodzaj=nieprzypisany" class="${pz.nieprzypisane ? 'jest' : ''}">${pz.nieprzypisane} nieprzypisanych wydatków (${zl(pz.nieprzypisane_kwota)})</a>
       </div>
-      ${kafleNaleznosci(s.naleznosci)}
       <div class="wykresy-2">
-        <div class="karta-wyk"><h3>Gotówka na rachunkach</h3><div class="pod">główny i online, koniec dnia; najedź, żeby zobaczyć dzień</div><div id="pulpit-gotowka"></div></div>
-        <div class="karta-wyk"><h3>Wynik zarządczy miesięcznie</h3><div class="pod">kliknij miesiąc, żeby zobaczyć jego wydatki</div><div id="pulpit-wynik"></div></div>
+        <div class="karta-wyk"><h3>Gotówka na rachunkach ${pytajnik('gotowka')}</h3><div class="pod">główny i online, koniec dnia; najedź, żeby zobaczyć dzień</div><div id="pulpit-gotowka"></div></div>
+        <div class="karta-wyk"><h3>Wynik zarządczy miesięcznie ${pytajnik('wynik')}</h3><div class="pod">kliknij miesiąc, żeby zobaczyć jego wydatki</div><div id="pulpit-wynik"></div></div>
       </div>
-      <p class="notka">Prognoza gotówki na kolejne tygodnie pojawi się w etapie 5.</p>`;
+      ${kafleNaleznosci(s.naleznosci, true)}
+      <p class="notka">Rachunki: główny ${zl(s.salda['główny']?.saldo_po || 0)}, online ${zl(s.salda.online?.saldo_po || 0)}, VAT ${zl(s.salda.VAT?.saldo_po || 0)} (VAT nie liczy się do gotówki).
+        Dane: ${s.liczby.operacje} operacji w banku, ${s.liczby.faktury} faktur, ${s.liczby.zakupy} dokumentów kosztowych. <a href="#/platnosci/importy">Historia importów</a></p>`;
   },
 
   async 'platnosci/bank'(p) {
@@ -405,10 +437,10 @@ const WIDOKI = {
 // ---------- Etap 2: należności i dopasowania ----------
 const PRZEDZIALY = ['przed terminem', '1–30 dni', '31–60 dni', '61–90 dni', 'ponad 90 dni'];
 
-function kafleNaleznosci(n) {
+function kafleNaleznosci(n, tylkoWiekowanie = false) {
   if (!n) return '';
   const p = n.przedzialy;
-  return `<div class="kafle">
+  return `${tylkoWiekowanie ? `<h2 class="sekcja">Należności wg terminu ${pytajnik('naleznosci')}</h2>` : `<div class="kafle">
       <div class="kafel"><div class="tytul">Należności razem</div><div class="wartosc">${zl(n.razem)}</div>
         <div class="dop">faktury nieopłacone w banku, stan na ${dataPl(n.dzien_stanu)}</div></div>
       <a class="kafel klik" href="#/platnosci/naleznosci?po_terminie=1"><div class="tytul">Po terminie</div><div class="wartosc minus">${zl(n.po_terminie)}</div>
@@ -417,7 +449,7 @@ function kafleNaleznosci(n) {
         <div class="dop">wpływy, których aplikacja nie umie przypisać</div></a>
       <a class="kafel klik" href="#/platnosci/do-weryfikacji"><div class="tytul">Do weryfikacji</div><div class="wartosc">${n.do_weryfikacji}</div>
         <div class="dop">dopasowania do potwierdzenia i rozjazdy z Fakturownią</div></a>
-    </div>
+    </div>`}
     <div class="wiekowanie">${PRZEDZIALY.map(x => `<a href="#/platnosci/naleznosci?przedzial=${encodeURIComponent(x)}" class="${x === 'przed terminem' ? '' : 'po'}">
       <span>${x}</span><b>${zl(p[x][1], false)}</b><small>${p[x][0]} faktur</small></a>`).join('')}</div>`;
 }
@@ -746,10 +778,10 @@ Object.assign(WIDOKI, {
     return `<h1>Wynik zarządczy</h1><div class="okruszki">Rentowność / ${d.rok}, stan na ${dataPl(d.dzien_stanu)}</div>
       ${filtrRoku(d)}
       <div class="kafle">${pasek('Obrót netto od początku roku', d.obrot, c.obrot)}${pasek('Wynik zarządczy od początku roku', d.wynik, c.zysk)}
-        <div class="kafel"><div class="tytul">Marża wyniku</div><div class="wartosc">${procent(d.marza_proc)}</div><div class="dop">wynik zarządczy do obrotu netto</div></div></div>
+        <div class="kafel"><div class="tytul">Marża wyniku ${pytajnik('marza')}</div><div class="wartosc">${procent(d.marza_proc)}</div><div class="dop">wynik zarządczy do obrotu netto</div></div></div>
       <div class="wykresy-2">
-        <div class="karta-wyk"><h3>Obrót i koszty</h3><div class="pod">lewy słupek obrót, prawy koszty; legenda ukrywa serie</div><div id="rent-obrot"></div></div>
-        <div class="karta-wyk"><h3>Wynik zarządczy</h3><div class="pod">czerwony to strata; kliknij miesiąc, żeby zobaczyć wydatki</div><div class="wyk-odstep"></div><div id="rent-wynik"></div></div>
+        <div class="karta-wyk"><h3>Obrót i koszty ${pytajnik('obrot_koszty')}</h3><div class="pod">lewy słupek obrót, prawy koszty; legenda ukrywa serie</div><div id="rent-obrot"></div></div>
+        <div class="karta-wyk"><h3>Wynik zarządczy ${pytajnik('wynik')}</h3><div class="pod">czerwony to strata; kliknij miesiąc, żeby zobaczyć wydatki</div><div class="wyk-odstep"></div><div id="rent-wynik"></div></div>
       </div>
       <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th></th>${th}<th class="liczba-kol">Razem</th></tr></thead><tbody>${tr}</tbody></table></div>
       <p class="notka">Kwoty w złotych netto. Przychód wg daty sprzedaży, koszty z dokumentem wg daty dokumentu, koszty pracy wg miesiąca, którego dotyczą. Koszt bez dokumentu w rejestrze liczony kwotą z banku (z VAT), więc lekko zawyżony. Szare kolumny to miesiące niepełne: faktury za bieżący miesiąc i ZUS, PIT-4 oraz VAT za poprzedni jeszcze nie przyszły. Kliknij wiersz, żeby zobaczyć szczegóły.</p>
@@ -807,6 +839,120 @@ Object.assign(WIDOKI, {
       <p class="notka">Szacunek kontrolny, nie deklaracja: należny z faktur wg daty sprzedaży, naliczony z rejestru krajowego biura (bez importu usług), zapłata przypisana do okresu z tytułu przelewu („26M07”). Czerwona różnica ponad 100 zł to temat do pytania biura. Rejestr biura kończy się ${dataPl(d.koniec_rejestru)}.</p>`;
   },
 });
+
+// ---------- Statusy, cele, pomoc ----------
+const STATUS = { dobrze: ['✓', 'w normie'], uwaga: ['!', 'uwaga'], zle: ['✕', 'poniżej celu'], brak: ['?', 'brak danych'] };
+const chipStatus = (st, tekst) => `<div class="chip-st ${st}"><b aria-hidden="true">${STATUS[st][0]}</b><span>${esc(STATUS[st][1])}</span><small>${esc(tekst)}</small></div>`;
+
+function kartaCelow(cele) {
+  const k = $('#karta');
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>Cele</h2>
+    <p class="szary">Na nich opierają się kolory na pulpicie. Zapis idzie do pliku zmian tego Maca, więc drugi Mac zobaczy te same cele.</p>
+    <div class="formularz">
+      ${pole('', 'Obrót netto w roku (zł)', `<input id="cel-obrot" inputmode="numeric" value="${Math.round(cele.cel_obrot_rok / 100)}">`)}
+      ${pole('', 'Marża zysku na czysto (%)', `<input id="cel-marza" inputmode="decimal" value="${String(cele.cel_marza_proc).replace('.', ',')}">`)}
+      ${pole('', 'Rezerwa gotówki (miesięcy kosztów)', `<input id="cel-rezerwa" inputmode="decimal" value="${String(cele.rezerwa_miesiecy).replace('.', ',')}">`)}
+    </div>
+    <div class="akcje"><button class="glowny" id="zapisz-cele">Zapisz</button></div>
+    <p class="szary">${pytajnik('cele')} Jak cele przekładają się na kolory: rezerwa zielona od pełnej liczby miesięcy, żółta od 2/3; obrót zielony, gdy prognoza na koniec roku sięga celu, żółty od 90%; marża zielona od celu, żółta od połowy.</p>`;
+  k.hidden = false;
+  $('.zamknij', k).onclick = () => { k.hidden = true; };
+  $('#zapisz-cele').onclick = async () => {
+    const liczba = s => s.replace(/\s/g, '').replace(',', '.');
+    const zmiany = [['cel_obrot_rok', String(Math.round(parseFloat(liczba($('#cel-obrot').value)) * 100))],
+      ['cel_marza_proc', liczba($('#cel-marza').value)], ['rezerwa_miesiecy', liczba($('#cel-rezerwa').value)]]
+      .filter(([kl, v]) => String(cele[kl]) !== v && String(Math.round(cele[kl] * 100) / 100) !== v);
+    if (!zmiany.length) { k.hidden = true; return; }
+    for (const [kl, v] of zmiany.slice(0, -1)) if (!(await zmianaCicha('cel', { klucz: kl, wartosc: v }))) return;
+    const [kl, v] = zmiany[zmiany.length - 1];
+    zmiana('cel', { klucz: kl, wartosc: v });
+  };
+}
+
+const POMOC = {
+  rezerwa: { tytul: 'Rezerwa gotówki', krotko: 'Na ile miesięcy kosztów wystarczy gotówka na rachunkach, gdyby wpłaty od klientów stanęły.',
+    co: 'Gotówka na rachunku głównym i online podzielona przez średni miesięczny wypływ na koszty. Pokazuje, ile miesięcy agencja przetrwa bez żadnej wpłaty.',
+    skad: 'Saldo z ostatniej operacji w eksporcie ING. Koszty: wydatki z banku z ostatnich 6 pełnych miesięcy, rodzaje: koszty klientów, praca, stałe, nieprzypisane i podatki. Bez VAT, podziału zysku, zwrotów i przelewów między własnymi rachunkami.',
+    jak: 'Status liczony od wszystkich kosztów (ostrożnie). Druga liczba w opisie pomija koszty klientów, bo te zwykle płacimy dopiero z wpłaty klienta; to minimum, które utrzymuje agencję.',
+    zrob: 'Czerwony: wstrzymać wydatki niepilne, przyspieszyć windykację (kafel należności), nie wypłacać zysku. Cel ustawiasz przyciskiem Cele.' },
+  obrot: { tytul: 'Obrót do celu rocznego', krotko: 'Obrót netto z faktur od początku roku, plan na dziś i prognoza na koniec roku.',
+    co: 'Ile zafakturowaliśmy netto od 1 stycznia, ile powinno być przy równym tempie przez cały rok (pomarańczowa kreska na pasku) i dokąd dojdziemy w obecnym tempie.',
+    skad: 'Faktury z eksportu Fakturowni wg daty sprzedaży, korekty ze znakiem minus.',
+    jak: 'Prognoza = średni obrót z pełnych miesięcy razy 12. Bieżący i poprzedni miesiąc nie liczą się do średniej, bo faktury za nie jeszcze spływają. Zielony, gdy prognoza sięga celu, żółty od 90% celu.',
+    zrob: 'Kliknij kafel, żeby zobaczyć, którzy klienci robią obrót. Kwota „trzeba średnio miesięcznie” mówi, ile musi wpadać do końca roku.' },
+  marza: { tytul: 'Marża zysku', krotko: 'Wynik zarządczy jako procent obrotu, z pełnych miesięcy, kontra cel.',
+    co: 'Ile z każdej złotówki obrotu zostaje po wszystkich kosztach w wyniku: klientów, pracy, stałych i nieprzypisanych.',
+    skad: 'Ekran Rentowność, wynik zarządczy. Koszty z dokumentem liczone netto wg daty dokumentu, koszty pracy wg miesiąca, którego dotyczą.',
+    jak: 'Tylko pełne miesiące. Zielona od celu, żółta od połowy celu. To wynik przed podatkiem dochodowym i bez dotacji.',
+    zrob: 'Kliknij kafel: tabela pokaże, który miesiąc i który rodzaj kosztów ciągnie wynik w dół.' },
+  naleznosci: { tytul: 'Należności po 30 dniach', krotko: 'Ile pieniędzy od klientów wisi ponad 30 dni po terminie.',
+    co: 'Faktury nieopłacone w banku, ponad 30 dni po terminie płatności, i ich udział we wszystkich należnościach.',
+    skad: 'Faktury z Fakturowni połączone z wpłatami z banku (ekrany Do połączenia i Do weryfikacji).',
+    jak: 'Liczone na ostatni dzień eksportu z ING. Zielony do 15% należności, żółty do 30%.',
+    zrob: 'Kliknij kafel: lista dłużników od największej kwoty. Zanim zadzwonisz, sprawdź Do weryfikacji, czy wpłata nie wisi niepołączona.' },
+  porzadek: { tytul: 'Porządek w danych', krotko: 'Rzeczy, które aplikacja zostawiła do Twojej decyzji. Im mniej, tym dokładniejsze liczby.',
+    co: 'Wpłaty bez faktury, dopasowania do potwierdzenia i wydatki bez rodzaju.',
+    skad: 'Wynik automatycznego łączenia wpłat z fakturami i wydatków z rodzajami kosztów.',
+    jak: 'Każda Twoja decyzja zapisuje się w pliku zmian i obowiązuje także dla przyszłych danych (reguły dla kontrahenta).',
+    zrob: 'Raz w tygodniu przejrzyj trzy linki. Reguła dla kontrahenta załatwia od razu wszystkie jego płatności.' },
+  gotowka: { tytul: 'Gotówka na rachunkach', krotko: 'Saldo rachunku głównego i online na koniec każdego dnia.',
+    co: 'Linia salda dzień po dniu. Pokazuje, jak gotówka faluje w miesiącu: wpływy od klientów kontra pensje, ZUS, VAT.',
+    skad: 'Kolumna „saldo po transakcji” z eksportu ING; dni bez operacji przenoszą saldo z poprzedniego dnia.',
+    jak: 'Bez rachunku VAT.', zrob: 'Najdź na dzień, żeby zobaczyć saldo z podziałem na rachunki. Dołki to zwykle 6.–10. (pensje) i 15.–25. (ZUS, VAT).' },
+  wynik: { tytul: 'Wynik zarządczy miesięcznie', krotko: 'Obrót minus koszty w wyniku, miesiąc po miesiącu. Czerwony to strata.',
+    co: 'Ile zarobiliśmy w danym miesiącu po kosztach klientów, pracy, stałych i nieprzypisanych.',
+    skad: 'Faktury (przychód) i wydatki z banku powiązane z rejestrem biura (koszty).',
+    jak: 'Przychód wg daty sprzedaży, koszt z fakturą wg daty i netto faktury, koszty pracy wg miesiąca, którego dotyczą. Ostatnie dwa miesiące niepełne (kursywa).',
+    zrob: 'Kliknij miesiąc, żeby zobaczyć jego wydatki. Pełna tabela: Rentowność, Wynik zarządczy.' },
+  obrot_koszty: { tytul: 'Obrót i koszty', krotko: 'Lewy słupek obrót netto, prawy koszty w rozbiciu na rodzaje.',
+    co: 'Porównanie, ile wpadło i na co poszło w każdym miesiącu.', skad: 'Jak w wyniku zarządczym.',
+    jak: 'Kliknięcie w legendę ukrywa rodzaj kosztów, skala przelicza się sama.', zrob: 'Kliknij miesiąc, żeby otworzyć wydatki z tego miesiąca.' },
+  cele: { tytul: 'Cele', krotko: 'Twoje cele roczne, od których zależą kolory na pulpicie.',
+    co: 'Obrót netto w roku, marża zysku na czysto i rezerwa gotówki w miesiącach kosztów.',
+    skad: 'Domyślnie z pliku Finanse/Aplikacja/ustawienia.json, zmiany z przycisku Cele w pliku zmian.',
+    jak: 'Cel zysku = obrót razy marża.', zrob: 'Zmień, gdy zmieni się plan roczny. Stare wartości zostają w historii pliku zmian.' },
+  dane: { tytul: 'Skąd są dane', krotko: 'Pliki z folderu Finanse/Raporty/Dane, bez połączenia z internetem.',
+    co: 'Aplikacja czyta eksporty: ING (operacje), Fakturownia (faktury sprzedażowe), biuro (rejestr zakupów, RZiS) i Budget Studio (tylko podpowiedzi przypisań).',
+    skad: 'Nowy plik w folderze Dane wystarczy: aplikacja zauważy go i zaproponuje odświeżenie.',
+    jak: 'Baza budowana jest od zera przy każdym odświeżeniu, więc nic się nie dubluje. Twoje decyzje żyją w Finanse/Aplikacja/zmiany.',
+    zrob: 'Raz w tygodniu wrzuć świeży eksport z ING i Fakturowni. Historia importów pokazuje, co zostało wczytane.' },
+};
+
+function pytajnik(klucz) {
+  const p = POMOC[klucz];
+  return p ? `<button type="button" class="pomoc-btn" data-pomoc="${klucz}" aria-label="Pomoc: ${esc(p.tytul)}">?</button>` : '';
+}
+
+function otworzPomoc(klucz) {
+  const panel = $('#pomoc');
+  panel.innerHTML = `<button class="zamknij" aria-label="Zamknij pomoc">×</button><h2>Pomoc</h2>` +
+    Object.entries(POMOC).map(([k, p]) => `<section id="pomoc-${k}" class="${k === klucz ? 'wybrana' : ''}"><h3>${esc(p.tytul)}</h3>
+      <p class="krotko">${esc(p.krotko)}</p><dl><dt>Co to jest</dt><dd>${esc(p.co)}</dd><dt>Skąd dane</dt><dd>${esc(p.skad)}</dd>
+      <dt>Jak liczone</dt><dd>${esc(p.jak)}</dd><dt>Co z tym zrobić</dt><dd>${esc(p.zrob)}</dd></dl></section>`).join('');
+  panel.hidden = false;
+  $('.zamknij', panel).onclick = () => { panel.hidden = true; };
+  if (klucz) $(`#pomoc-${klucz}`, panel)?.scrollIntoView({ block: 'start' });
+}
+
+// Dymek po najechaniu na „?”, panel po kliknięciu (delegowane, działa na każdym ekranie).
+(() => {
+  let dymek;
+  document.addEventListener('pointerover', e => {
+    const b = e.target.closest?.('.pomoc-btn');
+    if (!b) return;
+    dymek ||= Object.assign(document.createElement('div'), { className: 'pomoc-dymek' });
+    dymek.textContent = `${POMOC[b.dataset.pomoc].krotko} Kliknij, żeby otworzyć pomoc.`;
+    document.body.appendChild(dymek);
+    const r = b.getBoundingClientRect();
+    dymek.style.left = `${Math.min(window.innerWidth - 300, r.left)}px`;
+    dymek.style.top = `${r.bottom + 6}px`;
+  });
+  document.addEventListener('pointerout', e => { if (e.target.closest?.('.pomoc-btn') && dymek) dymek.remove(); });
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.pomoc-btn');
+    if (b) { e.preventDefault(); e.stopPropagation(); dymek?.remove(); otworzPomoc(b.dataset.pomoc); }
+  }, true);
+})();
 
 function wBudowie(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
