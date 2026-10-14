@@ -39,7 +39,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 
 ```bash
 .venv/bin/python -m unittest discover -s testy -t .        # zmyślone dane
-.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3   # prawdziwe pliki, baza w katalogu tymczasowym
+.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3 testy_odbioru.test_etap4   # prawdziwe pliki, baza w katalogu tymczasowym
 ```
 
 ## Formaty plików (sprawdzone 14.10.2026, różnice wobec briefu)
@@ -57,7 +57,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 1 | Import, księga operacji, rama UI, Płatności, Historia importów | gotowy 2026-10-14 |
 | 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | gotowy 2026-10-14 |
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
-| 4 | Wynik zarządczy, ekran Rentowność | |
+| 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów, ekran Cash flow | |
 | 6 | Pulpit jak w Budget Studio, eksport | |
 
@@ -86,3 +86,12 @@ Wydatek a rejestr zakupów biura: numer dokumentu w tytule, numer KSeF (data fak
 kwota po kursie (zagraniczne, tolerancja 6%), suma dokumentów dostawcy, faktura miesięczna = suma płatności kartą
 w miesiącu (Google Ads, narzędzia). Koszt klienta w Budżecie to netto z dokumentu, bez dokumentu kwota z banku.
 Atrybuty `style` w HTML blokuje CSP, wymiary ustawiamy ze skryptu.
+
+## Wynik zarządczy (etap 4)
+
+`finanse/wynik.py`, liczone przy zapytaniu. Obrót netto (faktury wg daty sprzedaży) minus koszty klientów = przychód
+netto agencji; minus koszty pracy, stałe i nieprzypisane = wynik zarządczy. VAT, podział zysku, zwroty dla klientów
+i podatki (CIT, opłaty) poza wynikiem. Koszt z dokumentem: netto i miesiąc dokumentu (także podwykonawca na fakturze);
+koszty pracy: miesiąc z tytułu przelewu („ZA 07.2026”, „DRA 01/07”, „OKR/26M07”, „PPK 2026 07”), bez okresu: do 25.
+dnia poprzedni miesiąc. Miesiąc stanu i poprzedni oznaczone jako niepełne. Cele roczne w
+`Finanse/Aplikacja/ustawienia.json` (poza repo). Kontrola z RZiS biura na ostatni okres z pliku wyników.

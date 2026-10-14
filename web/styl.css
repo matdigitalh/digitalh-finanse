@@ -182,3 +182,17 @@ h2.sekcja { font-size: 15px; font-weight: 600; margin: 26px 0 8px; }
 i.p { background: var(--kobalt); } i.k { background: var(--pomarancz); }
 .legenda { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--tekst-2); margin: 8px 0 10px; }
 .legenda i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* Etap 4: rentowność */
+table.miesiace td:first-child { max-width: 320px; }
+table.miesiace td, table.miesiace th { padding: 6px 8px; }
+th.niepelny, td.niepelny { color: var(--tekst-2); background: var(--tlo-2); }
+td.razem { font-weight: 600; }
+tr.suma td { font-weight: 600; border-top: 1px solid var(--tekst-2); }
+tr.wynik td { font-weight: 700; background: var(--blekit); border-top: 2px solid var(--kobalt); }
+tr.uwaga td:first-child { color: var(--ostrzezenie); }
+tr.poza td { color: var(--tekst-2); font-size: 12px; }
+tr[data-link] { cursor: pointer; }
+.pasek-celu { position: relative; height: 8px; background: var(--tlo-2); border-radius: 4px; margin: 10px 0 4px; }
+.pasek-celu i { position: absolute; inset: 0 auto 0 0; background: var(--kobalt); border-radius: 4px; }
+.pasek-celu b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pomarancz); }

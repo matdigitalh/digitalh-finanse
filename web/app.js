@@ -51,8 +51,9 @@ const PODSTRONY = {
     { grupa: 'Ustawienia' }, { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly' }],
   cashflow: [{ grupa: 'Zapisane widoki' }, { nazwa: '2 tyg. w przód', etap: 5 }, { nazwa: '8 tyg. w przód', etap: 5 },
     { nazwa: '13 tyg. w przód', etap: 5 }, { nazwa: '6 mies. w przód', etap: 5 }],
-  rentownosc: [{ grupa: 'Zapisane widoki' }, { nazwa: 'Wynik zarządczy', etap: 4 }, { nazwa: 'Obroty wg klientów', etap: 4 },
-    { nazwa: 'Obroty wg kategorii', etap: 4 }, { nazwa: 'Podatek VAT', etap: 4 }],
+  rentownosc: [{ grupa: 'Zapisane widoki' }, { nazwa: 'Wynik zarządczy', hash: '#/rentownosc' },
+    { nazwa: 'Obroty wg klientów', hash: '#/rentownosc/klienci' }, { nazwa: 'Koszty wg kategorii', hash: '#/rentownosc/koszty' },
+    { nazwa: 'Podatek VAT', hash: '#/rentownosc/vat' }],
   eksport: [{ grupa: 'Eksport' }, { nazwa: 'CSV i Excel', etap: 6 }],
 };
 
@@ -667,9 +668,90 @@ Object.assign(WIDOKI, {
   },
 });
 
+// ---------- Etap 4: rentowność ----------
+const MIES_KROTKO = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+const mies = m => `${MIES_KROTKO[+m.slice(5, 7) - 1]} ${m.slice(2, 4)}`;
+const tys = gr => gr ? zl(gr, false).replace(/,\d\d$/, '') : '';
+
+function tabelaMiesiecy(miesiace, wiersze, niepelne = []) {
+  const th = miesiace.map(m => `<th class="liczba-kol${niepelne.includes(m) ? ' niepelny' : ''}" title="${niepelne.includes(m) ? 'miesiąc niepełny' : ''}">${mies(m)}</th>`).join('');
+  const tr = wiersze.map(w => `<tr class="${w.typ || ''}"${w.link ? ` data-link="${esc(w.link)}"` : ''}><td>${esc(w.nazwa)}</td>${miesiace.map(m => {
+    const v = w.miesiace[m] || 0;
+    return `<td class="liczba-kol${v < 0 ? ' minus' : ''}${niepelne.includes(m) ? ' niepelny' : ''}">${tys(v)}</td>`;
+  }).join('')}<td class="liczba-kol razem${w.razem < 0 ? ' minus' : ''}">${tys(w.razem)}</td>${w.dodatkowe || ''}</tr>`).join('');
+  setTimeout(() => document.querySelectorAll('tr[data-link]').forEach(x => x.onclick = () => { location.hash = x.dataset.link; }));
+  return { th, tr };
+}
+
+function filtrRoku(d) {
+  return `<div class="filtry">${filtr('rok', 'Rok', d.lata ? d.lata.map(r => [r, r]) : [[d.rok, d.rok]], d.rok)}</div>`;
+}
+
+Object.assign(WIDOKI, {
+  async rentownosc(p) {
+    const d = await api('wynik', p);
+    const { th, tr } = tabelaMiesiecy(d.miesiace, d.wiersze.map(w => ({ ...w,
+      link: { przenoszony: '#/rentownosc/koszty?rodzaj=przenoszony', praca: '#/rentownosc/koszty?rodzaj=praca', staly: '#/rentownosc/koszty?rodzaj=staly',
+        nieprzypisany: '#/budzet/wydatki?rodzaj=nieprzypisany', obrot: '#/rentownosc/klienci' }[w.klucz] })), d.niepelne);
+    const c = d.cele, czesc = c.czesc_roku;
+    const pasek = (tytul, wart, cel) => cel ? `<div class="kafel"><div class="tytul">${tytul}</div><div class="wartosc">${zl(wart)}</div>
+      <div class="pasek-celu"><i data-w="${Math.min(100, 100 * wart / cel)}"></i><b data-w="${100 * czesc}"></b></div>
+      <div class="dop">${Math.round(100 * wart / cel)}% celu rocznego ${zl(cel)}; po ${Math.round(100 * czesc)}% roku powinno być ${zl(Math.round(cel * czesc))}</div></div>` : '';
+    const b = d.porownanie_z_biurem;
+    const porown = b ? `<h2 class="sekcja">Kontrola z księgami biura (narastająco do ${mies(b.okres)})</h2>
+      <div class="tabela-ramka niska"><table><thead><tr><th></th><th class="liczba-kol">Biuro (RZiS)</th><th class="liczba-kol">Aplikacja</th><th class="liczba-kol">Różnica</th></tr></thead><tbody>
+      <tr><td>Przychody netto ze sprzedaży</td><td class="liczba-kol">${zl(b.biuro.A, false)}</td><td class="liczba-kol">${zl(b.aplikacja_obrot, false)}</td><td class="liczba-kol">${zl(b.aplikacja_obrot - b.biuro.A, false)}</td></tr>
+      <tr><td>Zysk ze sprzedaży (biuro) kontra wynik zarządczy</td><td class="liczba-kol">${zl(b.biuro.C, false)}</td><td class="liczba-kol">${zl(b.aplikacja_wynik, false)}</td><td class="liczba-kol">${zl(b.aplikacja_wynik - b.biuro.C, false)}</td></tr>
+      ${b.biuro.D ? `<tr class="poza"><td>Pozostałe przychody operacyjne w księgach (np. dotacja), poza wynikiem aplikacji</td><td class="liczba-kol">${zl(b.biuro.D, false)}</td><td></td><td></td></tr>` : ''}
+      </tbody></table></div><p class="notka">Wynik aplikacji liczy koszty z banku i rejestru, księgi biura memoriałowo z rozliczeniami okresowymi, więc różnica kilku tysięcy jest normalna. Duża różnica to sygnał do sprawdzenia przypisań.</p>` : '';
+    setTimeout(() => document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${x.dataset.w}%`; }));
+    return `<h1>Wynik zarządczy</h1><div class="okruszki">Rentowność / ${d.rok}, stan na ${dataPl(d.dzien_stanu)}</div>
+      ${filtrRoku(d)}
+      <div class="kafle">${pasek('Obrót netto od początku roku', d.obrot, c.obrot)}${pasek('Wynik zarządczy od początku roku', d.wynik, c.zysk)}
+        <div class="kafel"><div class="tytul">Marża wyniku</div><div class="wartosc">${procent(d.marza_proc)}</div><div class="dop">wynik zarządczy do obrotu netto</div></div></div>
+      <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th></th>${th}<th class="liczba-kol">Razem</th></tr></thead><tbody>${tr}</tbody></table></div>
+      <p class="notka">Kwoty w złotych netto. Przychód wg daty sprzedaży, koszty z dokumentem wg daty dokumentu, koszty pracy wg miesiąca, którego dotyczą. Koszt bez dokumentu w rejestrze liczony kwotą z banku (z VAT), więc lekko zawyżony. Szare kolumny to miesiące niepełne: faktury za bieżący miesiąc i ZUS, PIT-4 oraz VAT za poprzedni jeszcze nie przyszły. Kliknij wiersz, żeby zobaczyć szczegóły.</p>
+      ${porown}`;
+  },
+
+  async 'rentownosc/klienci'(p) {
+    const d = await api('obroty-klientow', p);
+    const { th, tr } = tabelaMiesiecy(d.miesiace, d.klienci.map(k => ({ nazwa: k.klient, miesiace: k.miesiace, razem: k.obrot,
+      link: `#/budzet/klient?nazwa=${encodeURIComponent(k.klient)}&rok=${d.rok}`,
+      dodatkowe: `<td class="liczba-kol szary">${procent(k.udzial)}</td><td class="liczba-kol minus">${tys(-k.koszty)}</td><td class="liczba-kol">${tys(k.pna)}</td>
+        <td class="liczba-kol${k.marza_proc != null && k.marza_proc < 30 ? ' minus' : ''}">${procent(k.marza_proc)}</td>` })));
+    return `<h1>Obroty wg klientów</h1><div class="okruszki">Rentowność / ${d.rok}</div>${filtrRoku({ rok: d.rok, lata: [d.rok] })}
+      <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th>Klient</th>${th}<th class="liczba-kol">Obrót</th><th class="liczba-kol">Udział</th>
+        <th class="liczba-kol">Koszty klienta</th><th class="liczba-kol">Po kosztach</th><th class="liczba-kol">Marża</th></tr></thead><tbody>${tr}</tbody></table></div>
+      <p class="notka">Obrót netto z faktur wg daty sprzedaży. Marża przed kosztami pracy zespołu; czerwona poniżej progu 30%. Podział czasu zespołu na klientów to dalszy krok, po MVP.</p>`;
+  },
+
+  async 'rentownosc/koszty'(p) {
+    const d = await api('koszty-kategorii', p);
+    const { th, tr } = tabelaMiesiecy(d.miesiace, d.pozycje.map(x => ({ nazwa: d.rodzaj ? x.nazwa : (RODZAJE[x.klucz] || x.klucz),
+      miesiace: x.miesiace, razem: x.razem, link: d.rodzaj ? `#/budzet/wydatki?q=${encodeURIComponent(x.nazwa.split(' ')[0])}` : `#/rentownosc/koszty?rodzaj=${x.klucz}&rok=${d.rok}` })));
+    return `<h1>Koszty wg kategorii</h1><div class="okruszki"><a href="#/rentownosc/koszty">Rentowność / Koszty</a>${d.rodzaj ? ' / ' + esc(RODZAJE[d.rodzaj]) : ''} / ${d.rok}</div>
+      <div class="filtry">${filtr('rodzaj', 'Rodzaj', [['', 'Wszystkie rodzaje'], ...Object.entries(RODZAJE)], d.rodzaj || '')}</div>
+      <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th>${d.rodzaj ? 'Kontrahent' : 'Rodzaj'}</th>${th}<th class="liczba-kol">Razem</th></tr></thead><tbody>${tr}</tbody></table></div>
+      <p class="notka">Kwoty dodatnie to wydatki. Netto z dokumentu, gdy jest w rejestrze biura, inaczej kwota z banku.</p>`;
+  },
+
+  async 'rentownosc/vat'(p) {
+    const d = await api('vat', p);
+    const tr = d.miesiace.map(m => `<tr><td>${mies(m.miesiac)}</td><td class="liczba-kol">${zl(m.nalezny, false)}</td>
+      <td class="liczba-kol">${m.rejestr ? zl(m.naliczony, false) : '<span class="szary">brak rejestru</span>'}</td>
+      <td class="liczba-kol">${m.rejestr ? zl(m.do_zaplaty, false) : ''}</td><td class="liczba-kol">${zl(m.zaplacony, false)}</td>
+      <td class="liczba-kol${m.rejestr && Math.abs(m.zaplacony - m.do_zaplaty) > 10000 ? ' minus' : ' szary'}">${m.rejestr ? zl(m.zaplacony - m.do_zaplaty, false) : ''}</td></tr>`).join('');
+    return `<h1>Podatek VAT</h1><div class="okruszki">Rentowność / ${d.rok}</div>
+      <div class="tabela-ramka niska"><table><thead><tr><th>Okres</th><th class="liczba-kol">Należny (faktury)</th><th class="liczba-kol">Naliczony (rejestr biura)</th>
+        <th class="liczba-kol">Wychodzi do zapłaty</th><th class="liczba-kol">Zapłacono (bank)</th><th class="liczba-kol">Różnica</th></tr></thead><tbody>${tr}</tbody></table></div>
+      <p class="notka">Szacunek kontrolny, nie deklaracja: należny z faktur wg daty sprzedaży, naliczony z rejestru krajowego biura (bez importu usług), zapłata przypisana do okresu z tytułu przelewu („26M07”). Czerwona różnica ponad 100 zł to temat do pytania biura. Rejestr biura kończy się ${dataPl(d.koniec_rejestru)}.</p>`;
+  },
+});
+
 function wBudowie(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
-  const etap = { cashflow: 5, rentownosc: 4, eksport: 6 }[sekcja];
+  const etap = { cashflow: 5, eksport: 6 }[sekcja];
   return `<h1>${esc(nazwa)}</h1><div class="okruszki">W budowie</div><p class="notka">Ten ekran powstanie w etapie ${etap}. Układ będzie taki jak w Budget Studio.</p>`;
 }
 

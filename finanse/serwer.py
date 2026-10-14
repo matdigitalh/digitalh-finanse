@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import baza, konfig, odbudowa, zapytania, zmiany
+from . import baza, konfig, odbudowa, wynik, zapytania, zmiany
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
 BLOKADA = threading.Lock()
@@ -44,6 +44,11 @@ def odbuduj_jesli_trzeba(wymus=False):
         if wymus or not czy_aktualna():
             return odbudowa.odbuduj()
     return None
+
+
+def _rok(q):
+    r = q.get('rok', '')
+    return r if len(r) == 4 and r.isdigit() else None
 
 
 class Obsluga(BaseHTTPRequestHandler):
@@ -114,6 +119,14 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.wydatki(con, **{k: q.get(k) for k in ('rodzaj', 'klient', 'dokument', 'zrodlo', 'q', 'od', 'do', 'strona', 'ile')})
             elif sciezka == 'reguly':
                 dane = zapytania.reguly(con)
+            elif sciezka == 'wynik':
+                dane = wynik.wynik_zarzadczy(con, _rok(q))
+            elif sciezka == 'obroty-klientow':
+                dane = wynik.obroty_klientow(con, _rok(q))
+            elif sciezka == 'koszty-kategorii':
+                dane = wynik.koszty_kategorii(con, _rok(q), q.get('rodzaj') or None)
+            elif sciezka == 'vat':
+                dane = wynik.vat(con, _rok(q))
             elif sciezka == 'importy':
                 dane = zapytania.importy(con)
             elif sciezka == 'wyniki-biura':
