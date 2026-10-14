@@ -1,0 +1,139 @@
+/* Finanse DigitalH: układ jak Budget Studio, kolory DigitalH (Identyfikacja wizualna DigitalH). */
+:root {
+  --kobalt: #171FB5;
+  --kobalt-ciemny: #0F1580;
+  --pomarancz: #FB6835;
+  --blekit: #DAEBFD;
+  --tlo: #FFFFFF;
+  --tlo-2: #F6F7FB;
+  --tekst: #222222;
+  --tekst-2: #6B6F80;
+  --linia: #E4E6EF;
+  --akcent: #171FB5;          /* nagłówki tabel, linki */
+  --plus: #13A05B;            /* wpływy */
+  --plus-tlo: #E6F6EE;
+  --minus: #D81B4A;           /* obciążenia */
+  --minus-tlo: #FDE9EE;
+  --ostrzezenie-tlo: #FFF6DB;
+  --ostrzezenie: #8A6100;
+  --cien: 0 8px 30px rgba(20, 24, 80, .12);
+  --pasek: 64px;
+  --font: "Inter", "Uncut Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tlo: #12131C;
+    --tlo-2: #1A1C28;
+    --tekst: #ECECF2;
+    --tekst-2: #9A9DB0;
+    --linia: #2A2D3D;
+    --akcent: #8F95FF;
+    --blekit: #232A55;
+    --plus: #3DD68C;
+    --plus-tlo: #133224;
+    --minus: #FF6B8B;
+    --minus-tlo: #3A1622;
+    --ostrzezenie-tlo: #3A3016;
+    --ostrzezenie: #F2C94C;
+    --cien: 0 8px 30px rgba(0, 0, 0, .5);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--font); font-size: 13px; color: var(--tekst); background: var(--tlo); -webkit-font-smoothing: antialiased; }
+button, select, input { font: inherit; color: inherit; }
+a { color: var(--akcent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Lewy pasek: wąski, rozwija się po najechaniu (jak w Budget Studio) */
+.pasek { position: fixed; inset: 0 auto 0 0; width: var(--pasek); background: var(--kobalt); color: #fff; z-index: 30;
+  display: flex; flex-direction: column; overflow: hidden; transition: width .18s ease; }
+.pasek:hover, .pasek:focus-within, body.wysuw-otwarty .pasek { width: 200px; box-shadow: var(--cien); }
+.logo { display: flex; align-items: center; gap: 14px; height: 72px; padding: 0 18px; font-size: 16px; font-weight: 600; white-space: nowrap; }
+.znak { flex: none; width: 28px; height: 28px; border-radius: 7px; background: #fff; color: var(--kobalt); display: grid; place-items: center; font-weight: 800; }
+.menu { list-style: none; margin: 24px 0 0; padding: 0; }
+.menu button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 16px; width: 100%; height: 40px; padding: 0 22px; cursor: pointer; white-space: nowrap; color: rgba(255,255,255,.88); }
+.menu button:hover, .menu button:focus-visible { background: rgba(255,255,255,.1); }
+.menu button[aria-current="true"] { background: var(--kobalt-ciemny); color: #fff; box-shadow: inset 3px 0 0 var(--pomarancz); }
+.menu svg { flex: none; width: 20px; height: 20px; }
+.etykieta { opacity: 0; transition: opacity .12s; }
+.pasek:hover .etykieta, .pasek:focus-within .etykieta, body.wysuw-otwarty .etykieta { opacity: 1; }
+.dol { margin-top: auto; padding: 16px 18px; font-size: 11px; color: rgba(255,255,255,.7); white-space: nowrap; }
+
+/* Wysuwany panel z podstronami */
+.wysuw { position: fixed; top: 0; bottom: 0; left: 200px; width: 240px; background: var(--tlo-2); border-right: 1px solid var(--linia); z-index: 20; padding: 24px 20px; overflow-y: auto; box-shadow: var(--cien); }
+.wysuw h2 { margin: 0 0 20px; font-size: 22px; font-weight: 300; }
+.wysuw h3 { margin: 20px 0 8px; font-size: 12px; font-weight: 600; color: var(--tekst-2); }
+.wysuw a { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--akcent); }
+.wysuw a.nieaktywny { color: var(--tekst-2); pointer-events: none; }
+.wysuw .liczba { background: var(--pomarancz); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+.wysuw .etap { font-size: 10px; border: 1px solid var(--linia); border-radius: 8px; padding: 0 5px; }
+
+/* Treść */
+.tresc { margin-left: var(--pasek); padding: 22px 32px 80px; min-height: 100%; }
+h1 { margin: 0; font-size: 26px; font-weight: 300; }
+.okruszki { margin: 6px 0 18px; color: var(--akcent); font-size: 12px; }
+.zakladki { display: flex; gap: 28px; border-bottom: 1px solid var(--linia); margin-bottom: 18px; }
+.zakladki button { all: unset; cursor: pointer; padding: 10px 0; color: var(--tekst-2); }
+.zakladki button[aria-selected="true"] { color: var(--tekst); box-shadow: inset 0 -3px 0 var(--kobalt); }
+.filtry { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 16px; }
+.filtry label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--tekst-2); }
+.filtry select, .filtry input { height: 30px; min-width: 130px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); padding: 0 8px; color: var(--akcent); }
+.filtry input[type="date"] { min-width: 0; }
+
+/* Komunikaty */
+.komunikat { display: flex; align-items: center; gap: 12px; padding: 8px 14px; margin: -6px 0 16px; border-radius: 4px; background: var(--ostrzezenie-tlo); color: var(--ostrzezenie); font-size: 12px; }
+.komunikat button { border: 1px solid currentColor; background: transparent; border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+.komunikat.blad { background: var(--minus-tlo); color: var(--minus); }
+
+/* Kafle (pulpit) */
+.kafle { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; max-width: 1100px; margin-bottom: 26px; }
+.kafel { border: 1px solid var(--linia); border-radius: 6px; padding: 14px 16px; background: var(--tlo); }
+.kafel .tytul { font-size: 12px; color: var(--tekst-2); margin-bottom: 8px; display: flex; gap: 6px; align-items: center; }
+.kafel .wartosc { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kafel .dop { font-size: 11px; color: var(--tekst-2); margin-top: 4px; }
+.kafel.glowny { background: var(--blekit); border-color: transparent; }
+.notka { color: var(--tekst-2); max-width: 760px; line-height: 1.5; }
+
+/* Tabela płatności */
+.tabela-ramka { overflow: auto; max-height: calc(100vh - 250px); border-bottom: 1px solid var(--linia); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th { position: sticky; top: 0; background: var(--tlo); z-index: 2; text-align: left; font-weight: 400; color: var(--akcent); padding: 8px 10px; border-bottom: 2px solid var(--kobalt); white-space: nowrap; cursor: default; }
+th.sort { cursor: pointer; }
+th.sort[data-kierunek]::after { content: " ↓"; }
+th.sort[data-kierunek="rosnaco"]::after { content: " ↑"; }
+td { padding: 6px 10px; border-bottom: 1px solid var(--linia); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--tlo-2); }
+td.lp { color: var(--tekst-2); text-align: right; width: 1%; font-size: 11px; }
+.liczba-kol { text-align: right; }
+.plus { color: var(--plus); }
+.minus { color: var(--minus); }
+.szary { color: var(--tekst-2); }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px; font-size: 11px; border: 1px solid; }
+.chip.plus { background: var(--plus-tlo); border-color: transparent; }
+.chip.minus { background: var(--minus-tlo); border-color: transparent; }
+.chip.neutral { color: var(--tekst-2); border-color: var(--linia); }
+tfoot td { font-weight: 600; background: var(--tlo-2); position: sticky; bottom: 0; }
+
+.stopka { position: fixed; left: var(--pasek); right: 0; bottom: 0; height: 48px; display: flex; align-items: center; gap: 16px; padding: 0 32px; background: var(--tlo); border-top: 1px solid var(--linia); z-index: 5; font-size: 12px; color: var(--tekst-2); }
+.stopka select, .stopka input { height: 28px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); padding: 0 6px; }
+.stopka button { border: 1px solid var(--linia); background: var(--tlo); border-radius: 4px; height: 28px; min-width: 28px; cursor: pointer; }
+.stopka button:disabled { opacity: .4; cursor: default; }
+.stopka .szukaj { margin-left: auto; width: 200px; }
+
+/* Karta szczegółów (jak karta płatności) */
+.karta { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); background: var(--tlo); border-left: 1px solid var(--linia); box-shadow: var(--cien); z-index: 40; padding: 22px 24px; overflow-y: auto; }
+.karta h2 { margin: 0 0 4px; font-size: 18px; font-weight: 400; }
+.karta dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin: 18px 0; }
+.karta dt { color: var(--tekst-2); }
+.karta dd { margin: 0; word-break: break-word; white-space: pre-wrap; }
+.karta .zrodlo { margin-top: 18px; padding: 10px 12px; background: var(--tlo-2); border-radius: 4px; font-size: 12px; color: var(--tekst-2); }
+.karta .zamknij { float: right; border: none; background: none; font-size: 20px; cursor: pointer; color: var(--tekst-2); }
+.pusto { padding: 40px; text-align: center; color: var(--tekst-2); }
+
+@media (max-width: 700px) {
+  .tresc { padding: 16px 16px 80px; }
+  .stopka { padding: 0 16px; }
+  .stopka .szukaj { width: 120px; }
+}

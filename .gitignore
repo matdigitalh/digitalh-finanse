@@ -1,0 +1,14 @@
+# Dane finansowe nigdy nie trafiają do repo (BRIEF.md, zasada 1)
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+*.xlsx
+*.xls
+*.pdf
+.venv/
+__pycache__/
+*.jsonl
+*.json.bak
+*.sqlite-journal
+*.tmp

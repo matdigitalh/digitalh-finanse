@@ -1,0 +1,10 @@
+#!/bin/sh
+# Blokuje commit z plikiem z danymi finansowymi (BRIEF.md, zasada 1).
+# Instalacja (raz na maszynę): cp narzedzia/pre-commit .git/hooks/pre-commit
+zle=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -iE '\.(sqlite3?|db|csv|xlsx?|pdf|jsonl)$')
+if [ -n "$zle" ]; then
+  echo "STOP: pliki z danymi finansowymi nie mogą trafić do repo:"
+  echo "$zle"
+  exit 1
+fi

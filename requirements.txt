@@ -1,0 +1,4 @@
+# Jedyne zależności spoza biblioteki standardowej (wersje jak w Finanse/Raporty/Skrypty/.venv)
+openpyxl==3.1.5
+et_xmlfile==2.0.0
+xlrd==2.0.2
