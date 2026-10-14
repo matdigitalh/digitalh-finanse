@@ -259,6 +259,13 @@ const chipKwota = kwota => kwota > 0 ? '<span class="chip plus">↗ wpływy</spa
 const WIDOKI = {
   async pulpit() {
     const s = STAN;
+    Promise.all([api('saldo-historia'), api('wynik')]).then(([h, d]) => {
+      if (!$('#pulpit-gotowka')) return;
+      Wykresy.linia($('#pulpit-gotowka'), { punkty: h, nazwa: 'Gotówka', kolor: Wykresy.kolor('--s1'), wysokosc: 220, opis: 'Saldo gotówki',
+        etykietaX: x => MIESIACE[+x.slice(5, 7) - 1].slice(0, 3), etykietaPelna: x => dataPl(x),
+        dodatkowe: p => [{ nazwa: 'w tym rachunek główny', wartosc: Wykresy.pelna(p.glowny) }, { nazwa: 'w tym online', wartosc: Wykresy.pelna(p.online) }] });
+      wykresWyniku('pulpit', d, { tylkoWynik: true });
+    });
     const saldo = (r, opis) => s.salda[r] ? `<div class="kafel${r === 'główny' ? ' glowny' : ''}" title="Źródło: ${esc(s.salda[r].plik)}, wiersz ${s.salda[r].wiersz}">
       <div class="tytul">${opis}</div><div class="wartosc">${zl(s.salda[r].saldo_po)}</div>
       <div class="dop">saldo po ostatniej operacji z ${dataPl(s.salda[r].data_ksiegowania)}</div></div>` : '';
@@ -274,7 +281,11 @@ const WIDOKI = {
         <div class="kafel"><div class="tytul">Dokumenty kosztowe</div><div class="wartosc">${s.liczby.zakupy}</div><div class="dop">z rejestru zakupów biura</div></div>
       </div>
       ${kafleNaleznosci(s.naleznosci)}
-      <p class="notka">Wykres gotówki na 6 miesięcy i płatności do zapłaty pojawią się w kolejnych etapach.</p>`;
+      <div class="wykresy-2">
+        <div class="karta-wyk"><h3>Gotówka na rachunkach</h3><div class="pod">główny i online, koniec dnia; najedź, żeby zobaczyć dzień</div><div id="pulpit-gotowka"></div></div>
+        <div class="karta-wyk"><h3>Wynik zarządczy miesięcznie</h3><div class="pod">kliknij miesiąc, żeby zobaczyć jego wydatki</div><div id="pulpit-wynik"></div></div>
+      </div>
+      <p class="notka">Prognoza gotówki na kolejne tygodnie pojawi się w etapie 5.</p>`;
   },
 
   async 'platnosci/bank'(p) {
@@ -608,22 +619,21 @@ Object.assign(WIDOKI, {
 
   async 'budzet/klient'(p) {
     const d = await api('klient', p);
-    const max = Math.max(1, ...d.miesiace.map(m => Math.max(m.przychod, m.koszty)));
-    const wykres = d.miesiace.map(m => `<div class="slupek" title="${m.miesiac}: przychód ${zl(m.przychod)}, koszty ${zl(m.koszty)}">
-      <div class="paski"><i class="p" data-h="${100 * m.przychod / max}"></i><i class="k" data-h="${100 * m.koszty / max}"></i></div><small>${m.miesiac.slice(5)}.${m.miesiac.slice(2, 4)}</small></div>`).join('');
+    const wykres = d.miesiace.length ? '<div id="klient-wyk"></div>' : '';
     const tf = d.faktury.map(f => `<tr data-q="${esc(f.numer)}"><td>${esc(f.numer)}</td><td>${dataPl(f.data_sprzedazy || f.data_wystawienia)}</td><td class="szary">${esc(f.nabywca)}</td>
       <td class="liczba-kol">${zl(f.netto, false)}</td><td>${chipBank({ stan_bank: f.stan, dni_po_terminie: f.dni_po_terminie })}</td></tr>`).join('');
     const tk = d.koszty.map(x => `<tr data-op="${x.id}"><td>${dataPl(x.data_ksiegowania)}</td><td>${esc(x.kontrahent)}</td><td class="szary">${esc(x.tytul)}</td>
       <td class="liczba-kol minus">${zl(-(x.koszt || 0), false)}</td><td>${chipDok(x.dokument)}</td></tr>`).join('');
     setTimeout(() => {
-      // wysokość przez CSSOM: CSP strony blokuje atrybuty style w HTML
-      document.querySelectorAll('.paski i[data-h]').forEach(i => { i.style.height = `${i.dataset.h}%`; });
+      if (d.miesiace.length) Wykresy.slupki($('#klient-wyk'), { kategorie: d.miesiace.map(m => mies(m.miesiac)), etykietyPelne: d.miesiace.map(m => miesPelny(m.miesiac)),
+        wysokosc: 220, opis: 'Przychód i koszty klienta', serie: [
+          { klucz: 'p', nazwa: 'Przychód netto', kolor: Wykresy.kolor('--s1'), wartosci: d.miesiace.map(m => m.przychod) },
+          { klucz: 'k', nazwa: 'Koszty klienta', kolor: Wykresy.kolor('--s2'), wartosci: d.miesiace.map(m => m.koszty) }] });
       document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => { location.hash = `#/platnosci/faktury?q=${encodeURIComponent(tr.dataset.q)}`; });
       document.querySelectorAll('tr[data-op]').forEach(tr => tr.onclick = () => { location.hash = `#/budzet/wydatki?klient=${encodeURIComponent(d.klient)}&rodzaj=przenoszony`; });
     });
     return `<h1>${esc(d.klient)}</h1><div class="okruszki"><a href="#/budzet">Budżet</a> / Klient${d.rok ? ' / ' + d.rok : ''}</div>
-      <div class="wykres-klienta">${wykres || '<span class="szary">Brak danych.</span>'}</div>
-      <div class="legenda"><i class="p"></i> przychód netto <i class="k"></i> koszty klienta</div>
+      <div class="karta-wyk"><h3>Przychód i koszty miesięcznie</h3><div class="pod">koszty klienta: netto z dokumentu, bez dokumentu kwota z banku</div>${wykres || '<span class="szary">Brak danych.</span>'}</div>
       <h2 class="sekcja">Faktury <span class="szary">${d.faktury.length}</span></h2>
       <div class="tabela-ramka niska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>
       <h2 class="sekcja">Koszty klienta <span class="szary">${d.koszty.length}</span></h2>
@@ -668,6 +678,31 @@ Object.assign(WIDOKI, {
   },
 });
 
+// ---------- Wykresy na ekranach ----------
+const KOLOR = { obrot: '--s1', przenoszony: '--s2', praca: '--s3', staly: '--s4', nieprzypisany: '--szary-seria' };
+const ostatniDzien = m => { const [r, mm] = m.split('-').map(Number); return `${m}-${String(new Date(r, mm, 0).getDate()).padStart(2, '0')}`; };
+const MIES_PELNE = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+const miesPelny = m => `${MIES_PELNE[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
+
+function wykresWyniku(id, d, { tylkoWynik = false } = {}) {
+  const w = Object.fromEntries(d.wiersze.map(x => [x.klucz, x]));
+  const wart = (k, minus = false) => d.miesiace.map(m => (minus ? -1 : 1) * (w[k].miesiace[m] || 0));
+  const niepelne = d.miesiace.map((m, i) => d.niepelne.includes(m) ? i : -1).filter(i => i >= 0);
+  const naKlik = i => { location.hash = `#/budzet/wydatki?od=${d.miesiace[i]}-01&do=${ostatniDzien(d.miesiace[i])}`; };
+  const wspolne = { kategorie: d.miesiace.map(mies), etykietyPelne: d.miesiace.map(miesPelny), niepelne, naKlik };
+  if (!tylkoWynik) Wykresy.slupki($(`#${id}-obrot`), { ...wspolne, wysokosc: 250, opis: 'Obrót i koszty miesięcznie',
+    sumaStosu: { koszty: 'Koszty razem' },
+    serie: [
+      { klucz: 'obrot', nazwa: 'Obrót netto', kolor: Wykresy.kolor(KOLOR.obrot), wartosci: wart('obrot') },
+      { klucz: 'przenoszony', nazwa: 'Koszty klientów', kolor: Wykresy.kolor(KOLOR.przenoszony), wartosci: wart('przenoszony', true), stos: 'koszty' },
+      { klucz: 'praca', nazwa: 'Koszty pracy', kolor: Wykresy.kolor(KOLOR.praca), wartosci: wart('praca', true), stos: 'koszty' },
+      { klucz: 'staly', nazwa: 'Koszty stałe', kolor: Wykresy.kolor(KOLOR.staly), wartosci: wart('staly', true), stos: 'koszty' },
+      { klucz: 'nieprzypisany', nazwa: 'Nieprzypisane', kolor: Wykresy.kolor(KOLOR.nieprzypisany), wartosci: wart('nieprzypisany', true), stos: 'koszty' },
+    ] });
+  Wykresy.slupki($(`#${id}-wynik`), { ...wspolne, wysokosc: tylkoWynik ? 220 : 250, opis: 'Wynik zarządczy miesięcznie',
+    serie: [{ klucz: 'wynik', nazwa: 'Wynik zarządczy', bezLegendy: true, kolor: Wykresy.kolor('--s1'), kolorUjemny: Wykresy.kolor('--minus'), wartosci: wart('wynik') }] });
+}
+
 // ---------- Etap 4: rentowność ----------
 const MIES_KROTKO = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
 const mies = m => `${MIES_KROTKO[+m.slice(5, 7) - 1]} ${m.slice(2, 4)}`;
@@ -704,11 +739,18 @@ Object.assign(WIDOKI, {
       <tr><td>Zysk ze sprzedaży (biuro) kontra wynik zarządczy</td><td class="liczba-kol">${zl(b.biuro.C, false)}</td><td class="liczba-kol">${zl(b.aplikacja_wynik, false)}</td><td class="liczba-kol">${zl(b.aplikacja_wynik - b.biuro.C, false)}</td></tr>
       ${b.biuro.D ? `<tr class="poza"><td>Pozostałe przychody operacyjne w księgach (np. dotacja), poza wynikiem aplikacji</td><td class="liczba-kol">${zl(b.biuro.D, false)}</td><td></td><td></td></tr>` : ''}
       </tbody></table></div><p class="notka">Wynik aplikacji liczy koszty z banku i rejestru, księgi biura memoriałowo z rozliczeniami okresowymi, więc różnica kilku tysięcy jest normalna. Duża różnica to sygnał do sprawdzenia przypisań.</p>` : '';
-    setTimeout(() => document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${x.dataset.w}%`; }));
+    setTimeout(() => {
+      document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${x.dataset.w}%`; });
+      wykresWyniku('rent', d);
+    });
     return `<h1>Wynik zarządczy</h1><div class="okruszki">Rentowność / ${d.rok}, stan na ${dataPl(d.dzien_stanu)}</div>
       ${filtrRoku(d)}
       <div class="kafle">${pasek('Obrót netto od początku roku', d.obrot, c.obrot)}${pasek('Wynik zarządczy od początku roku', d.wynik, c.zysk)}
         <div class="kafel"><div class="tytul">Marża wyniku</div><div class="wartosc">${procent(d.marza_proc)}</div><div class="dop">wynik zarządczy do obrotu netto</div></div></div>
+      <div class="wykresy-2">
+        <div class="karta-wyk"><h3>Obrót i koszty</h3><div class="pod">lewy słupek obrót, prawy koszty; legenda ukrywa serie</div><div id="rent-obrot"></div></div>
+        <div class="karta-wyk"><h3>Wynik zarządczy</h3><div class="pod">czerwony to strata; kliknij miesiąc, żeby zobaczyć wydatki</div><div class="wyk-odstep"></div><div id="rent-wynik"></div></div>
+      </div>
       <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th></th>${th}<th class="liczba-kol">Razem</th></tr></thead><tbody>${tr}</tbody></table></div>
       <p class="notka">Kwoty w złotych netto. Przychód wg daty sprzedaży, koszty z dokumentem wg daty dokumentu, koszty pracy wg miesiąca, którego dotyczą. Koszt bez dokumentu w rejestrze liczony kwotą z banku (z VAT), więc lekko zawyżony. Szare kolumny to miesiące niepełne: faktury za bieżący miesiąc i ZUS, PIT-4 oraz VAT za poprzedni jeszcze nie przyszły. Kliknij wiersz, żeby zobaczyć szczegóły.</p>
       ${porown}`;
@@ -720,7 +762,13 @@ Object.assign(WIDOKI, {
       link: `#/budzet/klient?nazwa=${encodeURIComponent(k.klient)}&rok=${d.rok}`,
       dodatkowe: `<td class="liczba-kol szary">${procent(k.udzial)}</td><td class="liczba-kol minus">${tys(-k.koszty)}</td><td class="liczba-kol">${tys(k.pna)}</td>
         <td class="liczba-kol${k.marza_proc != null && k.marza_proc < 30 ? ' minus' : ''}">${procent(k.marza_proc)}</td>` })));
+    setTimeout(() => Wykresy.ranking($('#klienci-wyk'), {
+      serie: [{ klucz: 'obrot', nazwa: 'Obrót netto', kolor: Wykresy.kolor('--s1') }, { klucz: 'koszty', nazwa: 'Koszty klienta', kolor: Wykresy.kolor('--s2') }],
+      wiersze: d.klienci.map(k => ({ nazwa: k.klient, wartosci: { obrot: k.obrot, koszty: k.koszty }, marza: k.marza_proc, udzial: k.udzial,
+        naKlik: () => { location.hash = `#/budzet/klient?nazwa=${encodeURIComponent(k.klient)}&rok=${d.rok}`; } })),
+      opisWiersza: w => `${tys(w.wartosci.obrot)} zł · marża ${procent(w.marza)}` }));
     return `<h1>Obroty wg klientów</h1><div class="okruszki">Rentowność / ${d.rok}</div>${filtrRoku({ rok: d.rok, lata: [d.rok] })}
+      <div class="karta-wyk"><h3>Klienci wg obrotu</h3><div class="pod">kliknij klienta, żeby otworzyć jego folder</div><div id="klienci-wyk"></div></div>
       <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th>Klient</th>${th}<th class="liczba-kol">Obrót</th><th class="liczba-kol">Udział</th>
         <th class="liczba-kol">Koszty klienta</th><th class="liczba-kol">Po kosztach</th><th class="liczba-kol">Marża</th></tr></thead><tbody>${tr}</tbody></table></div>
       <p class="notka">Obrót netto z faktur wg daty sprzedaży. Marża przed kosztami pracy zespołu; czerwona poniżej progu 30%. Podział czasu zespołu na klientów to dalszy krok, po MVP.</p>`;
@@ -730,8 +778,19 @@ Object.assign(WIDOKI, {
     const d = await api('koszty-kategorii', p);
     const { th, tr } = tabelaMiesiecy(d.miesiace, d.pozycje.map(x => ({ nazwa: d.rodzaj ? x.nazwa : (RODZAJE[x.klucz] || x.klucz),
       miesiace: x.miesiace, razem: x.razem, link: d.rodzaj ? `#/budzet/wydatki?q=${encodeURIComponent(x.nazwa.split(' ')[0])}` : `#/rentownosc/koszty?rodzaj=${x.klucz}&rok=${d.rok}` })));
+    setTimeout(() => {
+      const top = d.pozycje.slice(0, 4), reszta = d.pozycje.slice(4);
+      const serie = top.map((x, i) => ({ klucz: x.klucz, nazwa: d.rodzaj ? x.nazwa.split(/\s{2,}| \d/)[0].slice(0, 40) : (RODZAJE[x.klucz] || x.klucz),
+        kolor: Wykresy.kolor(d.rodzaj ? `--s${i + 1}` : (KOLOR[x.klucz] || '--szary-seria')), wartosci: d.miesiace.map(m => x.miesiace[m] || 0), stos: 'k' }));
+      if (reszta.length) serie.push({ klucz: 'reszta', nazwa: d.rodzaj ? `Pozostali (${reszta.length})` : 'Pozostałe rodzaje', kolor: Wykresy.kolor('--szary-seria'),
+        wartosci: d.miesiace.map(m => reszta.reduce((a, x) => a + (x.miesiace[m] || 0), 0)), stos: 'k' });
+      Wykresy.slupki($('#koszty-wyk'), { kategorie: d.miesiace.map(mies), etykietyPelne: d.miesiace.map(miesPelny), wysokosc: 260, serie,
+        sumaStosu: { k: 'Razem' }, opis: 'Koszty wg kategorii',
+        naKlik: i => { location.hash = `#/budzet/wydatki?od=${d.miesiace[i]}-01&do=${ostatniDzien(d.miesiace[i])}${d.rodzaj ? '&rodzaj=' + d.rodzaj : ''}`; } });
+    });
     return `<h1>Koszty wg kategorii</h1><div class="okruszki"><a href="#/rentownosc/koszty">Rentowność / Koszty</a>${d.rodzaj ? ' / ' + esc(RODZAJE[d.rodzaj]) : ''} / ${d.rok}</div>
       <div class="filtry">${filtr('rodzaj', 'Rodzaj', [['', 'Wszystkie rodzaje'], ...Object.entries(RODZAJE)], d.rodzaj || '')}</div>
+      <div class="karta-wyk"><h3>${d.rodzaj ? esc(RODZAJE[d.rodzaj]) + ': największych 4 kontrahentów' : 'Koszty miesięcznie wg rodzaju'}</h3><div class="pod">kliknij miesiąc, żeby zobaczyć wydatki; legenda ukrywa serie</div><div id="koszty-wyk"></div></div>
       <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th>${d.rodzaj ? 'Kontrahent' : 'Rodzaj'}</th>${th}<th class="liczba-kol">Razem</th></tr></thead><tbody>${tr}</tbody></table></div>
       <p class="notka">Kwoty dodatnie to wydatki. Netto z dokumentu, gdy jest w rejestrze biura, inaczej kwota z banku.</p>`;
   },

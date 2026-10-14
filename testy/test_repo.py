@@ -25,7 +25,8 @@ class TestRepo(unittest.TestCase):
     def test_brak_zewnetrznych_adresow_w_interfejsie(self):
         for p in (APKA / 'web').iterdir():
             tresc = p.read_text(encoding='utf-8')
-            self.assertNotRegex(tresc, r'https?://(?!127\.0\.0\.1)', p.name)
+            # przestrzeń nazw SVG to identyfikator, nie adres do pobrania
+            self.assertNotRegex(tresc, r'https?://(?!127\.0\.0\.1|www\.w3\.org/2000/svg\b)', p.name)
 
 
 if __name__ == '__main__':

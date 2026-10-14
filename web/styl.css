@@ -18,6 +18,12 @@
   --ostrzezenie: #8A6100;
   --cien: 0 8px 30px rgba(20, 24, 80, .12);
   --pasek: 64px;
+  --s1: #3D4BE0;               /* wykresy: kolejność stała, paleta sprawdzona walidatorem */
+  --s2: #E0601F;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --szary-seria: #A9ACB8;
+  --siatka: #ECEDF2;
   --font: "Inter", "Uncut Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -36,6 +42,12 @@
     --ostrzezenie-tlo: #3A3016;
     --ostrzezenie: #F2C94C;
     --cien: 0 8px 30px rgba(0, 0, 0, .5);
+    --s1: #6F7BF2;
+    --s2: #E36D30;
+    --s3: #199e70;
+    --s4: #c98500;
+    --szary-seria: #5B5E70;
+    --siatka: #23263A;
   }
 }
 * { box-sizing: border-box; }
@@ -196,3 +208,45 @@ tr[data-link] { cursor: pointer; }
 .pasek-celu { position: relative; height: 8px; background: var(--tlo-2); border-radius: 4px; margin: 10px 0 4px; }
 .pasek-celu i { position: absolute; inset: 0 auto 0 0; background: var(--kobalt); border-radius: 4px; }
 .pasek-celu b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pomarancz); }
+
+/* Wykresy */
+.wyk { position: relative; max-width: 1100px; margin: 4px 0 22px; }
+.wyk svg { display: block; overflow: visible; }
+.wyk .siatka line { stroke: var(--siatka); stroke-width: 1; }
+.wyk .siatka line.zero { stroke: var(--tekst-2); opacity: .5; }
+.wyk .siatka text { fill: var(--tekst-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.wyk .siatka text.niepelny { opacity: .55; font-style: italic; }
+.wyk .strefy rect { outline: none; }
+.wyk .strefy rect.aktywna, .wyk .strefy rect:focus-visible { fill: var(--tekst); fill-opacity: .05; }
+.wyk .strefy rect.klik { cursor: pointer; }
+.wyk .celownik { stroke: var(--tekst-2); stroke-width: 1; }
+.wyk-legenda { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 8px; }
+.wyk-legenda button { all: unset; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tekst); cursor: pointer; padding: 2px 0; }
+.wyk-legenda button:focus-visible { outline: 2px solid var(--akcent); outline-offset: 2px; border-radius: 3px; }
+.wyk-legenda button[aria-pressed="false"] { color: var(--tekst-2); text-decoration: line-through; }
+.wyk-legenda button[aria-pressed="false"] i { opacity: .25; }
+.wyk-legenda i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.wyk-legenda i.linia { height: 2px; width: 14px; }
+.wyk-podpowiedz { position: absolute; z-index: 10; pointer-events: none; min-width: 160px; background: var(--tlo); border: 1px solid var(--linia); border-radius: 6px; box-shadow: var(--cien); padding: 8px 10px; font-size: 12px; }
+.wyk-pp-tytul { color: var(--tekst-2); margin-bottom: 6px; }
+.wyk-pp-wiersz { display: grid; grid-template-columns: 12px auto 1fr; gap: 8px; align-items: center; line-height: 1.7; }
+.wyk-pp-wiersz i { height: 2px; width: 12px; }
+.wyk-pp-wiersz i.pusty { background: transparent; }
+.wyk-pp-wiersz b { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.wyk-pp-wiersz span { color: var(--tekst-2); }
+.wyk-pp-wiersz.suma { border-top: 1px solid var(--linia); margin-top: 3px; padding-top: 3px; }
+.wykresy-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 8px 28px; max-width: 1100px; }
+.wykresy-2 .wyk { margin-bottom: 10px; }
+.karta-wyk { border: 1px solid var(--linia); border-radius: 6px; padding: 14px 16px 6px; margin-bottom: 18px; max-width: 1100px; }
+.karta-wyk h3 { margin: 0 0 2px; font-size: 13px; font-weight: 600; }
+.karta-wyk .pod { font-size: 11px; color: var(--tekst-2); margin-bottom: 10px; }
+.ranking .wyk-lista { display: grid; gap: 2px; }
+.wyk-wiersz { all: unset; display: grid; grid-template-columns: minmax(120px, 200px) 1fr 150px; gap: 12px; align-items: center; padding: 5px 6px; border-radius: 4px; cursor: pointer; }
+.wyk-wiersz:hover, .wyk-wiersz:focus-visible { background: var(--tlo-2); }
+.wyk-wiersz .nazwa { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wyk-wiersz .paski { display: grid; gap: 2px; }
+.wyk-wiersz .paski i { display: block; height: 8px; border-radius: 0 4px 4px 0; transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+.wyk-wiersz .wartosc { text-align: right; font-variant-numeric: tabular-nums; color: var(--tekst-2); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .wyk-wiersz .paski i { transition: none; } }
+@media (max-width: 700px) { .wykresy-2 { grid-template-columns: 1fr; } .wyk-wiersz { grid-template-columns: 100px 1fr 90px; } }
+.wyk-odstep { height: 28px; } /* miejsce legendy, której wykres jednej serii nie ma */

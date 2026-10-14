@@ -351,3 +351,30 @@ def wydatki(con, rodzaj=None, klient=None, dokument=None, zrodlo=None, q=None, o
 
 def reguly(con) -> list[dict]:
     return [dict(r) for r in con.execute('SELECT * FROM reguly ORDER BY typ, klucz')]
+
+
+def historia_salda(con) -> list[dict]:
+    """Saldo gotówki (główny + online) na koniec każdego dnia, z przeniesieniem salda na dni bez operacji."""
+    from datetime import date, timedelta
+    na_dzien = {}
+    for r in con.execute("SELECT rachunek, data_ksiegowania, saldo_po FROM operacje WHERE rachunek IN ('główny', 'online')"
+                         ' AND saldo_po IS NOT NULL ORDER BY data_ksiegowania, data_pliku DESC, wiersz ASC'):
+        na_dzien.setdefault((r[0], r[1]), r[2])   # pierwszy wiersz dnia w pliku ING = ostatnia operacja dnia
+    if not na_dzien:
+        return []
+    dni = sorted({d for _, d in na_dzien})
+    d, koniec = date.fromisoformat(dni[0]), date.fromisoformat(dni[-1])
+    ostatnie, wynik = {}, []
+    for rach in ('główny', 'online'):   # saldo przed pierwszą operacją rachunku = saldo po niej minus jej kwota
+        r = con.execute('SELECT saldo_po - kwota FROM operacje WHERE rachunek = ? AND saldo_po IS NOT NULL'
+                        ' ORDER BY data_ksiegowania, data_pliku DESC, wiersz DESC LIMIT 1', (rach,)).fetchone()
+        if r:
+            ostatnie[rach] = r[0]
+    while d <= koniec:
+        s = d.isoformat()
+        for rach in ('główny', 'online'):
+            if (rach, s) in na_dzien:
+                ostatnie[rach] = na_dzien[(rach, s)]
+        wynik.append({'x': s, 'y': sum(ostatnie.values()), 'glowny': ostatnie.get('główny', 0), 'online': ostatnie.get('online', 0)})
+        d += timedelta(days=1)
+    return wynik
