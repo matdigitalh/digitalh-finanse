@@ -58,7 +58,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | gotowy 2026-10-14 |
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
 | 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
-| 5 | Prognoza gotówki 13 tyg. (gotowa 2026-10-15), rejestr umów (nie zrobiony), ekran Cash flow | częściowo |
+| 5 | Prognoza gotówki 13 tyg., rejestr umów z alertami (`finanse/umowy.py`), ekran Cash flow | gotowy 2026-10-15 |
 | 6 | Pulpit jak w Budget Studio, eksport | |
 
 ## Dopasowanie wpłat (etap 2)

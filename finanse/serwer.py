@@ -159,6 +159,9 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania_budzet.rozjazdy(con)
             elif sciezka == 'budzet/historia':
                 dane = zapytania_budzet.historia(con)
+            elif sciezka == 'umowy':
+                from . import umowy
+                dane = umowy.lista(con)
             elif sciezka == 'cashflow':
                 dane = cashflow.prognoza(con)
             elif sciezka == 'rentownosc/klienci':

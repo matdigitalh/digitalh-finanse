@@ -269,6 +269,8 @@ def ustawienia_z_wpisow(con, wpisy: list[dict]):
 
 def zbuduj(con, wpisy: list[dict]) -> dict:
     ustawienia_z_wpisow(con, wpisy)
+    from . import umowy
+    umowy.zapisz_do_bazy(con, wpisy)
     model = odswiez_import()
     if not model:
         return {'arkuszy': 0}

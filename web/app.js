@@ -53,7 +53,7 @@ const PODSTRONY = {
   ],
   budzet: [{ grupa: 'Budżet' }, { nazwa: 'Arkusze budżetu', hash: '#/budzet/arkusze' },
     { nazwa: 'Rozjazdy z Budget Studio', hash: '#/budzet/rozjazdy' }, { nazwa: 'Historia zmian planów', hash: '#/budzet/historia' },
-    { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia' },
+    { nazwa: 'Umowy z klientami', hash: '#/budzet/umowy' }, { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia' },
     { grupa: 'Foldery klientów' }, { nazwa: 'Klienci', hash: '#/budzet' },
     { grupa: 'Wydatki z banku' }, { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki' },
     { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany' },

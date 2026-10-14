@@ -34,6 +34,7 @@ TYPY = {
     'bud': ('op',),                           # zmiana w budżecie (arkusz, wiersz, płatność, przenieś, decyzja planu)
     'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
+    'umowa': ('id',),                         # umowa z klientem (rejestr umów)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'przenies', 'decyzja_planu')
@@ -53,6 +54,8 @@ def sprawdz(typ: str, dane) -> dict:
         if dane.get('klucz') not in USTAWIENIA or dane.get('wartosc') not in USTAWIENIA[dane.get('klucz')]:
             raise ValueError('nieznane ustawienie')
         return {'klucz': dane['klucz'], 'wartosc': dane['wartosc']}
+    if typ == 'umowa':
+        return _sprawdz_umowe(dane)
     if typ == 'estymata':
         try:
             u = float(str(dane.get('udzial')).replace(',', '.'))
@@ -172,3 +175,30 @@ def _sprawdz_bud(d: dict) -> dict:
     if d.get('data'):
         wynik['data'] = str(d['data'])[:10]
     return wynik
+
+
+def _sprawdz_umowe(d: dict) -> dict:
+    if not isinstance(d.get('id'), str) or not d['id'] or len(d['id']) > 60:
+        raise ValueError('brak identyfikatora umowy')
+    if d.get('usun'):
+        return {'id': d['id'], 'usun': True}
+    data = lambda k: d.get(k) if re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(d.get(k) or '')) else None
+    klient = str(d.get('klient') or '').strip()[:80]
+    if not klient:
+        raise ValueError('brak klienta')
+    rodzaj = d.get('rodzaj') if d.get('rodzaj') in ('okreslony', 'nieokreslony') else None
+    if not rodzaj:
+        raise ValueError('rodzaj: określony albo nieokreślony')
+    if rodzaj == 'okreslony' and not data('do'):
+        raise ValueError('umowa na czas określony potrzebuje daty końca')
+    try:
+        okres = int(d.get('wypowiedzenie_mies') or 0)
+        alert = int(d.get('alert_dni') or 30)
+        wartosc = int(d.get('wartosc_mies') or 0)
+    except (TypeError, ValueError):
+        raise ValueError('okres wypowiedzenia, alert i wartość muszą być liczbami')
+    if not (0 <= okres <= 24 and 0 <= alert <= 365 and 0 <= wartosc < 10 ** 10):
+        raise ValueError('wartości poza zakresem')
+    return {'id': d['id'], 'klient': klient, 'zawarta': data('zawarta'), 'rodzaj': rodzaj, 'do': data('do'),
+            'wypowiedzenie_mies': okres, 'koniec_miesiaca': bool(d.get('koniec_miesiaca', True)), 'przedluzenie': bool(d.get('przedluzenie')),
+            'wartosc_mies': wartosc, 'alert_dni': alert, 'uwagi': str(d.get('uwagi') or '')[:300]}

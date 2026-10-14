@@ -103,6 +103,7 @@ CREATE TABLE bud_historia (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT,
 -- Łączenie plan ↔ faktura / dokument ↔ bank (laczenie.py) i etap wynikający z banku.
 CREATE TABLE bud_powiazanie (platnosc TEXT, typ TEXT, ref TEXT, kwota INTEGER, metoda TEXT, pewnosc TEXT);
 CREATE INDEX bud_powiazanie_p ON bud_powiazanie(platnosc);
+CREATE TABLE umowy (id TEXT PRIMARY KEY, dane TEXT);
 CREATE TABLE bud_rozjazd (rodzaj TEXT, ref TEXT, kwota INTEGER, opis TEXT);
 CREATE TABLE bud_stan (platnosc TEXT PRIMARY KEY, etap TEXT, zaplacono INTEGER, data_zaplaty TEXT, termin_efektywny TEXT, uwaga TEXT);
 CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), stan TEXT, operacja_id INTEGER);
