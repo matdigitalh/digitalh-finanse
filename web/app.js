@@ -977,6 +977,32 @@ async function pokaz() {
   }
 }
 
+// ---------- Tryb jasny / ciemny ----------
+// Wybór zapamiętany w tej przeglądarce; bez wyboru obowiązuje ustawienie systemu.
+const IKONA_SLONCE = 'M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z';
+const IKONA_KSIEZYC = 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z';
+function trybCiemny() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function pokazPrzelacznik() {
+  const ciemny = trybCiemny();
+  $('#ikona-trybu-sciezka').setAttribute('d', ciemny ? IKONA_SLONCE : IKONA_KSIEZYC);
+  $('#etykieta-trybu').textContent = ciemny ? 'Tryb jasny' : 'Tryb ciemny';
+}
+(() => {
+  try { const z = localStorage.getItem('finanse-tryb'); if (z === 'dark' || z === 'light') document.documentElement.dataset.theme = z; } catch (e) { /* bez pamięci wyboru */ }
+  pokazPrzelacznik();
+  $('#przelacz-tryb').onclick = () => {
+    const nowy = trybCiemny() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = nowy;
+    try { localStorage.setItem('finanse-tryb', nowy); } catch (e) { /* bez pamięci wyboru */ }
+    pokazPrzelacznik();
+    pokaz();   // wykresy czytają kolory z tokenów, więc rysujemy je na nowo
+  };
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { pokazPrzelacznik(); pokaz(); });
+})();
+
 window.addEventListener('hashchange', pokaz);
 zbudujMenu();
 sprawdzStan().then(pokaz).catch(e => komunikat(e.message, true));
