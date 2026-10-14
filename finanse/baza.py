@@ -45,6 +45,26 @@ CREATE TABLE wyniki_biura (
   wartosc_poprzednia INTEGER, plik TEXT NOT NULL, wiersz INTEGER NOT NULL,
   PRIMARY KEY (okres, zestawienie, wiersz)
 );
+
+-- Etap 2: liczone przy odbudowie (dopasowanie.py), nie importowane.
+CREATE TABLE dopasowania (
+  operacja_id INTEGER NOT NULL REFERENCES operacje(id), numer TEXT NOT NULL REFERENCES faktury(numer),
+  kwota INTEGER NOT NULL, metoda TEXT NOT NULL, pewnosc TEXT NOT NULL, zrodlo TEXT NOT NULL
+);
+CREATE INDEX dopasowania_op ON dopasowania(operacja_id);
+CREATE INDEX dopasowania_fv ON dopasowania(numer);
+
+-- Każda wpłata od klienta (wpływ, nie ruch wewnętrzny): stan dopasowania.
+CREATE TABLE wplaty (
+  operacja_id INTEGER PRIMARY KEY REFERENCES operacje(id), stan TEXT NOT NULL, pewnosc TEXT,
+  nadplata INTEGER NOT NULL DEFAULT 0, uwaga TEXT, podpowiedz TEXT, wpis TEXT
+);
+
+-- Każda faktura (bez korekt): należność po korektach, zapłacono z banku, wiekowanie na dzień stanu.
+CREATE TABLE faktury_stan (
+  numer TEXT PRIMARY KEY REFERENCES faktury(numer), naleznosc INTEGER, korekty INTEGER, zaplacono INTEGER,
+  pozostalo INTEGER, stan TEXT, dni_po_terminie INTEGER, przedzial TEXT, ostatnia_wplata TEXT, uwaga TEXT, wpis TEXT
+);
 """
 
 

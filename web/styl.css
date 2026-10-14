@@ -137,3 +137,30 @@ tfoot td { font-weight: 600; background: var(--tlo-2); position: sticky; bottom:
   .stopka { padding: 0 16px; }
   .stopka .szukaj { width: 120px; }
 }
+
+/* Etap 2: należności, dopasowania */
+.chip.ostrzezenie { background: var(--ostrzezenie-tlo); color: var(--ostrzezenie); border-color: transparent; }
+a.kafel.klik { color: inherit; display: block; }
+a.kafel.klik:hover { border-color: var(--akcent); }
+.wartosc.minus { color: var(--minus); }
+.wiekowanie { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; max-width: 1100px; margin: -8px 0 26px; background: var(--linia); border: 1px solid var(--linia); border-radius: 6px; overflow: hidden; }
+.wiekowanie a { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; background: var(--tlo); color: var(--tekst); }
+.wiekowanie a:hover { background: var(--tlo-2); }
+.wiekowanie span { font-size: 11px; color: var(--tekst-2); }
+.wiekowanie b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wiekowanie a.po b { color: var(--minus); }
+.wiekowanie small { font-size: 11px; color: var(--tekst-2); }
+h2.sekcja { font-size: 15px; font-weight: 600; margin: 26px 0 8px; }
+.tabela-ramka.niska { max-height: none; margin-bottom: 8px; }
+.akcje { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.akcje button, .akcje-wiersz button, .akcje select { height: 30px; padding: 0 12px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--akcent); cursor: pointer; font: inherit; }
+.akcje button.glowny { background: var(--kobalt); border-color: var(--kobalt); color: #fff; }
+.akcje-wiersz { text-align: right; }
+.akcje-wiersz button { height: 26px; margin-left: 6px; }
+.karta h3 { margin: 20px 0 8px; font-size: 13px; font-weight: 600; }
+.karta .lista { margin: 0; padding-left: 18px; line-height: 1.7; }
+.wybory { max-height: 280px; overflow-y: auto; border: 1px solid var(--linia); border-radius: 4px; }
+.wybor { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid var(--linia); cursor: pointer; line-height: 1.45; }
+.wybor:last-child { border-bottom: none; }
+.wybor:hover { background: var(--tlo-2); }
+@media (max-width: 700px) { .wiekowanie { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

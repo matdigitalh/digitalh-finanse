@@ -1,9 +1,10 @@
 """Odbudowa bazy z plików źródłowych. Buduje do pliku tymczasowego i podmienia atomowo,
 więc przerwana odbudowa nigdy nie zostawia połowicznej bazy."""
+import hashlib
 import os
 from pathlib import Path
 
-from . import baza, konfig, zmiany
+from . import baza, dopasowanie, konfig, zmiany
 from .importy import fakturownia, ing, rejestr_biura, wyniki_biura
 from .importy.wspolne import pliki, sha256, teraz
 
@@ -16,10 +17,17 @@ ZRODLA = [
 ]
 
 
+def odcisk_kodu() -> str:
+    """Układ bazy i zasady dopasowania. Po aktualizacji apki baza przebudowuje się sama, bez klikania."""
+    h = hashlib.sha256(baza.SCHEMAT.encode('utf-8'))
+    h.update(Path(dopasowanie.__file__).read_bytes())
+    return h.hexdigest()[:16]
+
+
 def odcisk_zrodel() -> str:
-    """Zmienia się, gdy w Dane/ pojawi się nowy lub inny plik albo nowy wpis w zmianach."""
+    """Zmienia się, gdy w Dane/ pojawi się nowy lub inny plik, nowy wpis w zmianach albo nowa wersja apki."""
     dane = konfig.katalog_dane()
-    czesci = []
+    czesci = [f'kod:{odcisk_kodu()}']
     for _, wzorzec, _, _ in ZRODLA:
         for p in pliki(dane, wzorzec):
             czesci.append(f'{p.name}:{p.stat().st_size}:{int(p.stat().st_mtime)}')
@@ -60,6 +68,14 @@ def odbuduj(cel: Path | None = None) -> dict:
                     raport['bledy'].append(f'{p.name}: {e}')
         wpisy, ostrzezenia = zmiany.wczytaj()
         raport['bledy'] += ostrzezenia
+        con.execute('SAVEPOINT dopasowanie')
+        try:
+            raport['dopasowanie'] = dopasowanie.policz(con, wpisy)
+            con.execute('RELEASE dopasowanie')
+        except Exception as e:  # błąd dopasowania nie blokuje podglądu danych z etapu 1
+            con.execute('ROLLBACK TO dopasowanie')
+            con.execute('RELEASE dopasowanie')
+            raport['bledy'].append(f'Dopasowanie wpłat: {e}')
         for k, v in (('odbudowa', teraz()), ('odcisk', odcisk_zrodel()), ('mac', konfig.nazwa_maca()),
                      ('zmian', str(len(wpisy))), ('bledy', '\n'.join(raport['bledy']))):
             con.execute('INSERT INTO meta VALUES (?,?)', (k, v))

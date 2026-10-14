@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import baza, konfig, odbudowa, zapytania
+from . import baza, konfig, odbudowa, zapytania, zmiany
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
 BLOKADA = threading.Lock()
@@ -95,9 +95,17 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.operacje(con, **{k: q.get(k) for k in ('rachunek', 'kierunek', 'wewnetrzne', 'q', 'od', 'do', 'strona', 'ile', 'sortuj')},
                                           malejaco=q.get('kolejnosc', 'malejaco') == 'malejaco')
             elif sciezka == 'faktury':
-                dane = zapytania.faktury(con, **{k: q.get(k) for k in ('status', 'q', 'od', 'do', 'strona', 'ile')})
+                dane = zapytania.faktury(con, **{k: q.get(k) for k in ('status', 'q', 'od', 'do', 'strona', 'ile', 'bank')})
             elif sciezka == 'zakupy':
                 dane = zapytania.zakupy(con, **{k: q.get(k) for k in ('rejestr', 'q', 'od', 'do', 'strona', 'ile')})
+            elif sciezka == 'naleznosci':
+                dane = zapytania.naleznosci(con, **{k: q.get(k) for k in ('przedzial', 'po_terminie', 'q', 'strona', 'ile')})
+            elif sciezka == 'wplaty':
+                dane = zapytania.wplaty(con, **{k: q.get(k) for k in ('stan', 'q', 'strona', 'ile') if q.get(k)})
+            elif sciezka == 'wplata':
+                dane = zapytania.wplata(con, q.get('id', ''))
+            elif sciezka == 'do-weryfikacji':
+                dane = zapytania.do_weryfikacji(con)
             elif sciezka == 'importy':
                 dane = zapytania.importy(con)
             elif sciezka == 'wyniki-biura':
@@ -117,7 +125,35 @@ class Obsluga(BaseHTTPRequestHandler):
         if u.path == '/api/odbuduj':
             raport = odbuduj_jesli_trzeba(wymus=True)
             return self._json({'ok': True, 'bledy': raport['bledy'] if raport else []})
+        if u.path == '/api/zmiana':
+            return self._zmiana()
         self._json({'blad': 'nieznany adres'}, 404)
+
+    def _zmiana(self):
+        """Decyzja Mata (połącz, bez faktury, zatwierdź, odrzuć, poza bankiem, cofnij): dopisanie do pliku zmian
+        tego Maca i przeliczenie bazy. Odwołania sprawdzane w bazie, żeby do pliku nie trafiło nic zmyślonego."""
+        try:
+            dlugosc = int(self.headers.get('Content-Length', '0'))
+            if not 0 < dlugosc <= 20000:
+                raise ValueError('pusty albo za duży wpis')
+            cialo = json.loads(self.rfile.read(dlugosc))
+            typ = cialo.get('typ')
+            dane = zmiany.sprawdz(typ, cialo.get('dane'))
+            con = baza.polacz(konfig.plik_bazy(), tylko_odczyt=True)
+            try:
+                if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje o JOIN wplaty w ON w.operacja_id = o.id'
+                                                          ' WHERE o.klucz = ?', (dane['operacja'],)).fetchone():
+                    raise ValueError('nie ma takiej wpłaty')
+                for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
+                    if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
+                        raise ValueError(f'nie ma faktury {n}')
+            finally:
+                con.close()
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            return self._json({'blad': str(e)}, 400)
+        wpis = zmiany.zapisz(typ, dane)
+        raport = odbuduj_jesli_trzeba(wymus=True)
+        self._json({'ok': True, 'wpis': wpis['id'], 'bledy': raport['bledy'] if raport else []})
 
     def do_PUT(self):
         self._wyslij(405, b'', 'text/plain')

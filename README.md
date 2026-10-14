@@ -39,7 +39,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 
 ```bash
 .venv/bin/python -m unittest discover -s testy -t .        # zmyślone dane
-.venv/bin/python -m unittest testy_odbioru.test_etap1      # prawdziwe pliki, baza w katalogu tymczasowym
+.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2   # prawdziwe pliki, baza w katalogu tymczasowym
 ```
 
 ## Formaty plików (sprawdzone 14.10.2026, różnice wobec briefu)
@@ -55,8 +55,20 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | Etap | Zakres | Stan |
 |---|---|---|
 | 1 | Import, księga operacji, rama UI, Płatności, Historia importów | gotowy 2026-10-14 |
-| 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | |
+| 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | gotowy 2026-10-14 |
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | |
 | 4 | Wynik zarządczy, ekran Rentowność | |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów, ekran Cash flow | |
 | 6 | Pulpit jak w Budget Studio, eksport | |
+
+## Dopasowanie wpłat (etap 2)
+
+Liczone od zera przy każdej odbudowie (`finanse/dopasowanie.py`), w kolejności od najpewniejszej metody:
+ręczne połączenie, numer faktury w tytule, numer KSeF (bez NIP-u i sumy kontrolnej, bo klienci podają kolejne
+numery w skrócie), reszta wpłaty równa innej fakturze nabywcy, kwota + nazwa, suma 2–6 faktur nabywcy, kwota + data.
+Dwie pierwsze metody to „pewne”, reszta „prawdopodobne” i czeka na potwierdzenie w „Do weryfikacji”.
+Numer cudzej, już opłaconej faktury w tytule jest traktowany jako pomyłka klienta. Korekty pomniejszają
+należność faktury pierwotnej. Wiekowanie liczone na ostatni dzień w eksporcie ING, nie na dziś.
+
+Decyzje Mata (`polacz`, `bez_faktury`, `zatwierdz`, `odrzuc`, `poza_bankiem`, `cofnij`) idą do pliku zmian tego
+Maca. Zmiana kodu dopasowania albo układu bazy sama wymusza przebudowę bazy przy starcie.

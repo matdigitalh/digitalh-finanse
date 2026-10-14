@@ -16,6 +16,35 @@ def _plik_tego_maca() -> Path:
     return konfig.katalog_prywatny(konfig.katalog_zmian()) / f'{konfig.nazwa_maca()}.jsonl'
 
 
+# Dozwolone wpisy i ich wymagane pola (etap 2: decyzje o wpłatach i fakturach).
+TYPY = {
+    'polacz': ('operacja', 'faktury'),        # połącz wpłatę z fakturami
+    'bez_faktury': ('operacja', 'powod'),     # wpłata nie dotyczy faktury (zwrot, cashback, odsetki)
+    'zatwierdz': ('operacja', 'faktura'),     # potwierdź dopasowanie „prawdopodobne”
+    'odrzuc': ('operacja', 'faktura'),        # odrzuć dopasowanie automatu
+    'poza_bankiem': ('faktura', 'powod'),     # faktura opłacona inaczej (kompensata, gotówka)
+    'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
+}
+
+
+def sprawdz(typ: str, dane) -> dict:
+    """Waliduje wpis z interfejsu. Zwraca dane tylko z dozwolonymi polami."""
+    if typ not in TYPY or not isinstance(dane, dict):
+        raise ValueError('nieznany rodzaj wpisu')
+    czyste = {}
+    for pole in TYPY[typ]:
+        v = dane.get(pole)
+        if pole == 'faktury':
+            if not isinstance(v, list) or not v or not all(isinstance(x, str) and 0 < len(x) <= 60 for x in v) or len(v) > 30:
+                raise ValueError('lista faktur jest pusta albo nieprawidłowa')
+        elif pole == 'powod':
+            v = str(v or '').strip()[:200]
+        elif not isinstance(v, str) or not v or len(v) > 300:
+            raise ValueError(f'brak pola {pole}')
+        czyste[pole] = v
+    return czyste
+
+
 def zapisz(typ: str, dane: dict) -> dict:
     """Dopisuje jeden wpis. Zapis jednym write + fsync, plik 600."""
     wpis = {'czas': datetime.now(timezone.utc).isoformat(timespec='microseconds'), 'id': uuid.uuid4().hex,

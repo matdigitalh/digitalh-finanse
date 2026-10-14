@@ -26,8 +26,8 @@ const MENU = [
 const PODSTRONY = {
   platnosci: [
     { grupa: 'Płatności oczekujące' },
-    { nazwa: 'Do połączenia', etap: 2 },
-    { nazwa: 'Do weryfikacji', etap: 2 },
+    { nazwa: 'Do połączenia', hash: '#/platnosci/do-polaczenia', licznik: 'do_polaczenia' },
+    { nazwa: 'Do weryfikacji', hash: '#/platnosci/do-weryfikacji', licznik: 'do_weryfikacji' },
     { grupa: 'Bank ING' },
     { nazwa: 'Wszystkie operacje', hash: '#/platnosci/bank' },
     { nazwa: 'Wpływy', hash: '#/platnosci/bank?kierunek=wplywy&wewnetrzne=bez' },
@@ -35,8 +35,8 @@ const PODSTRONY = {
     { nazwa: 'Ruch wewnętrzny i VAT', hash: '#/platnosci/bank?wewnetrzne=tylko' },
     { grupa: 'Dokumenty' },
     { nazwa: 'Faktury sprzedażowe', hash: '#/platnosci/faktury' },
-    { nazwa: 'Nadal nieopłacone', etap: 2 },
-    { nazwa: 'Po terminie płatności', etap: 2 },
+    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/naleznosci' },
+    { nazwa: 'Po terminie płatności', hash: '#/platnosci/naleznosci?po_terminie=1' },
     { nazwa: 'Rejestr zakupów (biuro)', hash: '#/platnosci/zakupy' },
     { grupa: 'Dane' },
     { nazwa: 'Historia importów', hash: '#/platnosci/importy' },
@@ -83,6 +83,19 @@ async function odbuduj() {
   if (!r.ok) return komunikat('Nie udało się odświeżyć danych.', true);
   await sprawdzStan();
   pokaz();
+}
+
+// Decyzja Mata: dopisanie do pliku zmian tego Maca i przeliczenie. Zwraca true, gdy się udało.
+async function zmiana(typ, dane) {
+  const r = await fetch('/api/zmiana', { method: 'POST', headers: { 'X-Finanse': '1', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ typ, dane }) });
+  const w = await r.json().catch(() => ({}));
+  if (!r.ok) { komunikat(w.blad || 'Nie udało się zapisać decyzji.', true); return false; }
+  $('#karta').hidden = true;
+  await sprawdzStan();
+  await pokaz();
+  komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.');
+  return true;
 }
 
 function komunikat(tekst, blad = false, przycisk = null) {
@@ -148,7 +161,8 @@ function otworzWysuw(id) {
   w.innerHTML = `<h2>${nazwa}</h2>` + (PODSTRONY[id] || []).map(p => {
     if (p.grupa) return `<h3>${esc(p.grupa)}</h3>`;
     if (p.etap) return `<a class="nieaktywny">${esc(p.nazwa)} <span class="etap">etap ${p.etap}</span></a>`;
-    return `<a href="${p.hash}">${esc(p.nazwa)}</a>`;
+    const n = p.licznik && STAN?.naleznosci ? STAN.naleznosci[p.licznik] : 0;
+    return `<a href="${p.hash}">${esc(p.nazwa)}${n ? ` <span class="liczba">${n}</span>` : ''}</a>`;
   }).join('');
   w.hidden = false;
   document.body.classList.add('wysuw-otwarty');
@@ -222,6 +236,16 @@ function pokazKarte(tytul, pola, zrodlo) {
   $('.zamknij', k).onclick = () => { k.hidden = true; };
 }
 
+const chipBank = x => {
+  if (!x.stan_bank) return '';
+  if (x.stan_bank === 'opłacona') return '<span class="chip plus">zapłacona</span>';
+  if (x.stan_bank === 'opłacona poza bankiem') return '<span class="chip plus">poza bankiem</span>';
+  if (x.stan_bank === 'częściowo') return '<span class="chip ostrzezenie">częściowo</span>';
+  return x.dni_po_terminie > 0 ? `<span class="chip minus">${x.dni_po_terminie} dni po terminie</span>` : '<span class="chip neutral">czeka</span>';
+};
+const STAN_WPLATY = { dopasowana: 'połączona z fakturą', nieznana: 'do połączenia', sprzed_eksportu: 'faktura sprzed eksportu',
+  bez_faktury: 'nie dotyczy faktury' };
+
 const chipKwota = kwota => kwota > 0 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>';
 
 // ---------- widoki ----------
@@ -242,7 +266,8 @@ const WIDOKI = {
         <div class="kafel"><div class="tytul">Faktury sprzedażowe</div><div class="wartosc">${s.liczby.faktury}</div><div class="dop">z najnowszego eksportu Fakturowni</div></div>
         <div class="kafel"><div class="tytul">Dokumenty kosztowe</div><div class="wartosc">${s.liczby.zakupy}</div><div class="dop">z rejestru zakupów biura</div></div>
       </div>
-      <p class="notka">Kafle z należnościami, płatnościami do zapłaty i wykres gotówki na 6 miesięcy pojawią się w kolejnych etapach, gdy aplikacja zacznie sama łączyć wpłaty z fakturami.</p>`;
+      ${kafleNaleznosci(s.naleznosci)}
+      <p class="notka">Wykres gotówki na 6 miesięcy i płatności do zapłaty pojawią się w kolejnych etapach.</p>`;
   },
 
   async 'platnosci/bank'(p) {
@@ -257,6 +282,7 @@ const WIDOKI = {
       { id: 'kwota', naglowek: 'Kwota PLN', sort: 'kwota', liczba: true, wartosc: x => zl(x.kwota, false), klasa: x => x.kwota > 0 ? 'plus' : 'minus' },
       { naglowek: 'Saldo po', liczba: true, wartosc: x => zl(x.saldo_po, false), klasa: () => 'szary' },
       { naglowek: 'Ruch', html: x => x.wewnetrzna ? '<span class="chip neutral">wewnętrzny</span>' : '' },
+      { naglowek: 'Faktura', html: x => x.faktury ? esc(x.faktury) : x.stan_wplaty === 'nieznana' ? '<span class="chip ostrzezenie">do połączenia</span>' : '', klasa: () => 'szary' },
     ];
     const tytul = p.wewnetrzne === 'tylko' ? 'Ruch wewnętrzny i VAT' : p.kierunek === 'wplywy' ? 'Wpływy' : p.kierunek === 'obciazenia' ? 'Obciążenia' : 'Wszystkie operacje';
     return `<h1>Bank ING</h1><div class="okruszki">Płatności / ${tytul}</div>
@@ -268,7 +294,7 @@ const WIDOKI = {
       </div>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, sortuj, kierunek,
         stopkaSum: { kwota: `<span class="plus">${zl(w.wplywy, false)}</span><br><span class="minus">${zl(w.obciazenia, false)}</span>` },
-        onWiersz: x => pokazKarte(x.kontrahent || x.opis, [
+        onWiersz: x => x.stan_wplaty ? kartaWplaty(x.id) : pokazKarte(x.kontrahent || x.opis, [
           ['Kwota', zl(x.kwota)], ['Rachunek', `${x.rachunek} (${x.nrb.slice(-4)})`], ['Data księgowania', dataPl(x.data_ksiegowania)],
           ['Data transakcji', dataPl(x.data_transakcji)], ['Kwota oryginalna', x.kwota_oryg != null ? `${zl(x.kwota_oryg, false)} ${x.waluta_oryg}` : ''],
           ['Kontrahent', x.kontrahent], ['Rachunek kontrahenta', x.rachunek_kontrahenta], ['Opis', x.opis], ['Tytuł', x.tytul],
@@ -280,7 +306,8 @@ const WIDOKI = {
   async 'platnosci/faktury'(p) {
     const w = await api('faktury', p);
     const kol = [
-      { naglowek: 'Etap', html: x => x.status === 'Opłacona' ? '<span class="chip plus">opłacona</span>' : `<span class="chip neutral">${esc(x.status.toLowerCase())}</span>` },
+      { naglowek: 'Fakturownia', html: x => x.status === 'Opłacona' ? '<span class="chip plus">opłacona</span>' : `<span class="chip neutral">${esc(x.status.toLowerCase())}</span>` },
+      { naglowek: 'W banku', html: chipBank },
       { naglowek: 'Numer', wartosc: x => x.numer },
       { naglowek: 'Nabywca', wartosc: x => x.nabywca },
       { naglowek: 'NIP', wartosc: x => x.nip, klasa: () => 'szary' },
@@ -294,14 +321,16 @@ const WIDOKI = {
     return `<h1>Faktury sprzedażowe</h1><div class="okruszki">Płatności / Faktury z Fakturowni</div>
       <div class="filtry">
         ${filtr('status', 'Status w Fakturowni', [['', 'Wszystkie'], ['Wystawiona', 'Wystawiona'], ['Opłacona', 'Opłacona']], p.status)}
+        ${filtr('bank', 'Stan w banku', [['', 'Wszystkie'], ['opłacona', 'Zapłacone'], ['nieopłacona', 'Nieopłacone'], ['częściowo', 'Częściowo'], ['opłacona poza bankiem', 'Poza bankiem']], p.bank)}
         ${filtrData('od', 'Wystawione od', p.od)}${filtrData('do', 'do', p.do)}
       </div>
-      <p class="notka">Status pochodzi z Fakturowni i bywa nieodhaczony. W etapie 2 aplikacja sama sprawdzi wpłaty w banku.</p>
+      <p class="notka">„Fakturownia” to status odhaczony ręcznie. „W banku” liczy aplikacja z wpłat na ING, na dzień ${dataPl(STAN.naleznosci?.dzien_stanu)}.</p>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1,
         stopkaSum: { netto: zl(w.netto, false), brutto: zl(w.brutto, false) },
         onWiersz: x => pokazKarte(x.numer, [
           ['Nabywca', x.nabywca], ['NIP', x.nip], ['Status', x.status], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)], ['Brutto', zl(x.brutto)],
-          ['Opłacono (Fakturownia)', zl(x.oplacono)], ['Wystawiona', dataPl(x.data_wystawienia)], ['Data sprzedaży', dataPl(x.data_sprzedazy)],
+          ['Opłacono (Fakturownia)', zl(x.oplacono)], ['W banku', x.stan_bank ? `${x.stan_bank}, zapłacono ${zl(x.zaplacono)}, zostało ${zl(x.pozostalo)}` : ''],
+          ['Wpłaty', (x.wplaty || '').split('; ').filter(Boolean).map(s => { const [d, k] = s.split(' '); return `${dataPl(d)}: ${zl(+k)}`; }).join('\n')], ['Wystawiona', dataPl(x.data_wystawienia)], ['Data sprzedaży', dataPl(x.data_sprzedazy)],
           ['Termin płatności', dataPl(x.termin)], ['Numer KSeF', x.ksef], ['Korekta', x.korekta ? `tak, do ${x.oryginal}` : ''],
           ['Pozycje', (x.pozycje || '').replaceAll(' | ', '\n')], ['Uwagi', x.uwagi]], `${x.plik}, wiersz ${x.wiersz}`) })}
       ${stopka(w, p)}`;
@@ -351,6 +380,152 @@ const WIDOKI = {
   },
 };
 
+// ---------- Etap 2: należności i dopasowania ----------
+const PRZEDZIALY = ['przed terminem', '1–30 dni', '31–60 dni', '61–90 dni', 'ponad 90 dni'];
+
+function kafleNaleznosci(n) {
+  if (!n) return '';
+  const p = n.przedzialy;
+  return `<div class="kafle">
+      <div class="kafel"><div class="tytul">Należności razem</div><div class="wartosc">${zl(n.razem)}</div>
+        <div class="dop">faktury nieopłacone w banku, stan na ${dataPl(n.dzien_stanu)}</div></div>
+      <a class="kafel klik" href="#/platnosci/naleznosci?po_terminie=1"><div class="tytul">Po terminie</div><div class="wartosc minus">${zl(n.po_terminie)}</div>
+        <div class="dop">${n.nabywcy_po_terminie.length} nabywców, najstarsza ${Math.max(0, ...n.nabywcy_po_terminie.map(x => x.najstarsza))} dni</div></a>
+      <a class="kafel klik" href="#/platnosci/do-polaczenia"><div class="tytul">Wpłaty do połączenia</div><div class="wartosc">${n.do_polaczenia}</div>
+        <div class="dop">wpływy, których aplikacja nie umie przypisać</div></a>
+      <a class="kafel klik" href="#/platnosci/do-weryfikacji"><div class="tytul">Do weryfikacji</div><div class="wartosc">${n.do_weryfikacji}</div>
+        <div class="dop">dopasowania do potwierdzenia i rozjazdy z Fakturownią</div></a>
+    </div>
+    <div class="wiekowanie">${PRZEDZIALY.map(x => `<a href="#/platnosci/naleznosci?przedzial=${encodeURIComponent(x)}" class="${x === 'przed terminem' ? '' : 'po'}">
+      <span>${x}</span><b>${zl(p[x][1], false)}</b><small>${p[x][0]} faktur</small></a>`).join('')}</div>`;
+}
+
+async function kartaWplaty(id) {
+  const d = await api('wplata', { id });
+  const o = d.operacja;
+  const k = $('#karta');
+  const dop = d.dopasowania.map(x => `<li><b>${esc(x.numer)}</b> ${zl(x.kwota)} <span class="szary">${esc(x.metoda)}${x.pewnosc === 'prawdopodobne' ? ', do potwierdzenia' : ''}</span></li>`).join('');
+  const otwarte = d.otwarte.map(f => `<label class="wybor"><input type="checkbox" value="${esc(f.numer)}"${f.rowna_kwota && f.podobny ? ' checked' : ''}>
+      <span><b>${esc(f.numer)}</b> ${esc(f.nabywca)}<br><span class="szary">wystawiona ${dataPl(f.data_wystawienia)}, zostało ${zl(f.pozostalo)}${f.rowna_kwota ? ', ta sama kwota' : ''}</span></span></label>`).join('');
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${esc(o.kontrahent || o.opis)}</h2>
+    <dl><dt>Kwota</dt><dd class="plus">${zl(o.kwota)}</dd><dt>Data</dt><dd>${dataPl(o.data_ksiegowania)}</dd><dt>Tytuł</dt><dd>${esc(o.tytul)}</dd>
+      <dt>Stan</dt><dd>${esc(STAN_WPLATY[o.stan] || o.stan)}${o.uwaga ? `\n${esc(o.uwaga)}` : ''}${o.podpowiedz ? `\n${esc(o.podpowiedz)}` : ''}</dd>
+      ${o.nadplata ? `<dt>Nadpłata</dt><dd class="minus">${zl(o.nadplata)}</dd>` : ''}</dl>
+    ${dop ? `<h3>Połączona z</h3><ul class="lista">${dop}</ul>` : ''}
+    <div class="akcje">
+      ${d.dopasowania.some(x => x.pewnosc === 'prawdopodobne') ? '<button class="glowny" data-a="zatwierdz">Potwierdź dopasowanie</button><button data-a="odrzuc">Odrzuć</button>' : ''}
+      ${o.wpis ? '<button data-a="cofnij">Cofnij moją decyzję</button>' : ''}
+    </div>
+    <h3>${dop ? 'Połącz inaczej' : 'Połącz z fakturą'}</h3>
+    <div class="wybory">${otwarte || '<p class="szary">Brak otwartych faktur.</p>'}</div>
+    <div class="akcje"><button class="glowny" data-a="polacz">Połącz z zaznaczonymi</button></div>
+    <h3>Albo: wpłata nie dotyczy faktury</h3>
+    <div class="akcje"><select id="powod">${['zwrot płatności kartą', 'zwrot nadpłaty od dostawcy', 'zwrot podatku', 'cashback, nagroda banku', 'zwrot kosztów (prywatne)', 'windykacja, komornik', 'inne'].map(x => `<option>${x}</option>`).join('')}</select>
+      <button data-a="bez_faktury">Oznacz</button></div>
+    <div class="zrodlo">Źródło: ${esc(o.plik)}, wiersz ${o.wiersz}</div>`;
+  k.hidden = false;
+  $('.zamknij', k).onclick = () => { k.hidden = true; };
+  k.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => {
+    const a = b.dataset.a;
+    const prawd = d.dopasowania.filter(x => x.pewnosc === 'prawdopodobne').map(x => x.numer);
+    if (a === 'polacz') {
+      const faktury = [...k.querySelectorAll('.wybory input:checked')].map(i => i.value);
+      if (!faktury.length) return komunikat('Zaznacz co najmniej jedną fakturę.', true);
+      return zmiana('polacz', { operacja: o.klucz, faktury });
+    }
+    if (a === 'bez_faktury') return zmiana('bez_faktury', { operacja: o.klucz, powod: $('#powod').value });
+    if (a === 'cofnij') return zmiana('cofnij', { wpis: o.wpis });
+    for (const n of prawd) if (!(await zmianaCicha(a, { operacja: o.klucz, faktura: n }))) return;
+    await zmiana(a, { operacja: o.klucz, faktura: prawd[prawd.length - 1] });
+  });
+}
+
+// Kilka wpisów z rzędu (np. potwierdzenie dopasowania do 3 faktur): wszystkie poza ostatnim bez przerysowania.
+async function zmianaCicha(typ, dane) {
+  const r = await fetch('/api/zmiana', { method: 'POST', headers: { 'X-Finanse': '1', 'Content-Type': 'application/json' }, body: JSON.stringify({ typ, dane }) });
+  if (!r.ok) { komunikat((await r.json().catch(() => ({}))).blad || 'Nie udało się zapisać.', true); return false; }
+  return true;
+}
+
+Object.assign(WIDOKI, {
+  async 'platnosci/do-polaczenia'(p) {
+    const stan = p.stan || 'nieznana';
+    const w = await api('wplaty', { ...p, stan });
+    const l = w.liczniki;
+    const kol = [
+      { naglowek: 'Dzień płatności', wartosc: x => dataPl(x.data_ksiegowania) },
+      { naglowek: 'Płatnik', wartosc: x => x.kontrahent },
+      { naglowek: 'Tytuł', wartosc: x => x.tytul || x.opis },
+      { id: 'kwota', naglowek: 'Kwota PLN', liczba: true, wartosc: x => zl(x.kwota, false), klasa: () => 'plus' },
+      { naglowek: stan === 'dopasowana' ? 'Faktury' : 'Podpowiedź', wartosc: x => stan === 'dopasowana' ? x.faktury : (x.uwaga || x.podpowiedz), klasa: () => 'szary' },
+    ];
+    return `<h1>Wpłaty do połączenia</h1><div class="okruszki">Płatności / Płatności oczekujące</div>
+      <div class="zakladki" role="tablist">${[['nieznana', 'Do połączenia'], ['sprzed_eksportu', 'Za faktury sprzed eksportu'], ['bez_faktury', 'Nie dotyczą faktury'], ['dopasowana', 'Połączone']]
+        .map(([v, n]) => `<button role="tab" aria-selected="${stan === v}" data-stan="${v}">${n} <span class="szary">${l[v] || 0}</span></button>`).join('')}</div>
+      <p class="notka">Wpływy z banku bez ruchu wewnętrznego. Kliknij wpłatę, żeby połączyć ją z fakturą albo oznaczyć, że faktury nie dotyczy (zwrot, cashback). Decyzja zapisuje się w pliku zmian i przeżywa każde odświeżenie danych.</p>
+      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { kwota: zl(w.suma, false) }, onWiersz: x => kartaWplaty(x.id) })}
+      ${stopka(w, p)}`;
+  },
+
+  async 'platnosci/do-weryfikacji'() {
+    const lista = await api('do-weryfikacji');
+    if (!lista.length) return '<h1>Do weryfikacji</h1><div class="okruszki">Płatności / Płatności oczekujące</div><div class="pusto">Nic do sprawdzenia.</div>';
+    const grupy = {};
+    lista.forEach(x => (grupy[x.tytul] ||= []).push(x));
+    const sekcje = Object.entries(grupy).map(([tytul, xs]) => `<h2 class="sekcja">${esc(tytul)} <span class="szary">${xs.length}</span></h2>
+      <div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Faktury</th><th class="liczba-kol">Kwota PLN</th><th>Szczegóły</th><th></th></tr></thead><tbody>
+      ${xs.map((x, i) => `<tr data-g="${esc(tytul)}" data-i="${i}"><td>${dataPl(x.data)}</td><td>${esc(x.kontrahent)}</td><td>${esc(x.faktury || '')}</td>
+        <td class="liczba-kol">${zl(x.kwota, false)}</td><td class="szary">${esc(x.opis.replace(/\d+ gr/, m => zl(parseInt(m)) ))}</td>
+        <td class="akcje-wiersz">${x.rodzaj === 'prawdopodobne' ? '<button data-a="zatwierdz">Potwierdź</button><button data-a="odrzuc">Odrzuć</button>' : x.rodzaj === 'fakturownia_oplacona' ? '<button data-a="poza_bankiem">Opłacona poza bankiem</button>' : ''}</td></tr>`).join('')}
+      </tbody></table></div>`).join('');
+    setTimeout(() => document.querySelectorAll('tr[data-g]').forEach(tr => {
+      const x = grupy[tr.dataset.g][tr.dataset.i];
+      tr.onclick = async e => {
+        const a = e.target.dataset?.a;
+        if (!a) return x.operacja_id ? kartaWplaty(x.operacja_id) : (location.hash = `#/platnosci/faktury?q=${encodeURIComponent(x.numer)}`);
+        e.stopPropagation();
+        if (a === 'poza_bankiem') {
+          return zmiana('poza_bankiem', { faktura: x.numer, powod: 'opłacona poza bankiem (oznaczone na ekranie Do weryfikacji)' });
+        }
+        const numery = x.faktury.split(', ');
+        for (const n of numery.slice(0, -1)) if (!(await zmianaCicha(a, { operacja: x.klucz, faktura: n }))) return;
+        zmiana(a, { operacja: x.klucz, faktura: numery[numery.length - 1] });
+      };
+    }));
+    return `<h1>Do weryfikacji</h1><div class="okruszki">Płatności / Płatności oczekujące</div>
+      <p class="notka">Rzeczy, których aplikacja nie rozstrzyga sama. „Potwierdź” i „Odrzuć” zapisują decyzję; kliknięcie wiersza otwiera wpłatę albo fakturę.</p>${sekcje}`;
+  },
+
+  async 'platnosci/naleznosci'(p) {
+    const [w, n] = [await api('naleznosci', p), STAN.naleznosci];
+    const kol = [
+      { naglowek: 'W banku', html: chipBank },
+      { naglowek: 'Numer', wartosc: x => x.numer },
+      { naglowek: 'Nabywca', wartosc: x => x.nabywca },
+      { naglowek: 'Termin', wartosc: x => dataPl(x.termin) },
+      { naglowek: 'Brutto PLN', liczba: true, wartosc: x => zl(x.naleznosc, false), klasa: () => 'szary' },
+      { id: 'pozostalo', naglowek: 'Do zapłaty PLN', liczba: true, wartosc: x => zl(x.pozostalo, false) },
+      { naglowek: 'Fakturownia', wartosc: x => x.status, klasa: x => x.status === 'Opłacona' ? 'minus' : 'szary' },
+    ];
+    const tytul = p.po_terminie ? 'Po terminie płatności' : p.przedzial ? `Nieopłacone: ${p.przedzial}` : 'Nadal nieopłacone';
+    const nabywcy = p.po_terminie && n ? `<div class="tabela-ramka niska"><table><thead><tr><th>Nabywca</th><th class="liczba-kol">Faktur</th><th class="liczba-kol">Do zapłaty PLN</th><th class="liczba-kol">Najstarsza</th></tr></thead><tbody>
+      ${n.nabywcy_po_terminie.map(x => `<tr data-q="${esc(x.nabywca)}"><td>${esc(x.nabywca)}</td><td class="liczba-kol">${x.faktur}</td><td class="liczba-kol minus">${zl(x.kwota, false)}</td><td class="liczba-kol">${x.najstarsza} dni</td></tr>`).join('')}
+      </tbody></table></div><h2 class="sekcja">Faktury</h2>` : '';
+    setTimeout(() => document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => ustawParametry({ q: tr.dataset.q, strona: 1 })));
+    return `<h1>${tytul}</h1><div class="okruszki">Płatności / Należności, stan na ${dataPl(w.dzien_stanu)} (ostatni dzień w eksporcie z ING)</div>
+      ${kafleNaleznosci(n)}
+      <div class="filtry">${filtr('przedzial', 'Wiekowanie', [['', 'Wszystkie'], ...PRZEDZIALY.map(x => [x, x])], p.przedzial)}
+        ${filtr('po_terminie', 'Termin', [['', 'Wszystkie'], ['1', 'Tylko po terminie']], p.po_terminie)}</div>
+      ${nabywcy}
+      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { pozostalo: zl(w.pozostalo, false) },
+        onWiersz: x => pokazKarte(x.numer, [['Nabywca', x.nabywca], ['NIP', x.nip], ['Wystawiona', dataPl(x.data_wystawienia)], ['Termin', dataPl(x.termin)],
+          ['Brutto', zl(x.brutto)], ['Korekty', x.korekty ? zl(x.korekty) : ''], ['Zapłacono w banku', zl(x.zaplacono)], ['Do zapłaty', zl(x.pozostalo)],
+          ['Po terminie', x.dni_po_terminie ? `${x.dni_po_terminie} dni` : 'nie'], ['Status w Fakturowni', x.status], ['Numer KSeF', x.ksef]],
+          `${x.plik}, wiersz ${x.wiersz}`) })}
+      ${stopka(w, p)}`;
+  },
+});
+
 function wBudowie(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
   const etap = { budzet: 3, cashflow: 5, rentownosc: 4, eksport: 6 }[sekcja];
@@ -366,6 +541,7 @@ async function pokaz() {
   try {
     widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : wBudowie(t.sekcja);
     podepnijFiltry();
+    document.querySelectorAll('.zakladki [data-stan]').forEach(b => b.onclick = () => ustawParametry({ stan: b.dataset.stan, strona: 1, q: '' }));
     const o = $('#odswiez');
     if (o) o.onclick = odbuduj;
   } catch (e) {
