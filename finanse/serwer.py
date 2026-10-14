@@ -97,7 +97,7 @@ class Obsluga(BaseHTTPRequestHandler):
             elif sciezka == 'faktury':
                 dane = zapytania.faktury(con, **{k: q.get(k) for k in ('status', 'q', 'od', 'do', 'strona', 'ile', 'bank')})
             elif sciezka == 'zakupy':
-                dane = zapytania.zakupy(con, **{k: q.get(k) for k in ('rejestr', 'q', 'od', 'do', 'strona', 'ile')})
+                dane = zapytania.zakupy(con, **{k: q.get(k) for k in ('rejestr', 'q', 'od', 'do', 'strona', 'ile', 'stan')})
             elif sciezka == 'naleznosci':
                 dane = zapytania.naleznosci(con, **{k: q.get(k) for k in ('przedzial', 'po_terminie', 'q', 'strona', 'ile')})
             elif sciezka == 'wplaty':
@@ -106,6 +106,14 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.wplata(con, q.get('id', ''))
             elif sciezka == 'do-weryfikacji':
                 dane = zapytania.do_weryfikacji(con)
+            elif sciezka == 'klienci':
+                dane = zapytania.klienci_lista(con, q.get('rok'))
+            elif sciezka == 'klient':
+                dane = zapytania.klient(con, q.get('nazwa', ''), q.get('rok'))
+            elif sciezka == 'wydatki':
+                dane = zapytania.wydatki(con, **{k: q.get(k) for k in ('rodzaj', 'klient', 'dokument', 'zrodlo', 'q', 'od', 'do', 'strona', 'ile')})
+            elif sciezka == 'reguly':
+                dane = zapytania.reguly(con)
             elif sciezka == 'importy':
                 dane = zapytania.importy(con)
             elif sciezka == 'wyniki-biura':
@@ -141,9 +149,9 @@ class Obsluga(BaseHTTPRequestHandler):
             dane = zmiany.sprawdz(typ, cialo.get('dane'))
             con = baza.polacz(konfig.plik_bazy(), tylko_odczyt=True)
             try:
-                if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje o JOIN wplaty w ON w.operacja_id = o.id'
-                                                          ' WHERE o.klucz = ?', (dane['operacja'],)).fetchone():
-                    raise ValueError('nie ma takiej wpłaty')
+                if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje WHERE klucz = ? AND wewnetrzna = 0',
+                                                          (dane['operacja'],)).fetchone():
+                    raise ValueError('nie ma takiej operacji')
                 for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
                     if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
                         raise ValueError(f'nie ma faktury {n}')

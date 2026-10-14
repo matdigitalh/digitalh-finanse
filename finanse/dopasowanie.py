@@ -15,7 +15,7 @@ import re
 from datetime import date
 from itertools import combinations
 
-from .format import norm
+from .format import norm, zl
 
 # Numer faktury odporny na zapisy z banku: „FV20 26_09_13”, „F V2026/09/1”, „fv2026/09/19”, „FV2 026/09/10”,
 # „/FV/2025/12/21” i podzielona płatność bez „FV”: „/INV/202 5/12/16”.
@@ -279,6 +279,21 @@ def policz(con, wpisy: list[dict]) -> dict:
     for o in filter(wolna, ops):
         podobne = sorted(kandydaci(o, True), key=lambda n: abs((o['_dzien'] - faktury[n]['_dzien']).days))[:3]
         zapisz(o, 'nieznana', uwaga=o.get('_uwaga', ''), podpowiedz=('może: ' + ', '.join(podobne)) if podobne else '')
+
+    # Nadpłata oddana klientowi: przelew wychodzący na tę samą kwotę do tego samego płatnika, po wpłacie
+    zwroty = [dict(o) for o in con.execute('SELECT id, data_ksiegowania, kwota, kontrahent FROM operacje WHERE kwota < 0 AND wewnetrzna = 0')]
+    uzyte = set()
+    for o in ops:
+        w = wynik[o['id']]
+        if w['nadplata'] <= 0:
+            continue
+        for z in zwroty:
+            if (z['id'] not in uzyte and -z['kwota'] == w['nadplata'] and z['data_ksiegowania'] >= o['data_ksiegowania']
+                    and tokeny(z['kontrahent']) & o['_tok']):
+                uzyte.add(z['id'])
+                w['uwaga'] = '; '.join(filter(None, [w['uwaga'], f"nadpłata {zl(w['nadplata'])} oddana {z['data_ksiegowania']}"]))
+                w['nadplata'] = 0
+                break
 
     # Zapis do bazy
     con.executemany('INSERT INTO dopasowania (operacja_id, numer, kwota, metoda, pewnosc, zrodlo) VALUES (?,?,?,?,?,?)',

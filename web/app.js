@@ -38,11 +38,17 @@ const PODSTRONY = {
     { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/naleznosci' },
     { nazwa: 'Po terminie płatności', hash: '#/platnosci/naleznosci?po_terminie=1' },
     { nazwa: 'Rejestr zakupów (biuro)', hash: '#/platnosci/zakupy' },
+    { nazwa: 'Dokumenty bez płatności', hash: '#/platnosci/zakupy?stan=bez%20p%C5%82atno%C5%9Bci%20w%20banku' },
     { grupa: 'Dane' },
     { nazwa: 'Historia importów', hash: '#/platnosci/importy' },
     { nazwa: 'Wyniki z biura (RZiS)', hash: '#/platnosci/wyniki-biura' },
   ],
-  budzet: [{ grupa: 'Arkusze budżetu' }, { nazwa: 'Foldery klientów i arkusze', etap: 3 }],
+  budzet: [{ grupa: 'Foldery' }, { nazwa: 'Klienci', hash: '#/budzet' },
+    { grupa: 'Wydatki z banku' }, { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki' },
+    { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany' },
+    { nazwa: 'Koszty klientów', hash: '#/budzet/wydatki?rodzaj=przenoszony' },
+    { nazwa: 'Bez dokumentu w rejestrze', hash: '#/budzet/wydatki?dokument=bez%20dokumentu' },
+    { grupa: 'Ustawienia' }, { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly' }],
   cashflow: [{ grupa: 'Zapisane widoki' }, { nazwa: '2 tyg. w przód', etap: 5 }, { nazwa: '8 tyg. w przód', etap: 5 },
     { nazwa: '13 tyg. w przód', etap: 5 }, { nazwa: '6 mies. w przód', etap: 5 }],
   rentownosc: [{ grupa: 'Zapisane widoki' }, { nazwa: 'Wynik zarządczy', etap: 4 }, { nazwa: 'Obroty wg klientów', etap: 4 },
@@ -309,8 +315,8 @@ const WIDOKI = {
       { naglowek: 'Fakturownia', html: x => x.status === 'Opłacona' ? '<span class="chip plus">opłacona</span>' : `<span class="chip neutral">${esc(x.status.toLowerCase())}</span>` },
       { naglowek: 'W banku', html: chipBank },
       { naglowek: 'Numer', wartosc: x => x.numer },
-      { naglowek: 'Nabywca', wartosc: x => x.nabywca },
-      { naglowek: 'NIP', wartosc: x => x.nip, klasa: () => 'szary' },
+      { naglowek: 'Klient', wartosc: x => x.klient },
+      { naglowek: 'Nabywca', wartosc: x => x.nabywca, klasa: () => 'szary' },
       { naglowek: 'Przedmiot', wartosc: x => x.pozycje },
       { id: 'netto', naglowek: 'Netto PLN', liczba: true, wartosc: x => zl(x.netto, false) },
       { id: 'brutto', naglowek: 'Brutto PLN', liczba: true, wartosc: x => zl(x.brutto, false) },
@@ -327,8 +333,8 @@ const WIDOKI = {
       <p class="notka">„Fakturownia” to status odhaczony ręcznie. „W banku” liczy aplikacja z wpłat na ING, na dzień ${dataPl(STAN.naleznosci?.dzien_stanu)}.</p>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1,
         stopkaSum: { netto: zl(w.netto, false), brutto: zl(w.brutto, false) },
-        onWiersz: x => pokazKarte(x.numer, [
-          ['Nabywca', x.nabywca], ['NIP', x.nip], ['Status', x.status], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)], ['Brutto', zl(x.brutto)],
+        onWiersz: x => kartaFaktury(x, [
+          ['Klient', `${x.klient} (${x.klient_zrodlo})`], ['Nabywca', x.nabywca], ['NIP', x.nip], ['Status', x.status], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)], ['Brutto', zl(x.brutto)],
           ['Opłacono (Fakturownia)', zl(x.oplacono)], ['W banku', x.stan_bank ? `${x.stan_bank}, zapłacono ${zl(x.zaplacono)}, zostało ${zl(x.pozostalo)}` : ''],
           ['Wpłaty', (x.wplaty || '').split('; ').filter(Boolean).map(s => { const [d, k] = s.split(' '); return `${dataPl(d)}: ${zl(+k)}`; }).join('\n')], ['Wystawiona', dataPl(x.data_wystawienia)], ['Data sprzedaży', dataPl(x.data_sprzedazy)],
           ['Termin płatności', dataPl(x.termin)], ['Numer KSeF', x.ksef], ['Korekta', x.korekta ? `tak, do ${x.oryginal}` : ''],
@@ -347,16 +353,20 @@ const WIDOKI = {
       { id: 'netto', naglowek: 'Netto PLN', liczba: true, wartosc: x => zl(x.netto, false) },
       { naglowek: 'VAT PLN', liczba: true, wartosc: x => x.rejestr === 'krajowe' ? zl(x.vat, false) : '' },
       { naglowek: 'Brutto PLN', liczba: true, wartosc: x => x.brutto != null ? zl(x.brutto, false) : '' },
+      { naglowek: 'W banku', html: x => x.stan === 'opłacony' ? `<span class="chip plus">${dataPl(x.data_platnosci)}</span>` : x.stan ? '<span class="chip ostrzezenie">brak płatności</span>' : '' },
     ];
     return `<h1>Rejestr zakupów</h1><div class="okruszki">Płatności / Dokumenty kosztowe z biura</div>
       <div class="filtry">
         ${filtr('rejestr', 'Rejestr', [['', 'Wszystkie'], ['krajowe', 'Krajowe'], ['zagraniczne', 'Zagraniczne']], p.rejestr)}
+        ${filtr('stan', 'Płatność w banku', [['', 'Wszystkie'], ['opłacony', 'Znaleziona'], ['bez płatności w banku', 'Brak płatności']], p.stan)}
         ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
       </div>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { netto: zl(w.netto, false) },
         onWiersz: x => pokazKarte(x.podmiot, [['Numer dokumentu', x.nr_dok], ['Nr ewidencyjny', x.nr_ewid], ['Rejestr', x.rejestr],
           ['Data', dataPl(x.data)], ['Data zaewidencjonowania', dataPl(x.data_zaewid)], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)],
-          ['Brutto', x.brutto != null ? zl(x.brutto) : 'brak w rejestrze zagranicznym']], `${x.plik}, wiersz ${x.wiersz}`) })}
+          ['Brutto', x.brutto != null ? zl(x.brutto) : 'brak w rejestrze zagranicznym'],
+          ['Płatność w banku', x.data_platnosci ? `${dataPl(x.data_platnosci)}, ${zl(-x.kwota_platnosci)}` : 'nie znaleziono (karta prywatna, kompensata albo jeszcze nieopłacony)']],
+          `${x.plik}, wiersz ${x.wiersz}`) })}
       ${stopka(w, p)}`;
   },
 
@@ -526,9 +536,140 @@ Object.assign(WIDOKI, {
   },
 });
 
+// ---------- Etap 3: klienci, wydatki, reguły ----------
+const RODZAJE = { przenoszony: 'koszt klienta', staly: 'koszt stały', praca: 'koszty pracy', podatki: 'podatki', vat: 'VAT',
+  dywidenda: 'podział zysku', zwrot: 'zwrot dla klienta', nieprzypisany: 'nieprzypisany' };
+const chipRodzaj = r => `<span class="chip ${r === 'nieprzypisany' ? 'ostrzezenie' : r === 'przenoszony' ? 'akcent' : 'neutral'}">${esc(RODZAJE[r] || r)}</span>`;
+const chipDok = d => d === 'dokument' ? '<span class="chip plus">jest</span>' : d === 'bez dokumentu' ? '<span class="chip ostrzezenie">brak</span>'
+  : d === 'po okresie rejestru' ? '<span class="chip neutral">rejestr jeszcze nie obejmuje</span>' : '<span class="szary">nie wymaga</span>';
+const pole = (id, etykieta, html) => `<label class="pole"><span>${etykieta}</span>${html}</label>`;
+const listaKlientow = klienci => `<datalist id="lista-klientow">${klienci.map(k => `<option value="${esc(k)}">`).join('')}</datalist>`;
+
+function kartaFaktury(x, pola) {
+  pokazKarte(x.numer, pola, `${x.plik}, wiersz ${x.wiersz}`);
+  const k = $('#karta');
+  const blok = document.createElement('div');
+  blok.innerHTML = `<h3>Klient tej faktury</h3><p class="szary">Nabywca ${esc(x.nabywca)}${x.nip ? ` (NIP ${esc(x.nip)})` : ''}. Gdy płaci za kilku klientów, zmień tylko tę fakturę.</p>
+    <div class="akcje"><input id="nowy-klient" list="lista-klientow" value="${esc(x.klient)}"></div>
+    <div class="akcje"><button class="glowny" id="zapisz-klienta">Wszystkie faktury nabywcy</button><button id="zapisz-fakture">Tylko ta faktura</button></div>`;
+  k.insertBefore(blok, $('.zrodlo', k));
+  api('wydatki', { ile: 1 }).then(w => blok.insertAdjacentHTML('beforeend', listaKlientow(w.klienci)));
+  $('#zapisz-klienta').onclick = () => zmiana('klient_nip', { nabywca: x.nabywca_klucz, klient: $('#nowy-klient').value });
+  $('#zapisz-fakture').onclick = () => zmiana('klient_faktura', { faktura: x.numer, klient: $('#nowy-klient').value });
+}
+
+function kartaWydatku(x, klienci) {
+  const k = $('#karta');
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${esc(x.kontrahent || x.opis)}</h2>
+    <dl><dt>Kwota</dt><dd class="minus">${zl(x.kwota)}</dd><dt>Data</dt><dd>${dataPl(x.data_ksiegowania)}</dd><dt>Tytuł</dt><dd>${esc(x.tytul || x.opis)}</dd>
+      <dt>Rodzaj</dt><dd>${esc(RODZAJE[x.rodzaj])}${x.klient ? `, ${esc(x.klient)}` : ''}</dd><dt>Skąd</dt><dd>${esc(x.zrodlo || 'brak reguły')}</dd>
+      <dt>Dokument</dt><dd>${esc(x.dokumenty || x.dokument)}${x.netto_dok != null ? `\nnetto z dokumentu ${zl(x.netto_dok)}` : ''}</dd></dl>
+    <h3>Przypisz</h3>
+    <div class="formularz">${pole('', 'Rodzaj', `<select id="rodzaj">${Object.entries(RODZAJE).map(([v, n]) => `<option value="${v}"${v === x.rodzaj ? ' selected' : ''}>${n}</option>`).join('')}</select>`)}
+      ${pole('', 'Klient (dla kosztu klienta)', `<input id="klient" list="lista-klientow" value="${esc(x.klient || '')}">`)}</div>
+    ${listaKlientow(klienci)}
+    <div class="akcje"><button class="glowny" data-a="regula">Wszystkie płatności do tego kontrahenta</button><button data-a="jedna">Tylko ta płatność</button>
+      ${x.wpis ? '<button data-a="cofnij">Cofnij moją regułę</button>' : ''}</div>
+    <p class="szary">Kontrahent w regule: „${esc(x.kontrahent_klucz)}”. Reguła obejmie też przyszłe płatności.</p>
+    <div class="zrodlo">Źródło: ${esc(x.plik)}, wiersz ${x.wiersz}</div>`;
+  k.hidden = false;
+  $('.zamknij', k).onclick = () => { k.hidden = true; };
+  k.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+    const rodzaj = $('#rodzaj').value, klient = rodzaj === 'przenoszony' ? $('#klient').value.trim() : '';
+    if (b.dataset.a === 'cofnij') return zmiana('cofnij', { wpis: x.wpis });
+    if (b.dataset.a === 'regula') return zmiana('koszt_regula', { kontrahent: x.kontrahent_klucz, rodzaj, klient });
+    return zmiana('koszt_operacja', { operacja: x.klucz, rodzaj, klient });
+  });
+}
+
+const procent = x => x == null ? '' : `${String(x).replace('.', ',')}%`;
+
+Object.assign(WIDOKI, {
+  async budzet(p) {
+    const d = await api('klienci', p);
+    const kol = [
+      { naglowek: 'Klient', wartosc: x => x.klient },
+      { naglowek: 'Faktur', liczba: true, wartosc: x => x.faktur },
+      { id: 'przychod', naglowek: 'Przychód netto', liczba: true, wartosc: x => zl(x.przychod, false) },
+      { naglowek: 'Wpłacono', liczba: true, wartosc: x => zl(x.wplaty, false), klasa: () => 'szary' },
+      { naglowek: 'Należność', liczba: true, wartosc: x => x.naleznosc ? zl(x.naleznosc, false) : '', klasa: x => x.po_terminie ? 'minus' : '' },
+      { id: 'koszty', naglowek: 'Koszty klienta', liczba: true, wartosc: x => x.koszty ? zl(-x.koszty, false) : '', klasa: () => 'minus' },
+      { id: 'marza', naglowek: 'Marża wstępna', liczba: true, wartosc: x => zl(x.marza, false) },
+      { naglowek: '%', liczba: true, wartosc: x => procent(x.marza_proc), klasa: x => x.marza_proc != null && x.marza_proc < 30 ? 'minus' : '' },
+    ];
+    const s = k => d.klienci.reduce((a, x) => a + (x[k] || 0), 0);
+    return `<h1>Klienci</h1><div class="okruszki">Budżet / Foldery klientów</div>
+      <div class="filtry">${filtr('rok', 'Rok', [['', 'Wszystko'], ...d.lata.map(r => [r, r])], d.rok || '')}</div>
+      <p class="notka">Przychód z faktur (netto, wg daty sprzedaży). Koszty klienta to wydatki z banku przypisane do klienta: netto z dokumentu z rejestru biura, a bez dokumentu kwota z banku. Marża wstępna nie zawiera kosztów pracy zespołu, to etap 4. Czerwony procent: poniżej progu 30%.${d.przenoszone_bez_klienta.ile ? ` Koszty klientów bez wskazanego klienta: ${d.przenoszone_bez_klienta.ile} płatności, ${zl(d.przenoszone_bez_klienta.kwota)}.` : ''}</p>
+      ${tabela({ kolumny: kol, dane: d.klienci, poczatek: 1, stopkaSum: { przychod: zl(s('przychod'), false), koszty: zl(-s('koszty'), false), marza: zl(s('marza'), false) },
+        onWiersz: x => { location.hash = `#/budzet/klient?nazwa=${encodeURIComponent(x.klient)}${d.rok ? '&rok=' + d.rok : ''}`; } })}`;
+  },
+
+  async 'budzet/klient'(p) {
+    const d = await api('klient', p);
+    const max = Math.max(1, ...d.miesiace.map(m => Math.max(m.przychod, m.koszty)));
+    const wykres = d.miesiace.map(m => `<div class="slupek" title="${m.miesiac}: przychód ${zl(m.przychod)}, koszty ${zl(m.koszty)}">
+      <div class="paski"><i class="p" data-h="${100 * m.przychod / max}"></i><i class="k" data-h="${100 * m.koszty / max}"></i></div><small>${m.miesiac.slice(5)}.${m.miesiac.slice(2, 4)}</small></div>`).join('');
+    const tf = d.faktury.map(f => `<tr data-q="${esc(f.numer)}"><td>${esc(f.numer)}</td><td>${dataPl(f.data_sprzedazy || f.data_wystawienia)}</td><td class="szary">${esc(f.nabywca)}</td>
+      <td class="liczba-kol">${zl(f.netto, false)}</td><td>${chipBank({ stan_bank: f.stan, dni_po_terminie: f.dni_po_terminie })}</td></tr>`).join('');
+    const tk = d.koszty.map(x => `<tr data-op="${x.id}"><td>${dataPl(x.data_ksiegowania)}</td><td>${esc(x.kontrahent)}</td><td class="szary">${esc(x.tytul)}</td>
+      <td class="liczba-kol minus">${zl(-(x.koszt || 0), false)}</td><td>${chipDok(x.dokument)}</td></tr>`).join('');
+    setTimeout(() => {
+      // wysokość przez CSSOM: CSP strony blokuje atrybuty style w HTML
+      document.querySelectorAll('.paski i[data-h]').forEach(i => { i.style.height = `${i.dataset.h}%`; });
+      document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => { location.hash = `#/platnosci/faktury?q=${encodeURIComponent(tr.dataset.q)}`; });
+      document.querySelectorAll('tr[data-op]').forEach(tr => tr.onclick = () => { location.hash = `#/budzet/wydatki?klient=${encodeURIComponent(d.klient)}&rodzaj=przenoszony`; });
+    });
+    return `<h1>${esc(d.klient)}</h1><div class="okruszki"><a href="#/budzet">Budżet</a> / Klient${d.rok ? ' / ' + d.rok : ''}</div>
+      <div class="wykres-klienta">${wykres || '<span class="szary">Brak danych.</span>'}</div>
+      <div class="legenda"><i class="p"></i> przychód netto <i class="k"></i> koszty klienta</div>
+      <h2 class="sekcja">Faktury <span class="szary">${d.faktury.length}</span></h2>
+      <div class="tabela-ramka niska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>
+      <h2 class="sekcja">Koszty klienta <span class="szary">${d.koszty.length}</span></h2>
+      ${tk ? `<div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Tytuł</th><th class="liczba-kol">Koszt PLN</th><th>Dokument</th></tr></thead><tbody>${tk}</tbody></table></div>` : '<p class="szary">Brak przypisanych kosztów.</p>'}`;
+  },
+
+  async 'budzet/wydatki'(p) {
+    const w = await api('wydatki', p);
+    const kol = [
+      { naglowek: 'Dzień płatności', wartosc: x => dataPl(x.data_ksiegowania) },
+      { naglowek: 'Kontrahent', wartosc: x => x.kontrahent || x.opis },
+      { naglowek: 'Tytuł', wartosc: x => x.tytul, klasa: () => 'szary' },
+      { id: 'kwota', naglowek: 'Kwota PLN', liczba: true, wartosc: x => zl(x.kwota, false), klasa: () => 'minus' },
+      { naglowek: 'Rodzaj', html: x => chipRodzaj(x.rodzaj) },
+      { naglowek: 'Klient', wartosc: x => x.klient },
+      { naglowek: 'Skąd', wartosc: x => x.zrodlo, klasa: () => 'szary' },
+      { naglowek: 'Dokument', html: x => chipDok(x.dokument) },
+    ];
+    const pods = w.podsumowanie.map(x => `<a class="${p.rodzaj === x.rodzaj ? 'wybrany' : ''}" href="#/budzet/wydatki?rodzaj=${x.rodzaj}"><span>${esc(RODZAJE[x.rodzaj])}</span><b>${zl(-x.kwota, false)}</b><small>${x.ile} płatności</small></a>`).join('');
+    return `<h1>Wydatki</h1><div class="okruszki">Budżet / Wydatki z banku (bez ruchu wewnętrznego)</div>
+      <div class="wiekowanie rodzaje">${pods}</div>
+      <div class="filtry">
+        ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystkie'], ...Object.entries(RODZAJE)], p.rodzaj)}
+        ${filtr('klient', 'Klient', [['', 'Wszyscy'], ['-', 'bez klienta'], ...w.klienci.map(k => [k, k])], p.klient)}
+        ${filtr('zrodlo', 'Skąd przypisanie', [['', 'Wszystkie'], ['mat', 'Twoje reguły'], ['bs', 'Budget Studio'], ['brak', 'Brak']], p.zrodlo)}
+        ${filtr('dokument', 'Dokument w rejestrze', [['', 'Wszystkie'], ['dokument', 'Jest'], ['bez dokumentu', 'Brak'], ['po okresie rejestru', 'Rejestr jeszcze nie obejmuje'], ['nie wymaga', 'Nie wymaga']], p.dokument)}
+        ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
+      </div>
+      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { kwota: zl(w.suma, false) }, onWiersz: x => kartaWydatku(x, w.klienci) })}
+      ${stopka(w, p)}`;
+  },
+
+  async 'budzet/reguly'() {
+    const lista = await api('reguly');
+    const nazwy = { klient_nip: 'Nabywca należy do klienta', klient_faktura: 'Faktura należy do klienta', koszt_regula: 'Kontrahent: rodzaj kosztu', koszt_operacja: 'Jedna płatność' };
+    const wiersze = lista.map((x, i) => `<tr><td>${esc(nazwy[x.typ])}</td><td>${esc(x.klucz)}</td><td>${esc(x.wartosc)}</td>
+      <td class="akcje-wiersz"><button data-i="${i}">Cofnij</button></td></tr>`).join('');
+    setTimeout(() => document.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => zmiana('cofnij', { wpis: lista[b.dataset.i].wpis })));
+    return `<h1>Reguły przypisań</h1><div class="okruszki">Budżet / Ustawienia</div>
+      <p class="notka">Twoje decyzje o klientach i rodzajach kosztów. Wygrywają z podpowiedziami z Budget Studio. Zapisane w pliku zmian tego Maca, drugi Mac widzi je po synchronizacji iCloud.</p>
+      ${lista.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Rodzaj reguły</th><th>Kogo dotyczy</th><th>Przypisanie</th><th></th></tr></thead><tbody>${wiersze}</tbody></table></div>` : '<div class="pusto">Brak reguł. Dodasz je z karty wydatku albo faktury.</div>'}`;
+  },
+});
+
 function wBudowie(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
-  const etap = { budzet: 3, cashflow: 5, rentownosc: 4, eksport: 6 }[sekcja];
+  const etap = { cashflow: 5, rentownosc: 4, eksport: 6 }[sekcja];
   return `<h1>${esc(nazwa)}</h1><div class="okruszki">W budowie</div><p class="notka">Ten ekran powstanie w etapie ${etap}. Układ będzie taki jak w Budget Studio.</p>`;
 }
 

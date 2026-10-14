@@ -23,8 +23,13 @@ TYPY = {
     'zatwierdz': ('operacja', 'faktura'),     # potwierdź dopasowanie „prawdopodobne”
     'odrzuc': ('operacja', 'faktura'),        # odrzuć dopasowanie automatu
     'poza_bankiem': ('faktura', 'powod'),     # faktura opłacona inaczej (kompensata, gotówka)
+    'klient_nip': ('nabywca', 'klient'),      # faktury tego nabywcy (NIP) należą do klienta
+    'klient_faktura': ('faktura', 'klient'),  # jedna faktura należy do klienta (nabywca płaci za kilku klientów)
+    'koszt_regula': ('kontrahent', 'rodzaj', 'klient'),   # wszystkie płatności do kontrahenta: rodzaj i klient
+    'koszt_operacja': ('operacja', 'rodzaj', 'klient'),   # jedna płatność: rodzaj i klient
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
+RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
 
 
 def sprawdz(typ: str, dane) -> dict:
@@ -39,6 +44,13 @@ def sprawdz(typ: str, dane) -> dict:
                 raise ValueError('lista faktur jest pusta albo nieprawidłowa')
         elif pole == 'powod':
             v = str(v or '').strip()[:200]
+        elif pole == 'klient':
+            v = str(v or '').strip()[:80]
+            if typ in ('klient_nip', 'klient_faktura') and not v:
+                raise ValueError('brak nazwy klienta')
+        elif pole == 'rodzaj':
+            if v not in RODZAJE:
+                raise ValueError('nieznany rodzaj kosztu')
         elif not isinstance(v, str) or not v or len(v) > 300:
             raise ValueError(f'brak pola {pole}')
         czyste[pole] = v

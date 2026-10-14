@@ -65,6 +65,24 @@ CREATE TABLE faktury_stan (
   numer TEXT PRIMARY KEY REFERENCES faktury(numer), naleznosc INTEGER, korekty INTEGER, zaplacono INTEGER,
   pozostalo INTEGER, stan TEXT, dni_po_terminie INTEGER, przedzial TEXT, ostatnia_wplata TEXT, uwaga TEXT, wpis TEXT
 );
+
+-- Budget Studio (najnowszy eksport): wyłącznie podpowiedzi klientów i kategorii kosztów.
+CREATE TABLE bs (
+  id TEXT, rodzaj INTEGER, status TEXT, numer TEXT, kontrahent TEXT, netto INTEGER, brutto INTEGER, miesiac TEXT,
+  arkusz TEXT, folder TEXT, kategoria TEXT, dzien TEXT, plik TEXT NOT NULL, wiersz INTEGER NOT NULL
+);
+
+-- Etap 3: liczone przy odbudowie (klienci.py).
+CREATE TABLE faktury_klient (numer TEXT PRIMARY KEY REFERENCES faktury(numer), klient TEXT NOT NULL, zrodlo TEXT, wpis TEXT);
+
+CREATE TABLE wydatki (
+  operacja_id INTEGER PRIMARY KEY REFERENCES operacje(id), kontrahent_klucz TEXT, rodzaj TEXT NOT NULL, klient TEXT,
+  zrodlo TEXT, wpis TEXT, dokument TEXT, netto_dok INTEGER
+);
+CREATE TABLE wydatki_dok (operacja_id INTEGER NOT NULL, nr_ewid TEXT NOT NULL, metoda TEXT);
+CREATE INDEX wydatki_dok_op ON wydatki_dok(operacja_id);
+CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
+CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), stan TEXT, operacja_id INTEGER);
 """
 
 

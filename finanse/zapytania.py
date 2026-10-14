@@ -85,22 +85,31 @@ def faktury(con, status=None, q=None, od=None, do=None, strona=1, ile=STRONA, ba
            '  WHERE d.numer = f.numer) AS wplaty'
            ' FROM faktury f LEFT JOIN faktury_stan s USING(numer)' + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
     wynik = _strona(sql, params, strona, ile, con, 'data_wystawienia DESC, f.numer DESC')
+    from .klienci import klucz_nabywcy
+    for w in wynik['wiersze']:
+        w['nabywca_klucz'] = klucz_nabywcy(w)
+        k = con.execute('SELECT klient, zrodlo FROM faktury_klient WHERE numer = ?', (w['numer'],)).fetchone()
+        w['klient'], w['klient_zrodlo'] = (k[0], k[1]) if k else ('', '')
     s = con.execute(f'SELECT COALESCE(SUM(netto),0), COALESCE(SUM(brutto),0) FROM ({sql})', params).fetchone()
     wynik['netto'], wynik['brutto'] = s[0], s[1]
     return wynik
 
 
-def zakupy(con, rejestr=None, q=None, od=None, do=None, strona=1, ile=STRONA):
+def zakupy(con, rejestr=None, q=None, od=None, do=None, strona=1, ile=STRONA, stan=None):
     warunki, params = [], []
     if rejestr:
-        warunki.append('rejestr = ?'); params.append(rejestr)
+        warunki.append('z.rejestr = ?'); params.append(rejestr)
     if od:
-        warunki.append('data >= ?'); params.append(od)
+        warunki.append('z.data >= ?'); params.append(od)
     if do:
-        warunki.append('data <= ?'); params.append(do)
+        warunki.append('z.data <= ?'); params.append(do)
     if q:
-        warunki.append("(podmiot || ' ' || nr_dok) LIKE ?"); params.append(f'%{q}%')
-    sql = 'SELECT * FROM zakupy' + (' WHERE ' + ' AND '.join(warunki) if warunki else '')
+        warunki.append("(z.podmiot || ' ' || z.nr_dok) LIKE ?"); params.append(f'%{q}%')
+    if stan:
+        warunki.append('s.stan = ?'); params.append(stan)
+    sql = ('SELECT z.*, s.stan, o.data_ksiegowania AS data_platnosci, o.kwota AS kwota_platnosci FROM zakupy z'
+           ' LEFT JOIN zakupy_stan s USING(nr_ewid) LEFT JOIN operacje o ON o.id = s.operacja_id'
+           + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
     wynik = _strona(sql, params, strona, ile, con, 'data DESC, nr_ewid DESC')
     wynik['netto'] = con.execute(f'SELECT COALESCE(SUM(netto),0) FROM ({sql})', params).fetchone()[0]
     return wynik
@@ -236,3 +245,109 @@ def do_weryfikacji(con) -> list[dict]:
                       'data': x['ostatnia_wplata'], 'kwota': x['brutto'], 'kontrahent': x['nabywca'], 'faktury': x['numer'],
                       'opis': 'odhacz w Fakturowni jako opłaconą'})
     return lista
+
+
+# ---------- Etap 3: klienci, wydatki, reguły ----------
+
+KOSZT_SQL = 'CASE WHEN w.dokument = \'dokument\' THEN w.netto_dok ELSE -o.kwota END'
+
+
+def _rok(rok):
+    return str(rok) if rok and str(rok).isdigit() else None
+
+
+def klienci_lista(con, rok=None) -> dict:
+    """Foldery klientów jak w Budget Studio: przychód netto, wpłaty, należność, koszty klienta, marża wstępna.
+    Koszt klienta: netto z dokumentu z rejestru, a gdy płatność nie ma dokumentu, kwota z banku (brutto)."""
+    rok = _rok(rok)
+    filtr_f = " AND substr(COALESCE(f.data_sprzedazy, f.data_wystawienia), 1, 4) = ?" if rok else ''
+    filtr_o = " AND substr(o.data_ksiegowania, 1, 4) = ?" if rok else ''
+    p = [rok] if rok else []
+    k = {}
+    for r in con.execute('SELECT fk.klient, COUNT(*) AS faktur, SUM(f.netto) AS przychod FROM faktury f'
+                         ' JOIN faktury_klient fk USING(numer) WHERE 1=1' + filtr_f + ' GROUP BY fk.klient', p):
+        k[r['klient']] = {'klient': r['klient'], 'faktur': r['faktur'], 'przychod': r['przychod'] or 0, 'wplaty': 0,
+                          'naleznosc': 0, 'po_terminie': 0, 'koszty': 0, 'koszty_bez_dok': 0, 'wydatkow': 0}
+    for r in con.execute('SELECT fk.klient, SUM(s.zaplacono) AS wp, SUM(s.pozostalo) AS nal,'
+                         ' SUM(CASE WHEN s.dni_po_terminie > 0 THEN s.pozostalo ELSE 0 END) AS po FROM faktury_stan s'
+                         ' JOIN faktury_klient fk USING(numer) JOIN faktury f USING(numer) WHERE 1=1' + filtr_f + ' GROUP BY fk.klient', p):
+        if r['klient'] in k:
+            k[r['klient']].update(wplaty=r['wp'] or 0, naleznosc=r['nal'] or 0, po_terminie=r['po'] or 0)
+    for r in con.execute(f"SELECT w.klient, COUNT(*) AS ile, SUM({KOSZT_SQL}) AS koszt,"
+                         " SUM(CASE WHEN w.dokument != 'dokument' THEN -o.kwota ELSE 0 END) AS bez FROM wydatki w"
+                         " JOIN operacje o ON o.id = w.operacja_id WHERE w.rodzaj = 'przenoszony' AND w.klient != ''"
+                         + filtr_o + ' GROUP BY w.klient', p):
+        x = k.setdefault(r['klient'], {'klient': r['klient'], 'faktur': 0, 'przychod': 0, 'wplaty': 0, 'naleznosc': 0,
+                                       'po_terminie': 0})
+        x.update(koszty=r['koszt'] or 0, koszty_bez_dok=r['bez'] or 0, wydatkow=r['ile'])
+    lista = sorted(k.values(), key=lambda x: -x['przychod'])
+    for x in lista:
+        x['marza'] = x['przychod'] - x.get('koszty', 0)
+        x['marza_proc'] = round(100 * x['marza'] / x['przychod'], 1) if x['przychod'] > 0 else None
+    lata = [r[0] for r in con.execute("SELECT DISTINCT substr(COALESCE(data_sprzedazy, data_wystawienia), 1, 4) FROM faktury ORDER BY 1 DESC")]
+    bez_klienta = con.execute(f"SELECT COUNT(*), COALESCE(SUM({KOSZT_SQL}), 0) FROM wydatki w JOIN operacje o ON o.id = w.operacja_id"
+                              " WHERE w.rodzaj = 'przenoszony' AND w.klient = ''" + filtr_o, p).fetchone()
+    return {'klienci': lista, 'rok': rok, 'lata': lata, 'przenoszone_bez_klienta': {'ile': bez_klienta[0], 'kwota': bez_klienta[1]}}
+
+
+def klient(con, nazwa, rok=None) -> dict:
+    rok = _rok(rok)
+    miesiace = {}
+    faktury = [dict(r) for r in con.execute(
+        'SELECT f.numer, f.nabywca, f.nip, f.netto, f.brutto, f.data_wystawienia, f.data_sprzedazy, fk.zrodlo, s.stan, s.pozostalo,'
+        ' s.dni_po_terminie FROM faktury f JOIN faktury_klient fk USING(numer) LEFT JOIN faktury_stan s USING(numer)'
+        ' WHERE fk.klient = ? ORDER BY f.data_wystawienia DESC', (nazwa,))]
+    for f in faktury:
+        m = (f['data_sprzedazy'] or f['data_wystawienia'] or '')[:7]
+        if not rok or m.startswith(rok):
+            miesiace.setdefault(m, {'przychod': 0, 'koszty': 0})['przychod'] += f['netto']
+    koszty = [dict(r) for r in con.execute(
+        f"SELECT o.id, o.data_ksiegowania, o.kwota, o.kontrahent, o.tytul, w.dokument, w.netto_dok, w.zrodlo, {KOSZT_SQL} AS koszt"
+        " FROM wydatki w JOIN operacje o ON o.id = w.operacja_id WHERE w.rodzaj = 'przenoszony' AND w.klient = ?"
+        ' ORDER BY o.data_ksiegowania DESC', (nazwa,))]
+    for x in koszty:
+        m = x['data_ksiegowania'][:7]
+        if not rok or m.startswith(rok):
+            miesiace.setdefault(m, {'przychod': 0, 'koszty': 0})['koszty'] += x['koszt'] or 0
+    if rok:
+        faktury = [f for f in faktury if (f['data_sprzedazy'] or f['data_wystawienia'] or '').startswith(rok)]
+        koszty = [x for x in koszty if x['data_ksiegowania'].startswith(rok)]
+    return {'klient': nazwa, 'rok': rok, 'miesiace': [{'miesiac': m, **v} for m, v in sorted(miesiace.items())],
+            'faktury': faktury, 'koszty': koszty}
+
+
+def wydatki(con, rodzaj=None, klient=None, dokument=None, zrodlo=None, q=None, od=None, do=None, strona=1, ile=STRONA):
+    warunki, params = [], []
+    for kol, v in (('w.rodzaj', rodzaj), ('w.dokument', dokument)):
+        if v:
+            warunki.append(f'{kol} = ?'); params.append(v)
+    if klient is not None and klient != '':
+        warunki.append('w.klient = ?'); params.append('' if klient == '-' else klient)
+    if zrodlo == 'mat':
+        warunki.append("w.zrodlo LIKE '%Mata%'")
+    elif zrodlo == 'bs':
+        warunki.append("w.zrodlo LIKE 'Budget Studio%'")
+    elif zrodlo == 'brak':
+        warunki.append("w.zrodlo = ''")
+    if od:
+        warunki.append('o.data_ksiegowania >= ?'); params.append(od)
+    if do:
+        warunki.append('o.data_ksiegowania <= ?'); params.append(do)
+    if q:
+        warunki.append("(o.kontrahent || ' ' || o.tytul || ' ' || o.opis) LIKE ?"); params.append(f'%{q}%')
+    sql = ("SELECT o.*, w.rodzaj, w.klient, w.zrodlo, w.wpis, w.kontrahent_klucz, w.dokument, w.netto_dok,"
+           " (SELECT GROUP_CONCAT(z.podmiot || ' ' || z.nr_dok, '; ') FROM wydatki_dok d JOIN zakupy z USING(nr_ewid)"
+           '  WHERE d.operacja_id = o.id) AS dokumenty FROM wydatki w JOIN operacje o ON o.id = w.operacja_id'
+           + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
+    wynik = _strona(sql, params, strona, ile, con, 'data_ksiegowania DESC, o.id DESC')
+    wynik['suma'] = con.execute(f'SELECT COALESCE(SUM(kwota), 0) FROM ({sql})', params).fetchone()[0]
+    wynik['klienci'] = [r[0] for r in con.execute(
+        "SELECT klient FROM faktury_klient UNION SELECT klient FROM wydatki WHERE klient != '' ORDER BY 1")]
+    wynik['podsumowanie'] = [dict(r) for r in con.execute(
+        'SELECT w.rodzaj, COUNT(*) AS ile, SUM(o.kwota) AS kwota FROM wydatki w JOIN operacje o ON o.id = w.operacja_id'
+        ' GROUP BY w.rodzaj ORDER BY kwota')]
+    return wynik
+
+
+def reguly(con) -> list[dict]:
+    return [dict(r) for r in con.execute('SELECT * FROM reguly ORDER BY typ, klucz')]

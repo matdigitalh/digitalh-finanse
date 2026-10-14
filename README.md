@@ -39,7 +39,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 
 ```bash
 .venv/bin/python -m unittest discover -s testy -t .        # zmyślone dane
-.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2   # prawdziwe pliki, baza w katalogu tymczasowym
+.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3   # prawdziwe pliki, baza w katalogu tymczasowym
 ```
 
 ## Formaty plików (sprawdzone 14.10.2026, różnice wobec briefu)
@@ -56,7 +56,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 |---|---|---|
 | 1 | Import, księga operacji, rama UI, Płatności, Historia importów | gotowy 2026-10-14 |
 | 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | gotowy 2026-10-14 |
-| 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | |
+| 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
 | 4 | Wynik zarządczy, ekran Rentowność | |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów, ekran Cash flow | |
 | 6 | Pulpit jak w Budget Studio, eksport | |
@@ -72,3 +72,17 @@ należność faktury pierwotnej. Wiekowanie liczone na ostatni dzień w eksporci
 
 Decyzje Mata (`polacz`, `bez_faktury`, `zatwierdz`, `odrzuc`, `poza_bankiem`, `cofnij`) idą do pliku zmian tego
 Maca. Zmiana kodu dopasowania albo układu bazy sama wymusza przebudowę bazy przy starcie.
+
+## Klienci i koszty (etap 3)
+
+`finanse/klienci.py`. Klient faktury: decyzja Mata (faktura, potem nabywca), folder z Budget Studio po numerze
+faktury, ten sam nabywca, nazwa nabywcy. Jeden nabywca może płacić za kilku klientów, więc przypisanie idzie
+faktura po fakturze. Rodzaj wydatku (koszt klienta, stały, praca, podatki, VAT, podział zysku, zwrot): decyzja Mata,
+reguła Mata dla kontrahenta, reguły wbudowane (ZUS, urząd skarbowy, wynagrodzenia, zwrot nadpłaty, opłaty ING),
+Budget Studio. Budget Studio łączymy z bankiem po kwocie i dacie, nie po nazwie (nazwy są zapisane różnie),
+i tylko jako podpowiedź; plik jest opcjonalny.
+
+Wydatek a rejestr zakupów biura: numer dokumentu w tytule, numer KSeF (data faktury i kwota), kwota i nazwa,
+kwota po kursie (zagraniczne, tolerancja 6%), suma dokumentów dostawcy, faktura miesięczna = suma płatności kartą
+w miesiącu (Google Ads, narzędzia). Koszt klienta w Budżecie to netto z dokumentu, bez dokumentu kwota z banku.
+Atrybuty `style` w HTML blokuje CSP, wymiary ustawiamy ze skryptu.

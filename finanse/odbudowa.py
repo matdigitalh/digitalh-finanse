@@ -4,8 +4,8 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import baza, dopasowanie, konfig, zmiany
-from .importy import fakturownia, ing, rejestr_biura, wyniki_biura
+from . import baza, dopasowanie, klienci, konfig, zmiany
+from .importy import budget_studio, fakturownia, ing, rejestr_biura, wyniki_biura
 from .importy.wspolne import pliki, sha256, teraz
 
 # (rodzaj, wzorzec względem Dane/, moduł, wszystkie pliki czy tylko najnowszy)
@@ -14,13 +14,16 @@ ZRODLA = [
     ('Fakturownia', 'Fakturownia/fakturownia_sprzedaz_*.csv', fakturownia, False),
     ('Rejestr zakupów', 'Biuro/biuro_rejestr_zakupow_*.xlsx', rejestr_biura, True),
     ('Wyniki biura', 'Biuro/biuro_wyniki_*.xls', wyniki_biura, True),
+    ('Budget Studio', 'Budget Studio/budget_studio_*.csv', budget_studio, False),
 ]
+OPCJONALNE = {'Budget Studio'}   # bez tego pliku apka działa, tylko bez podpowiedzi
 
 
 def odcisk_kodu() -> str:
     """Układ bazy i zasady dopasowania. Po aktualizacji apki baza przebudowuje się sama, bez klikania."""
     h = hashlib.sha256(baza.SCHEMAT.encode('utf-8'))
     h.update(Path(dopasowanie.__file__).read_bytes())
+    h.update(Path(klienci.__file__).read_bytes())
     return h.hexdigest()[:16]
 
 
@@ -48,7 +51,8 @@ def odbuduj(cel: Path | None = None) -> dict:
         for rodzaj, wzorzec, modul, wszystkie in ZRODLA:
             lista = pliki(dane, wzorzec)
             if not lista:
-                raport['bledy'].append(f'Brak plików {wzorzec} w Dane/')
+                if rodzaj not in OPCJONALNE:
+                    raport['bledy'].append(f'Brak plików {wzorzec} w Dane/')
                 continue
             for p in (lista if wszystkie else lista[:1]):
                 h = sha256(p)
@@ -76,6 +80,14 @@ def odbuduj(cel: Path | None = None) -> dict:
             con.execute('ROLLBACK TO dopasowanie')
             con.execute('RELEASE dopasowanie')
             raport['bledy'].append(f'Dopasowanie wpłat: {e}')
+        con.execute('SAVEPOINT klienci')
+        try:
+            raport['klienci'] = klienci.policz(con, wpisy)
+            con.execute('RELEASE klienci')
+        except Exception as e:
+            con.execute('ROLLBACK TO klienci')
+            con.execute('RELEASE klienci')
+            raport['bledy'].append(f'Klienci i koszty: {e}')
         for k, v in (('odbudowa', teraz()), ('odcisk', odcisk_zrodel()), ('mac', konfig.nazwa_maca()),
                      ('zmian', str(len(wpisy))), ('bledy', '\n'.join(raport['bledy']))):
             con.execute('INSERT INTO meta VALUES (?,?)', (k, v))
