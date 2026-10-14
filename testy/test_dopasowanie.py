@@ -25,6 +25,7 @@ def dane_testowe(dane):
         faktura(10, 'FV2026/08/2', 'Wystawiona', '2026-08-02', '2026-08-16', g, '333', [('Usługa', 2000)]),
         faktura(11, 'FV2026/09/9', 'Wystawiona', '2026-09-09', '2026-09-23', g, '333', [('Rabat', -200)], oryginal='FV2026/08/2'),
         faktura(12, 'FV2026/09/10', 'Wystawiona', '2026-09-10', '2026-09-24', d, '444', [('Usługa', 1000)]),
+        faktura(13, 'FV2026/09/11', 'Wystawiona', '2026-09-11', '2026-09-25', d, '444', [('Usługa', 500)]),
     ])
     zapisz_ing(dane, 'ing_historia_2026-01-01_2026-10-13.csv', [
         operacja('2026-10-13', '1230,00', '0', 'DELTA SP. Z O.O. UL. TESTOWA 1', 'FV2026/09/1', ref='D1'),
@@ -35,7 +36,9 @@ def dane_testowe(dane):
         operacja('2026-10-02', '1230,00', '0', 'ALFA SP. Z O.O.', 'fv2026/09/2 i 3', ref='A4'),
         operacja('2026-10-01', '2460,00', '0', 'ALFA SP. Z O.O.', 'Zapłata za fakturę:F V2026/09/4', ref='A1'),
         operacja('2026-10-01', '615,00', '0', 'ALFA SP. Z O.O.', 'FV2026/09/2', ref='A2'),
-        operacja('2026-09-20', '50,00', '0', 'SKLEP INTERNETOWY', 'Zwrot płatności kartą', ref='S1'),
+        operacja('2026-09-20', '50,00', '0', 'SKLEP INTERNETOWY', 'przelew', ref='S1'),
+        operacja('2026-09-19', '30,00', '0', 'CASHBACK-KONTA-KORPOR.(KOSZTY)', 'Nagroda 15% z kartą Mastercard', ref='C1'),
+        operacja('2026-09-18', '615,00', '0', 'DELTA SP. Z O.O.', 'fv2024/09/11', ref='L1'),
         operacja('2026-01-10', '999,00', '0', 'ALFA SP. Z O.O.', '/FV/2025/12/5', ref='A0'),
     ])
 
@@ -128,6 +131,18 @@ class TestDopasowanie(unittest.TestCase):
     def test_sprzed_eksportu_i_nieznana(self):
         self.assertEqual(wplata(self.con, 'A0')['stan'], 'sprzed_eksportu')
         self.assertEqual(wplata(self.con, 'S1')['stan'], 'nieznana')
+
+    def test_literowka_w_roku(self):
+        # „fv2024/09/11”: takiej faktury nie ma, ten sam miesiąc i numer z 2026 na tę samą kwotę
+        self.assertEqual(dopasowane(self.con, 'L1'), {'FV2026/09/11': (61500, 'prawdopodobne')})
+
+    def test_wplywy_bez_faktury_regula_wbudowana(self):
+        w = wplata(self.con, 'C1')
+        self.assertEqual(w['stan'], 'bez_faktury')
+        self.assertIn('reguła wbudowana', w['uwaga'])
+
+    def test_podpowiedz_nigdy_pusta(self):
+        self.assertTrue(wplata(self.con, 'S1')['podpowiedz'])
 
     def test_podsumowanie(self):
         p = zapytania.podsumowanie_naleznosci(self.con)

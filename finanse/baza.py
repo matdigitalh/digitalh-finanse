@@ -66,6 +66,12 @@ CREATE TABLE faktury_stan (
   pozostalo INTEGER, stan TEXT, dni_po_terminie INTEGER, przedzial TEXT, ostatnia_wplata TEXT, uwaga TEXT, wpis TEXT
 );
 
+CREATE TABLE dokumenty (plik TEXT, folder TEXT, wystawca TEXT, numer TEXT, kwota INTEGER, waluta TEXT, data TEXT, tag TEXT, konto TEXT);
+CREATE TABLE konta_reklamowe (konto TEXT PRIMARY KEY, platnosci INTEGER, suma INTEGER, ostatnia TEXT, klient TEXT,
+  podpowiedz TEXT, klient_podpowiedz TEXT, wpis TEXT);
+CREATE TABLE korekty_reczne (numer TEXT PRIMARY KEY, faktura TEXT NOT NULL, brutto INTEGER, netto INTEGER, wpis TEXT);
+CREATE TABLE zwroty_zakupow (wplata_id INTEGER NOT NULL, wydatek_id INTEGER NOT NULL);
+
 -- Budget Studio (najnowszy eksport): wyłącznie podpowiedzi klientów i kategorii kosztów.
 CREATE TABLE bs (
   id TEXT, rodzaj INTEGER, status TEXT, numer TEXT, kontrahent TEXT, netto INTEGER, brutto INTEGER, miesiac TEXT,
@@ -77,11 +83,28 @@ CREATE TABLE faktury_klient (numer TEXT PRIMARY KEY REFERENCES faktury(numer), k
 
 CREATE TABLE wydatki (
   operacja_id INTEGER PRIMARY KEY REFERENCES operacje(id), kontrahent_klucz TEXT, rodzaj TEXT NOT NULL, klient TEXT,
-  zrodlo TEXT, wpis TEXT, dokument TEXT, netto_dok INTEGER
+  zrodlo TEXT, wpis TEXT, dokument TEXT, netto_dok INTEGER, konto TEXT
 );
 CREATE TABLE wydatki_dok (operacja_id INTEGER NOT NULL, nr_ewid TEXT NOT NULL, metoda TEXT);
 CREATE INDEX wydatki_dok_op ON wydatki_dok(operacja_id);
 CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
+
+-- Budżet (budzet.py): import z Budget Studio + zdarzenia Mata.
+CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT);
+CREATE TABLE bud_wiersz (id TEXT PRIMARY KEY, arkusz TEXT, rodzaj INTEGER, podstawa TEXT, kontrahent TEXT, komentarz TEXT,
+  przedmiot TEXT, sekcja TEXT, stawka_vat TEXT, dzien_wystawienia TEXT, dni_na_platnosc TEXT, metoda TEXT, ksiegowane INTEGER,
+  w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT);
+CREATE INDEX bud_wiersz_ark ON bud_wiersz(arkusz);
+CREATE TABLE bud_platnosc (id TEXT PRIMARY KEY, bs_id TEXT, wiersz TEXT, miesiac TEXT, typ TEXT, etap_bs TEXT, aktualna INTEGER,
+  netto INTEGER, vat INTEGER, brutto INTEGER, rodzaj INTEGER, nr_dok TEXT, nr_wewn TEXT, tytul TEXT, wystawienie TEXT, termin TEXT,
+  realny TEXT, ksiegowanie TEXT, metoda TEXT, w_cashflow INTEGER, komentarz TEXT, decyzja TEXT, zrodlo TEXT, wiersz_pliku INTEGER);
+CREATE INDEX bud_platnosc_w ON bud_platnosc(wiersz);
+CREATE TABLE bud_historia (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT, bylo TEXT, jest TEXT);
+-- Łączenie plan ↔ faktura / dokument ↔ bank (laczenie.py) i etap wynikający z banku.
+CREATE TABLE bud_powiazanie (platnosc TEXT, typ TEXT, ref TEXT, kwota INTEGER, metoda TEXT, pewnosc TEXT);
+CREATE INDEX bud_powiazanie_p ON bud_powiazanie(platnosc);
+CREATE TABLE bud_rozjazd (rodzaj TEXT, ref TEXT, kwota INTEGER, opis TEXT);
+CREATE TABLE bud_stan (platnosc TEXT PRIMARY KEY, etap TEXT, zaplacono INTEGER, data_zaplaty TEXT, termin_efektywny TEXT, uwaga TEXT);
 CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), stan TEXT, operacja_id INTEGER);
 """
 

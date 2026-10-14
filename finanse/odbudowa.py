@@ -4,8 +4,8 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import baza, dopasowanie, klienci, konfig, zmiany
-from .importy import budget_studio, fakturownia, ing, rejestr_biura, wyniki_biura
+from . import baza, budzet, dopasowanie, klienci, konfig, laczenie, zmiany
+from .importy import budget_studio, fakturownia, faktury_dysk, ing, rejestr_biura, wyniki_biura
 from .importy.wspolne import pliki, sha256, teraz
 
 # (rodzaj, wzorzec względem Dane/, moduł, wszystkie pliki czy tylko najnowszy)
@@ -24,6 +24,9 @@ def odcisk_kodu() -> str:
     h = hashlib.sha256(baza.SCHEMAT.encode('utf-8'))
     h.update(Path(dopasowanie.__file__).read_bytes())
     h.update(Path(klienci.__file__).read_bytes())
+    h.update(Path(faktury_dysk.__file__).read_bytes())
+    h.update(Path(budzet.__file__).read_bytes())
+    h.update(Path(laczenie.__file__).read_bytes())
     return h.hexdigest()[:16]
 
 
@@ -34,6 +37,10 @@ def odcisk_zrodel() -> str:
     for _, wzorzec, _, _ in ZRODLA:
         for p in pliki(dane, wzorzec):
             czesci.append(f'{p.name}:{p.stat().st_size}:{int(p.stat().st_mtime)}')
+    czesci += [f'faktury:{p.parent.parent.name}/{p.name}' for p in faktury_dysk.pliki()]
+    ark = konfig.katalog_finanse() / 'Aplikacja' / 'arkusze_bs.json'
+    if ark.exists():
+        czesci.append(f'arkusze:{ark.stat().st_size}:{int(ark.stat().st_mtime)}')
     return '|'.join(czesci) + '#' + zmiany.odcisk()
 
 
@@ -70,6 +77,10 @@ def odbuduj(cel: Path | None = None) -> dict:
                     con.execute('ROLLBACK TO plik')
                     con.execute('RELEASE plik')
                     raport['bledy'].append(f'{p.name}: {e}')
+        ile_plikow = faktury_dysk.importuj(con)   # tylko nazwy plików z Finanse/Faktury/*/Zweryfikowane
+        con.execute('INSERT INTO import_log (rodzaj, plik, sha256, wierszy, nowych, pominietych, uwagi, czas) VALUES (?,?,?,?,?,?,?,?)',
+                    ('Faktury kosztowe (folder)', 'Faktury/*/Zweryfikowane', '', ile_plikow, ile_plikow, 0,
+                     'nazwy plików: kwota, data, konto reklamowe', teraz()))
         wpisy, ostrzezenia = zmiany.wczytaj()
         raport['bledy'] += ostrzezenia
         con.execute('SAVEPOINT dopasowanie')
@@ -88,6 +99,15 @@ def odbuduj(cel: Path | None = None) -> dict:
             con.execute('ROLLBACK TO klienci')
             con.execute('RELEASE klienci')
             raport['bledy'].append(f'Klienci i koszty: {e}')
+        for nazwa, krok in (('budzet', lambda: budzet.zbuduj(con, wpisy)), ('laczenie', lambda: laczenie.policz(con))):
+            con.execute(f'SAVEPOINT {nazwa}')
+            try:
+                raport[nazwa] = krok()
+                con.execute(f'RELEASE {nazwa}')
+            except Exception as e:
+                con.execute(f'ROLLBACK TO {nazwa}')
+                con.execute(f'RELEASE {nazwa}')
+                raport['bledy'].append(f'{"Budżet" if nazwa == "budzet" else "Łączenie planów"}: {e}')
         for k, v in (('odbudowa', teraz()), ('odcisk', odcisk_zrodel()), ('mac', konfig.nazwa_maca()),
                      ('zmian', str(len(wpisy))), ('bledy', '\n'.join(raport['bledy']))):
             con.execute('INSERT INTO meta VALUES (?,?)', (k, v))

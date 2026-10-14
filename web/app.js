@@ -25,6 +25,14 @@ const MENU = [
 // Podstrony w wysuwanym panelu, jak w Budget Studio. etap = kiedy powstanie.
 const PODSTRONY = {
   platnosci: [
+    { grupa: 'Plan z budżetu' },
+    { nazwa: 'Wszystkie płatności', hash: '#/platnosci/plan?lista=wszystkie' },
+    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/plan?lista=nieoplacone' },
+    { nazwa: 'Nadal niewystawione', hash: '#/platnosci/plan?lista=niewystawione' },
+    { nazwa: 'Po terminie (plan)', hash: '#/platnosci/plan?lista=po_terminie' },
+    { nazwa: 'Do wystawienia (2 tyg.)', hash: '#/platnosci/plan?lista=do_wystawienia' },
+    { nazwa: 'Do zapłacenia (2 tyg.)', hash: '#/platnosci/plan?lista=do_zaplacenia' },
+    { nazwa: 'Zapłacone (ostatnie 2 tyg.)', hash: '#/platnosci/plan?lista=zaplacone' },
     { grupa: 'Płatności oczekujące' },
     { nazwa: 'Do połączenia', hash: '#/platnosci/do-polaczenia', licznik: 'do_polaczenia' },
     { nazwa: 'Do weryfikacji', hash: '#/platnosci/do-weryfikacji', licznik: 'do_weryfikacji' },
@@ -43,18 +51,24 @@ const PODSTRONY = {
     { nazwa: 'Historia importów', hash: '#/platnosci/importy' },
     { nazwa: 'Wyniki z biura (RZiS)', hash: '#/platnosci/wyniki-biura' },
   ],
-  budzet: [{ grupa: 'Foldery' }, { nazwa: 'Klienci', hash: '#/budzet' },
+  budzet: [{ grupa: 'Budżet' }, { nazwa: 'Arkusze budżetu', hash: '#/budzet/arkusze' },
+    { nazwa: 'Rozjazdy z Budget Studio', hash: '#/budzet/rozjazdy' }, { nazwa: 'Historia zmian planów', hash: '#/budzet/historia' },
+    { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia' },
+    { grupa: 'Foldery klientów' }, { nazwa: 'Klienci', hash: '#/budzet' },
     { grupa: 'Wydatki z banku' }, { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki' },
     { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany' },
+    { nazwa: 'Nieprzypisane wg kontrahenta', hash: '#/budzet/nieprzypisane' },
+    { nazwa: 'Konta reklamowe', hash: '#/budzet/konta' },
     { nazwa: 'Koszty klientów', hash: '#/budzet/wydatki?rodzaj=przenoszony' },
     { nazwa: 'Bez dokumentu w rejestrze', hash: '#/budzet/wydatki?dokument=bez%20dokumentu' },
     { grupa: 'Ustawienia' }, { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly' }],
-  cashflow: [{ grupa: 'Zapisane widoki' }, { nazwa: '2 tyg. w przód', etap: 5 }, { nazwa: '8 tyg. w przód', etap: 5 },
-    { nazwa: '13 tyg. w przód', etap: 5 }, { nazwa: '6 mies. w przód', etap: 5 }],
+  cashflow: [{ grupa: 'Prognoza' }, { nazwa: '13 tygodni w przód', hash: '#/cashflow' }, { nazwa: 'Dzień po dniu', hash: '#/cashflow?widok=dni' }],
   rentownosc: [{ grupa: 'Zapisane widoki' }, { nazwa: 'Wynik zarządczy', hash: '#/rentownosc' },
     { nazwa: 'Obroty wg klientów', hash: '#/rentownosc/klienci' }, { nazwa: 'Koszty wg kategorii', hash: '#/rentownosc/koszty' },
-    { nazwa: 'Podatek VAT', hash: '#/rentownosc/vat' }],
-  eksport: [{ grupa: 'Eksport' }, { nazwa: 'CSV i Excel', etap: 6 }],
+    { nazwa: 'Podatek VAT', hash: '#/rentownosc/vat' },
+    { grupa: 'Klienci i arkusze' }, { nazwa: 'Rentowność klientów', hash: '#/rentownosc/rent-klienci' },
+    { nazwa: 'Arkusze: plan i wykonanie', hash: '#/rentownosc/arkusze' }],
+  eksport: [{ grupa: 'Eksport' }, { nazwa: 'Excel', hash: '#/eksport' }],
 };
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -252,7 +266,7 @@ const chipBank = x => {
   return x.dni_po_terminie > 0 ? `<span class="chip minus">${x.dni_po_terminie} dni po terminie</span>` : '<span class="chip neutral">czeka</span>';
 };
 const STAN_WPLATY = { dopasowana: 'połączona z fakturą', nieznana: 'do połączenia', sprzed_eksportu: 'faktura sprzed eksportu',
-  bez_faktury: 'nie dotyczy faktury' };
+  bez_faktury: 'nie dotyczy faktury', zwrot_zakupu: 'zwrot zakupu' };
 
 const chipKwota = kwota => kwota > 0 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>';
 
@@ -511,10 +525,10 @@ Object.assign(WIDOKI, {
       { naglowek: 'Płatnik', wartosc: x => x.kontrahent },
       { naglowek: 'Tytuł', wartosc: x => x.tytul || x.opis },
       { id: 'kwota', naglowek: 'Kwota PLN', liczba: true, wartosc: x => zl(x.kwota, false), klasa: () => 'plus' },
-      { naglowek: stan === 'dopasowana' ? 'Faktury' : 'Podpowiedź', wartosc: x => stan === 'dopasowana' ? x.faktury : (x.uwaga || x.podpowiedz), klasa: () => 'szary' },
+      { naglowek: stan === 'dopasowana' ? 'Faktury' : 'Podpowiedź', wartosc: x => stan === 'dopasowana' ? x.faktury : [x.uwaga, x.podpowiedz].filter(Boolean).join(' · '), klasa: () => 'szary' },
     ];
     return `<h1>Wpłaty do połączenia</h1><div class="okruszki">Płatności / Płatności oczekujące</div>
-      <div class="zakladki" role="tablist">${[['nieznana', 'Do połączenia'], ['sprzed_eksportu', 'Za faktury sprzed eksportu'], ['bez_faktury', 'Nie dotyczą faktury'], ['dopasowana', 'Połączone']]
+      <div class="zakladki" role="tablist">${[['nieznana', 'Do połączenia'], ['sprzed_eksportu', 'Za faktury sprzed eksportu'], ['bez_faktury', 'Nie dotyczą faktury'], ['zwrot_zakupu', 'Zwroty zakupów'], ['dopasowana', 'Połączone']]
         .map(([v, n]) => `<button role="tab" aria-selected="${stan === v}" data-stan="${v}">${n} <span class="szary">${l[v] || 0}</span></button>`).join('')}</div>
       <p class="notka">Wpływy z banku bez ruchu wewnętrznego. Kliknij wpłatę, żeby połączyć ją z fakturą albo oznaczyć, że faktury nie dotyczy (zwrot, cashback). Decyzja zapisuje się w pliku zmian i przeżywa każde odświeżenie danych.</p>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { kwota: zl(w.suma, false) }, onWiersz: x => kartaWplaty(x.id) })}
@@ -529,8 +543,10 @@ Object.assign(WIDOKI, {
     const sekcje = Object.entries(grupy).map(([tytul, xs]) => `<h2 class="sekcja">${esc(tytul)} <span class="szary">${xs.length}</span></h2>
       <div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Faktury</th><th class="liczba-kol">Kwota PLN</th><th>Szczegóły</th><th></th></tr></thead><tbody>
       ${xs.map((x, i) => `<tr data-g="${esc(tytul)}" data-i="${i}"><td>${dataPl(x.data)}</td><td>${esc(x.kontrahent)}</td><td>${esc(x.faktury || '')}</td>
-        <td class="liczba-kol">${zl(x.kwota, false)}</td><td class="szary">${esc(x.opis.replace(/\d+ gr/, m => zl(parseInt(m)) ))}</td>
-        <td class="akcje-wiersz">${x.rodzaj === 'prawdopodobne' ? '<button data-a="zatwierdz">Potwierdź</button><button data-a="odrzuc">Odrzuć</button>' : x.rodzaj === 'fakturownia_oplacona' ? '<button data-a="poza_bankiem">Opłacona poza bankiem</button>' : ''}</td></tr>`).join('')}
+        <td class="liczba-kol">${zl(x.kwota, false)}</td><td class="szary">${esc(x.opis.replace(/\d+ gr/g, m => zl(parseInt(m))))}</td>
+        <td class="akcje-wiersz">${x.rodzaj === 'prawdopodobne' ? '<button data-a="zatwierdz">Potwierdź</button><button data-a="odrzuc">Odrzuć</button>'
+          : x.rodzaj === 'fakturownia_oplacona' ? '<button data-a="poza_bankiem">Opłacona poza bankiem</button>'
+          : x.rodzaj === 'korekta_w_tytule' ? `<button data-a="korekta">Dodaj korektę ${esc(x.korekta || '')} na ${zl(x.kwota)}</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>`).join('');
     setTimeout(() => document.querySelectorAll('tr[data-g]').forEach(tr => {
       const x = grupy[tr.dataset.g][tr.dataset.i];
@@ -538,6 +554,7 @@ Object.assign(WIDOKI, {
         const a = e.target.dataset?.a;
         if (!a) return x.operacja_id ? kartaWplaty(x.operacja_id) : (location.hash = `#/platnosci/faktury?q=${encodeURIComponent(x.numer)}`);
         e.stopPropagation();
+        if (a === 'korekta') return zmiana('korekta', { numer: x.korekta || `korekta do ${x.numer}`, faktura: x.numer, kwota: String(x.kwota) });
         if (a === 'poza_bankiem') {
           return zmiana('poza_bankiem', { faktura: x.numer, powod: 'opłacona poza bankiem (oznaczone na ekranie Do weryfikacji)' });
         }
@@ -582,7 +599,7 @@ Object.assign(WIDOKI, {
 
 // ---------- Etap 3: klienci, wydatki, reguły ----------
 const RODZAJE = { przenoszony: 'koszt klienta', staly: 'koszt stały', praca: 'koszty pracy', podatki: 'podatki', vat: 'VAT',
-  dywidenda: 'podział zysku', zwrot: 'zwrot dla klienta', nieprzypisany: 'nieprzypisany' };
+  dywidenda: 'podział zysku', zwrot: 'zwrot dla klienta', zwrocony: 'zakup zwrócony', nieprzypisany: 'nieprzypisany' };
 const chipRodzaj = r => `<span class="chip ${r === 'nieprzypisany' ? 'ostrzezenie' : r === 'przenoszony' ? 'akcent' : 'neutral'}">${esc(RODZAJE[r] || r)}</span>`;
 const chipDok = d => d === 'dokument' ? '<span class="chip plus">jest</span>' : d === 'bez dokumentu' ? '<span class="chip ostrzezenie">brak</span>'
   : d === 'po okresie rejestru' ? '<span class="chip neutral">rejestr jeszcze nie obejmuje</span>' : '<span class="szary">nie wymaga</span>';
@@ -600,6 +617,16 @@ function kartaFaktury(x, pola) {
   api('wydatki', { ile: 1 }).then(w => blok.insertAdjacentHTML('beforeend', listaKlientow(w.klienci)));
   $('#zapisz-klienta').onclick = () => zmiana('klient_nip', { nabywca: x.nabywca_klucz, klient: $('#nowy-klient').value });
   $('#zapisz-fakture').onclick = () => zmiana('klient_faktura', { faktura: x.numer, klient: $('#nowy-klient').value });
+  const kor = document.createElement('div');
+  kor.innerHTML = `<h3>Korekta wpisana ręcznie</h3><p class="szary">Gdy eksport z Fakturowni nie ma korekty. Pomniejsza należność tej faktury; korekta z eksportu o tym samym numerze ma pierwszeństwo.</p>
+    <div class="formularz">${pole('', 'Numer korekty', '<input id="kor-numer" placeholder="FK2026/08/1">')}${pole('', 'Kwota brutto korekty (zł)', '<input id="kor-kwota" inputmode="decimal">')}</div>
+    <div class="akcje"><button id="zapisz-korekte">Dodaj korektę</button></div>`;
+  k.insertBefore(kor, $('.zrodlo', k));
+  $('#zapisz-korekte').onclick = () => {
+    const kw = Math.round(parseFloat($('#kor-kwota').value.replace(/\s/g, '').replace(',', '.')) * 100);
+    if (!$('#kor-numer').value.trim() || !(kw > 0)) return komunikat('Podaj numer i kwotę korekty.', true);
+    zmiana('korekta', { numer: $('#kor-numer').value.trim(), faktura: x.numer, kwota: String(kw) });
+  };
 }
 
 function kartaWydatku(x, klienci) {
@@ -700,7 +727,7 @@ Object.assign(WIDOKI, {
 
   async 'budzet/reguly'() {
     const lista = await api('reguly');
-    const nazwy = { klient_nip: 'Nabywca należy do klienta', klient_faktura: 'Faktura należy do klienta', koszt_regula: 'Kontrahent: rodzaj kosztu', koszt_operacja: 'Jedna płatność' };
+    const nazwy = { klient_nip: 'Nabywca należy do klienta', klient_faktura: 'Faktura należy do klienta', konto_reklamowe: 'Konto reklamowe należy do klienta', koszt_regula: 'Kontrahent: rodzaj kosztu', koszt_operacja: 'Jedna płatność' };
     const wiersze = lista.map((x, i) => `<tr><td>${esc(nazwy[x.typ])}</td><td>${esc(x.klucz)}</td><td>${esc(x.wartosc)}</td>
       <td class="akcje-wiersz"><button data-i="${i}">Cofnij</button></td></tr>`).join('');
     setTimeout(() => document.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => zmiana('cofnij', { wpis: lista[b.dataset.i].wpis })));
@@ -954,9 +981,50 @@ function otworzPomoc(klucz) {
   }, true);
 })();
 
+// ---------- Poprawki z testu 14.10: reguły zbiorcze, konta reklamowe ----------
+Object.assign(WIDOKI, {
+  async 'budzet/nieprzypisane'() {
+    const [grupy, w] = await Promise.all([api('nieprzypisane-grupy'), api('wydatki', { ile: 1 })]);
+    const opcje = Object.entries(RODZAJE).filter(([k]) => k !== 'nieprzypisany').map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+    const wiersze = grupy.map((g, i) => `<tr data-i="${i}"><td>${esc(g.przyklad)}<div class="szary">reguła dla: „${esc(g.klucz)}”${g.konto ? `, ${esc(g.konto)} (przypisz w Konta reklamowe)` : ''}</div></td>
+      <td class="liczba-kol">${g.ile}</td><td class="liczba-kol minus">${zl(-g.kwota, false)}</td><td>${dataPl(g.ostatnia)}</td>
+      <td><select data-rodzaj><option value="">wybierz rodzaj</option>${opcje}</select></td>
+      <td><input data-klient list="lista-klientow" placeholder="klient (dla kosztu klienta)"></td>
+      <td class="akcje-wiersz"><button data-zapisz>Zapisz regułę</button></td></tr>`).join('');
+    setTimeout(() => document.querySelectorAll('tr[data-i]').forEach(tr => {
+      const g = grupy[tr.dataset.i];
+      $('[data-zapisz]', tr).onclick = () => {
+        const rodzaj = $('[data-rodzaj]', tr).value;
+        if (!rodzaj) return komunikat('Wybierz rodzaj kosztu.', true);
+        zmiana('koszt_regula', { kontrahent: g.klucz, rodzaj, klient: rodzaj === 'przenoszony' ? $('[data-klient]', tr).value.trim() : '' });
+      };
+    }));
+    const suma = grupy.reduce((a, g) => a + g.kwota, 0), ile = grupy.reduce((a, g) => a + g.ile, 0);
+    return `<h1>Nieprzypisane wg kontrahenta</h1><div class="okruszki">Budżet / Wydatki z banku</div>
+      <p class="notka">${ile} płatności, ${zl(suma)} w ${grupy.length} grupach. Jedna reguła ustawia rodzaj dla wszystkich płatności kontrahenta, także przyszłych. Rodzaj wybierasz Ty; reguły cofniesz w Reguły przypisań.</p>
+      ${listaKlientow(w.klienci)}
+      <div class="tabela-ramka niska"><table><thead><tr><th>Kontrahent</th><th class="liczba-kol">Płatności</th><th class="liczba-kol">Razem PLN</th><th>Ostatnia</th><th>Rodzaj</th><th>Klient</th><th></th></tr></thead><tbody>${wiersze}</tbody></table></div>`;
+  },
+
+  async 'budzet/konta'() {
+    const [konta, w] = await Promise.all([api('konta-reklamowe'), api('wydatki', { ile: 1 })]);
+    const wiersze = konta.map((k, i) => `<tr data-i="${i}"><td>${esc(k.konto)}</td><td class="liczba-kol">${k.platnosci}</td><td class="liczba-kol minus">${k.suma ? zl(-k.suma, false) : ''}</td>
+      <td>${dataPl(k.ostatnia)}</td><td class="szary">${esc(k.podpowiedz || '')}</td>
+      <td><input data-klient list="lista-klientow" value="${esc(k.klient ?? k.klient_podpowiedz ?? '')}" placeholder="klient"></td>
+      <td class="akcje-wiersz">${k.klient != null ? `<span class="chip plus">przypisane</span>` : ''}<button data-zapisz>${k.klient != null ? 'Zmień' : 'Zatwierdź'}</button></td></tr>`).join('');
+    setTimeout(() => document.querySelectorAll('tr[data-i]').forEach(tr => {
+      $('[data-zapisz]', tr).onclick = () => zmiana('konto_reklamowe', { konto: konta[tr.dataset.i].konto, klient: $('[data-klient]', tr).value.trim() });
+    }));
+    return `<h1>Konta reklamowe</h1><div class="okruszki">Budżet / Google Ads i Meta</div>
+      <p class="notka">Płatności kartą za reklamy przypisane do kont: Google Ads po numerze w nazwie płatności (ADS1234567890 to konto 123-456-7890), Meta przez fakturę z folderu Faktury (kwota i data). Podpowiedź pochodzi z wykazów faktur i nazw plików. Po zatwierdzeniu wszystkie płatności konta stają się kosztem tego klienta. Puste pole klienta i Zatwierdź: konto agencji, bez klienta.</p>
+      ${listaKlientow(w.klienci)}
+      <div class="tabela-ramka niska"><table><thead><tr><th>Konto</th><th class="liczba-kol">Płatności</th><th class="liczba-kol">Razem PLN</th><th>Ostatnia</th><th>Podpowiedź</th><th>Klient</th><th></th></tr></thead><tbody>${wiersze}</tbody></table></div>`;
+  },
+});
+
 function wBudowie(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
-  const etap = { cashflow: 5, eksport: 6 }[sekcja];
+  const etap = {}[sekcja];
   return `<h1>${esc(nazwa)}</h1><div class="okruszki">W budowie</div><p class="notka">Ten ekran powstanie w etapie ${etap}. Układ będzie taki jak w Budget Studio.</p>`;
 }
 

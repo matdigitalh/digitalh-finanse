@@ -31,6 +31,17 @@ OKNO_PRZED = 5      # wpłata może przyjść kilka dni przed datą wystawienia 
 OKNO_PO = 200       # dni po wystawieniu, w których szukamy wpłaty bez numeru
 MAKS_W_SUMIE = 6
 MAKS_KANDYDATOW = 14
+TOLERANCJA_GROSZOWA = 100   # niedopłata do 1 zł zamyka fakturę (z adnotacją)
+OKNO_ZWROTU = 90            # zwrot zakupu do 90 dni po wydatku
+# Wpływy, które z definicji nie są zapłatą za fakturę (zgłoszenie z testu 14.10, pkt 3).
+WPLYWY_BEZ_FAKTURY = [
+    (re.compile(r'zwrot p[lł]atno[sś]ci kart[aą]', re.I), 'zwrot płatności kartą'),
+    (re.compile(r'cashback|nagroda .{0,20}z kart[aą]', re.I), 'cashback, nagroda banku'),
+    (re.compile(r'zwrot\s*-?\s*nadp[lł]at|zwrot nap[lł]aty', re.I), 'zwrot nadpłaty od dostawcy'),
+    (re.compile(r'zwrot z podatku|zwrot (podatku )?cit', re.I), 'zwrot podatku'),
+    (re.compile(r'zwrot op[lł]aty s[aą]dow|zwrot zaliczki|z ?wrot niew', re.I), 'zwrot opłaty lub zaliczki sądowej'),
+]
+ZWROT_ZAKUPU = re.compile(r'zwrot p[lł]atno[sś]ci kart[aą]|zwrot\s*-?\s*nadp[lł]at', re.I)
 
 
 def klucz_fv(tekst: str) -> tuple | None:
@@ -97,7 +108,8 @@ class Stan:
 def wczytaj_reczne(wpisy: list[dict]) -> dict:
     """Składa wpisy Mata w stan. 'cofnij' unieważnia wskazany wpis. Późniejszy wpis o tej samej wpłacie wygrywa."""
     cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
-    r = {'polacz': {}, 'bez_faktury': {}, 'zatwierdz': set(), 'odrzuc': set(), 'poza_bankiem': {}, 'wpis_op': {}, 'wpis_fv': {}}
+    r = {'polacz': {}, 'bez_faktury': {}, 'zatwierdz': set(), 'odrzuc': set(), 'poza_bankiem': {}, 'wpis_op': {}, 'wpis_fv': {},
+         'korekty': {}}
     for w in wpisy:
         if w.get('id') in cofniete:
             continue
@@ -116,6 +128,8 @@ def wczytaj_reczne(wpisy: list[dict]) -> dict:
         elif typ == 'odrzuc':
             r['odrzuc'].add((d['operacja'], d['faktura']))
             r['zatwierdz'].discard((d['operacja'], d['faktura']))
+        elif typ == 'korekta':   # korekta wpisana ręcznie, dopóki eksport Fakturowni nie ma korekt
+            r['korekty'][d['numer']] = {'faktura': d['faktura'], 'brutto': -abs(int(d['kwota'])), 'wpis': w.get('id')}
         elif typ == 'poza_bankiem':
             r['poza_bankiem'][d['faktura']] = d.get('powod', '')
             r['wpis_fv'][d['faktura']] = w.get('id')
@@ -135,6 +149,15 @@ def policz(con, wpisy: list[dict]) -> dict:
     for k in con.execute('SELECT oryginal, brutto FROM faktury WHERE korekta = 1'):
         if k['oryginal'] in faktury:
             faktury[k['oryginal']]['korekty'] += k['brutto']
+    z_eksportu = {r[0] for r in con.execute('SELECT numer FROM faktury WHERE korekta = 1')}
+    for numer, k in reczne['korekty'].items():
+        if numer in z_eksportu or k['faktura'] not in faktury:   # korekta z eksportu wygrywa z ręczną
+            continue
+        f = faktury[k['faktura']]
+        f['korekty'] += k['brutto']
+        netto = round(k['brutto'] * f['netto'] / f['brutto']) if f['brutto'] else k['brutto']
+        con.execute('INSERT INTO korekty_reczne (numer, faktura, brutto, netto, wpis) VALUES (?,?,?,?,?)',
+                    (numer, k['faktura'], k['brutto'], netto, k['wpis']))
     for f in faktury.values():
         f['naleznosc'] = f['brutto'] + f['korekty']
         f['_tok'] = tokeny(f['nabywca'])
@@ -154,6 +177,11 @@ def policz(con, wpisy: list[dict]) -> dict:
         o['_tekst'] = f"{o['tytul'] or ''} {o['opis'] or ''}"
         o['_tok'] = tokeny(o['kontrahent'])
         o['_dzien'] = _dzien(o['data_ksiegowania'])
+    wydatki = [dict(o) for o in con.execute(
+        'SELECT id, data_ksiegowania, kwota, kontrahent, opis FROM operacje WHERE kwota < 0 AND wewnetrzna = 0')]
+    for x in wydatki:
+        x['_tok'] = tokeny(x['kontrahent'] or x['opis'])
+        x['_dzien'] = _dzien(x['data_ksiegowania'])
 
     s = Stan(faktury)
     wynik = {}   # operacja_id -> dict(stan, nadplata, uwaga, podpowiedz)
@@ -178,6 +206,26 @@ def policz(con, wpisy: list[dict]) -> dict:
 
     def wolna(o):
         return o['id'] not in wynik
+
+    # 1a. Zwrot zakupu: wpływ „Zwrot płatności kartą” / „Zwrot - nadpłata” na tę samą kwotę od tego samego
+    #     kontrahenta co wydatek do 90 dni wcześniej. Oba wychodzą z wyniku i z list do zrobienia.
+    zwroty_zakupow, uzyte_wyd = [], set()
+    for o in filter(wolna, ops):
+        if not ZWROT_ZAKUPU.search(o['_tekst']):
+            continue
+        para = next((x for x in sorted(wydatki, key=lambda x: x['data_ksiegowania'], reverse=True)
+                     if x['id'] not in uzyte_wyd and -x['kwota'] == o['kwota'] and x['_tok'] & o['_tok']
+                     and 0 <= (o['_dzien'] - x['_dzien']).days <= OKNO_ZWROTU), None)
+        if para:
+            uzyte_wyd.add(para['id'])
+            zwroty_zakupow.append((o['id'], para['id']))
+            zapisz(o, 'zwrot_zakupu', uwaga=f"zwrot zakupu z {para['data_ksiegowania']} ({para['kontrahent'] or para['opis']})")
+
+    # 1b. Wpływy, które z definicji nie są zapłatą za fakturę (zwroty, cashback, zwrot podatku)
+    for o in filter(wolna, ops):
+        powod = next((p for wzor, p in WPLYWY_BEZ_FAKTURY if wzor.search(o['_tekst'])), None)
+        if powod:
+            zapisz(o, 'bez_faktury', uwaga=f'{powod} (reguła wbudowana)')
 
     def dozwolone(o, numery):
         return [n for n in numery if (o['klucz'], n) not in reczne['odrzuc']]
@@ -217,6 +265,16 @@ def policz(con, wpisy: list[dict]) -> dict:
             zapisz(o, 'dopasowana', nad, uwaga='; '.join(uwagi))
         elif obce:
             o['_uwaga'] = '; '.join(uwagi)
+        elif nieznane and (literowka := [n for n in kandydaci(o, True) if s.pozostalo[n] == o['kwota']
+                                         and klucz_fv(n)[1:] in {k[1:] for k in nieznane}]):
+            # Literówka w roku: miesiąc i numer z tytułu zgadzają się z otwartą fakturą nabywcy na tę samą kwotę
+            # („fv2024/06/27” zamiast FV2026/06/27). Sama kwota nie wystarcza: klienci z płatnością cykliczną płacą
+            # faktury z poprzedniego roku tą samą kwotą. Do potwierdzenia.
+            n = literowka[0]
+            p_, z_ = pewnosc_auto(o, [n], PRAWDOPODOBNE)
+            s.przydziel(o, [n], 'kwota nabywcy, numer w tytule nie istnieje', p_, z_)
+            zapisz(o, 'dopasowana', uwaga='w tytule ' + ', '.join(f'FV{a}/{b:02d}/{c}' for a, b, c in nieznane)
+                   + f', takiej faktury nie ma; ta sama kwota co {n}')
         elif nieznane and najstarsza and all(1 <= b <= 12 and f'{a}-{b:02d}' < najstarsza[:7] for a, b, c in nieznane):
             zapisz(o, 'sprzed_eksportu', podpowiedz='faktura sprzed eksportu Fakturowni: '
                    + ', '.join(f'FV{a}/{b:02d}/{c}' for a, b, c in nieznane))
@@ -278,7 +336,8 @@ def policz(con, wpisy: list[dict]) -> dict:
     # Reszta: bez dopasowania, z podpowiedzią (ta sama nazwa nabywcy, faktury z saldem)
     for o in filter(wolna, ops):
         podobne = sorted(kandydaci(o, True), key=lambda n: abs((o['_dzien'] - faktury[n]['_dzien']).days))[:3]
-        zapisz(o, 'nieznana', uwaga=o.get('_uwaga', ''), podpowiedz=('może: ' + ', '.join(podobne)) if podobne else '')
+        zapisz(o, 'nieznana', uwaga=o.get('_uwaga', ''), podpowiedz=('może: ' + ', '.join(podobne)) if podobne
+               else 'brak otwartej faktury tego płatnika; jeśli to nie zapłata za fakturę, oznacz „nie dotyczy faktury”')
 
     # Nadpłata oddana klientowi: przelew wychodzący na tę samą kwotę do tego samego płatnika, po wpłacie
     zwroty = [dict(o) for o in con.execute('SELECT id, data_ksiegowania, kwota, kontrahent FROM operacje WHERE kwota < 0 AND wewnetrzna = 0')]
@@ -296,6 +355,7 @@ def policz(con, wpisy: list[dict]) -> dict:
                 break
 
     # Zapis do bazy
+    con.executemany('INSERT INTO zwroty_zakupow (wplata_id, wydatek_id) VALUES (?,?)', zwroty_zakupow)
     con.executemany('INSERT INTO dopasowania (operacja_id, numer, kwota, metoda, pewnosc, zrodlo) VALUES (?,?,?,?,?,?)',
                     s.dopasowania)
     pewnosci = {}
@@ -313,8 +373,11 @@ def policz(con, wpisy: list[dict]) -> dict:
         ostatnia[n] = max(ostatnia.get(n, ''), d)
     for n, f in faktury.items():
         zaplacono = f['naleznosc'] - s.pozostalo[n]
+        uwaga = reczne['poza_bankiem'].get(n, '')
         if n in reczne['poza_bankiem'] and s.pozostalo[n] > 0:
             stan, pozostalo = 'opłacona poza bankiem', 0
+        elif 0 < s.pozostalo[n] <= TOLERANCJA_GROSZOWA and zaplacono > 0:
+            stan, pozostalo, uwaga = 'opłacona', 0, f'niedopłata {zl(s.pozostalo[n])} pominięta (do 1 zł)'
         elif f['naleznosc'] <= 0 or s.pozostalo[n] <= 0:
             stan, pozostalo = 'opłacona', 0
         elif zaplacono > 0:
@@ -325,7 +388,7 @@ def policz(con, wpisy: list[dict]) -> dict:
         con.execute('INSERT INTO faktury_stan (numer, naleznosc, korekty, zaplacono, pozostalo, stan, dni_po_terminie,'
                     ' przedzial, ostatnia_wplata, uwaga, wpis) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                     (n, f['naleznosc'], f['korekty'], zaplacono, pozostalo, stan, max(dni, 0), przedzial(dni) if pozostalo else '',
-                     ostatnia.get(n, ''), reczne['poza_bankiem'].get(n, ''), reczne['wpis_fv'].get(n, '') if n in reczne['poza_bankiem'] else ''))
+                     ostatnia.get(n, ''), uwaga, reczne['wpis_fv'].get(n, '') if n in reczne['poza_bankiem'] else ''))
     con.execute("INSERT OR REPLACE INTO meta VALUES ('dzien_stanu', ?)", (dzien_stanu or '',))
     return {'wplat': len(ops), 'dopasowanych': sum(1 for w in wynik.values() if w['stan'] == 'dopasowana')}
 

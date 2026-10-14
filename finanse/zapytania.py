@@ -168,7 +168,7 @@ def naleznosci(con, przedzial=None, po_terminie=None, q=None, strona=1, ile=STRO
 
 def wplaty(con, stan='nieznana', q=None, strona=1, ile=STRONA):
     """Wpłaty od klientów z ich stanem dopasowania (Do połączenia)."""
-    warunki, params = ['w.stan = ?'], [stan if stan in ('nieznana', 'sprzed_eksportu', 'bez_faktury', 'dopasowana') else 'nieznana']
+    warunki, params = ['w.stan = ?'], [stan if stan in ('nieznana', 'sprzed_eksportu', 'bez_faktury', 'dopasowana', 'zwrot_zakupu') else 'nieznana']
     if q:
         warunki.append("(o.kontrahent || ' ' || o.tytul || ' ' || o.opis) LIKE ?"); params.append(f'%{q}%')
     sql = ('SELECT o.*, w.stan, w.pewnosc, w.nadplata, w.uwaga, w.podpowiedz, w.wpis,'
@@ -230,10 +230,26 @@ def do_weryfikacji(con) -> list[dict]:
         lista.append({'rodzaj': 'nadplata', 'tytul': 'Nadpłata albo podwójna wpłata', 'operacja_id': x['id'], 'klucz': x['klucz'],
                       'data': x['data_ksiegowania'], 'kwota': x['nadplata'], 'kontrahent': x['kontrahent'],
                       'faktury': x['faktury'], 'opis': f"wpłata {x['kwota']} gr, faktury już opłacone; {x['tytul']}"})
+    # Korekta w tytule wpłaty, a faktura wisi na różnicy: podpowiedź korekty ręcznej (eksport bez korekt).
+    z_korekta = set()
+    for r in con.execute(
+            "SELECT f.numer, f.nabywca, s.pozostalo, o.data_ksiegowania, o.tytul FROM faktury_stan s JOIN faktury f USING(numer)"
+            " JOIN dopasowania d ON d.numer = f.numer JOIN operacje o ON o.id = d.operacja_id"
+            " WHERE s.pozostalo > 0 AND (o.tytul LIKE '%korekt%' OR o.tytul LIKE '%FK2%')"):
+        x = dict(r)
+        import re
+        m = re.search(r'F\s*K\s*(\d{4})\s*/\s*(\d{1,2})\s*/\s*(\d{1,3})', x['tytul'] or '', re.I)
+        nr = f'FK{m.group(1)}/{int(m.group(2)):02d}/{m.group(3)}' if m else ''
+        z_korekta.add(x['numer'])
+        lista.append({'rodzaj': 'korekta_w_tytule', 'tytul': 'Korekta w tytule wpłaty, brak jej w eksporcie', 'numer': x['numer'],
+                      'data': x['data_ksiegowania'], 'kwota': x['pozostalo'], 'kontrahent': x['nabywca'], 'faktury': x['numer'],
+                      'korekta': nr, 'opis': f"w tytule: {x['tytul']}; dodaj korektę {nr or ''} na {x['pozostalo']} gr".strip()})
     for r in con.execute(
             "SELECT f.numer, f.nabywca, f.termin, s.pozostalo, s.dni_po_terminie FROM faktury_stan s JOIN faktury f USING(numer)"
             " WHERE f.status = 'Opłacona' AND s.pozostalo > 0 ORDER BY f.data_wystawienia"):
         x = dict(r)
+        if x['numer'] in z_korekta:
+            continue
         lista.append({'rodzaj': 'fakturownia_oplacona', 'tytul': 'W Fakturowni opłacona, w banku brak wpłaty', 'numer': x['numer'],
                       'data': x['termin'], 'kwota': x['pozostalo'], 'kontrahent': x['nabywca'], 'faktury': x['numer'],
                       'opis': 'sprawdź: kompensata, gotówka, inny rachunek albo błędne odhaczenie w Fakturowni'})
@@ -378,3 +394,19 @@ def historia_salda(con) -> list[dict]:
         wynik.append({'x': s, 'y': sum(ostatnie.values()), 'glowny': ostatnie.get('główny', 0), 'online': ostatnie.get('online', 0)})
         d += timedelta(days=1)
     return wynik
+
+
+def konta_reklamowe(con) -> list[dict]:
+    return [dict(r) for r in con.execute('SELECT * FROM konta_reklamowe ORDER BY klient IS NOT NULL, suma DESC')]
+
+
+def nieprzypisane_grupy(con) -> list[dict]:
+    """Nieprzypisane wydatki zgrupowane po kontrahencie: jedna reguła załatwia całą grupę."""
+    return [dict(r) for r in con.execute(
+        "SELECT w.kontrahent_klucz AS klucz, COUNT(*) AS ile, -SUM(o.kwota) AS kwota, MIN(o.kontrahent) AS przyklad,"
+        " MAX(o.data_ksiegowania) AS ostatnia, MAX(w.konto) AS konto FROM wydatki w JOIN operacje o ON o.id = w.operacja_id"
+        " WHERE w.rodzaj = 'nieprzypisany' GROUP BY w.kontrahent_klucz ORDER BY kwota DESC")]
+
+
+def korekty_reczne(con) -> list[dict]:
+    return [dict(r) for r in con.execute('SELECT * FROM korekty_reczne ORDER BY faktura')]

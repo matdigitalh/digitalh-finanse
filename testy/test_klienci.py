@@ -73,8 +73,8 @@ def klucz(con, ref):
 
 class TestNazwy(unittest.TestCase):
     def test_klucz_kontrahenta(self):
-        self.assertEqual(klucz_kontrahenta('GOOGLE *ADS6485927858 DUBLIN'), 'ads google')
-        self.assertEqual(klucz_kontrahenta('HEROLD MATEUSZ UL. BEATY'), klucz_kontrahenta('Mateusz Herold'))
+        self.assertEqual(klucz_kontrahenta('GOOGLE *ADS1112223333 DUBLIN'), 'ads google')
+        self.assertEqual(klucz_kontrahenta('KOWALSKI JAN UL. TESTOWA'), klucz_kontrahenta('Jan Kowalski'))
         self.assertEqual(klucz_kontrahenta('Drukomat.pl Pila 64-920 616'), 'drukomat pila')
 
     def test_krotka_nazwa(self):

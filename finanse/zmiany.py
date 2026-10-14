@@ -4,6 +4,7 @@ Każdy Mac dopisuje wyłącznie do własnego pliku `zmiany/<nazwa-Maca>.jsonl`, 
 widzi dwóch wersji jednego pliku. Stan powstaje przez złożenie wpisów ze wszystkich plików po czasie.
 """
 import json
+import re
 import os
 import uuid
 from datetime import datetime, timezone
@@ -27,9 +28,16 @@ TYPY = {
     'klient_faktura': ('faktura', 'klient'),  # jedna faktura należy do klienta (nabywca płaci za kilku klientów)
     'koszt_regula': ('kontrahent', 'rodzaj', 'klient'),   # wszystkie płatności do kontrahenta: rodzaj i klient
     'koszt_operacja': ('operacja', 'rodzaj', 'klient'),   # jedna płatność: rodzaj i klient
+    'korekta': ('numer', 'faktura', 'kwota'),  # korekta wpisana ręcznie: numer, faktura pierwotna, kwota brutto (grosze)
+    'konto_reklamowe': ('konto', 'klient'),   # konto Google Ads / Meta należy do klienta
     'cel': ('klucz', 'wartosc'),              # cel controllingu: obrót roczny (grosze), marża %, rezerwa w miesiącach
+    'bud': ('op',),                           # zmiana w budżecie (arkusz, wiersz, płatność, przenieś, decyzja planu)
+    'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
+    'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
+OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'przenies', 'decyzja_planu')
+USTAWIENIA = {'planowanie': ('tak', 'nie')}
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
 
@@ -39,6 +47,20 @@ def sprawdz(typ: str, dane) -> dict:
     if typ not in TYPY or not isinstance(dane, dict):
         raise ValueError('nieznany rodzaj wpisu')
     czyste = {}
+    if typ == 'bud':
+        return _sprawdz_bud(dane)
+    if typ == 'ustawienie':
+        if dane.get('klucz') not in USTAWIENIA or dane.get('wartosc') not in USTAWIENIA[dane.get('klucz')]:
+            raise ValueError('nieznane ustawienie')
+        return {'klucz': dane['klucz'], 'wartosc': dane['wartosc']}
+    if typ == 'estymata':
+        try:
+            u = float(str(dane.get('udzial')).replace(',', '.'))
+        except ValueError:
+            raise ValueError('udział w procentach')
+        if not 0 <= u <= 100 or not str(dane.get('klient') or '').strip():
+            raise ValueError('udział 0–100% i klient')
+        return {'klient': str(dane['klient']).strip()[:80], 'udzial': u, 'od': str(dane.get('od') or '')[:7]}
     for pole in TYPY[typ]:
         v = dane.get(pole)
         if pole == 'faktury':
@@ -53,6 +75,17 @@ def sprawdz(typ: str, dane) -> dict:
         elif pole == 'klucz' and typ == 'cel':
             if v not in CELE:
                 raise ValueError('nieznany cel')
+        elif pole == 'kwota':
+            try:
+                v = abs(int(str(v)))
+            except ValueError:
+                raise ValueError('kwota korekty w groszach')
+            if not 0 < v < 10 ** 10:
+                raise ValueError('kwota korekty poza zakresem')
+        elif pole == 'numer':
+            v = str(v or '').strip()[:60]
+            if not v:
+                raise ValueError('brak numeru korekty')
         elif pole == 'wartosc':
             try:
                 v = float(str(v).replace(',', '.'))
@@ -111,3 +144,31 @@ def odcisk() -> str:
     if not katalog.exists():
         return ''
     return ';'.join(f'{p.name}:{p.stat().st_size}:{int(p.stat().st_mtime)}' for p in sorted(katalog.glob('*.jsonl')))
+
+
+def _sprawdz_bud(d: dict) -> dict:
+    """Zdarzenie budżetu: kształt i rozmiar. Odwołania (czy arkusz, wiersz istnieje) sprawdza serwer."""
+    op = d.get('op')
+    if op not in OPERACJE_BUD:
+        raise ValueError('nieznana operacja budżetu')
+    if len(json.dumps(d)) > 8000:
+        raise ValueError('za duży wpis')
+    if op in ('arkusz', 'wiersz', 'platnosc'):
+        o = d.get('obiekt')
+        if not isinstance(o, dict) or not isinstance(o.get('id'), str) or not o['id']:
+            raise ValueError('brak obiektu')
+        return {'op': op, 'obiekt': o, 'usun': bool(d.get('usun'))}
+    if op == 'przenies':
+        if not isinstance(d.get('wiersze'), list) or not d['wiersze'] or not d.get('do_arkusza'):
+            raise ValueError('brak wierszy albo arkusza docelowego')
+        return {'op': op, 'wiersze': [str(x) for x in d['wiersze']][:200], 'do_arkusza': str(d['do_arkusza'])}
+    if d.get('decyzja') not in ('przesun', 'zaplacone', 'anuluj') or not d.get('platnosc'):
+        raise ValueError('decyzja: przesun, zaplacone albo anuluj')
+    wynik = {'op': op, 'platnosc': str(d['platnosc']), 'decyzja': d['decyzja']}
+    if d['decyzja'] == 'przesun':
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(d.get('termin', ''))):
+            raise ValueError('nowy termin RRRR-MM-DD')
+        wynik['termin'] = d['termin']
+    if d.get('data'):
+        wynik['data'] = str(d['data'])[:10]
+    return wynik

@@ -39,7 +39,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 
 ```bash
 .venv/bin/python -m unittest discover -s testy -t .        # zmyślone dane
-.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3 testy_odbioru.test_etap4   # prawdziwe pliki, baza w katalogu tymczasowym
+.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3 testy_odbioru.test_etap4 testy_odbioru.test_budzet   # prawdziwe pliki, baza w katalogu tymczasowym
 ```
 
 ## Formaty plików (sprawdzone 14.10.2026, różnice wobec briefu)
@@ -58,7 +58,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 2 | Dopasowanie wpłat do faktur, należności z wiekowaniem, Do połączenia / Do weryfikacji | gotowy 2026-10-14 |
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
 | 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
-| 5 | Prognoza gotówki 13 tyg., rejestr umów, ekran Cash flow | |
+| 5 | Prognoza gotówki 13 tyg. (gotowa 2026-10-15), rejestr umów (nie zrobiony), ekran Cash flow | częściowo |
 | 6 | Pulpit jak w Budget Studio, eksport | |
 
 ## Dopasowanie wpłat (etap 2)
@@ -104,3 +104,21 @@ miara bez kosztów klientów), obrót do celu (plan liniowy i prognoza ze średn
 (pełne miesiące), należności po 30 dniach. Cele: domyślne w `Finanse/Aplikacja/ustawienia.json`, zmiany z przycisku
 Cele jako wpis `cel` w pliku zmian. Pomoc: przycisk „?” przy kaflach i wykresach (dymek po najechaniu, panel po
 kliknięciu) i „Pomoc” w menu; treści w `POMOC` w `web/app.js`. Wykresy: `web/wykresy.js`.
+
+## Budżet jak w Budget Studio (zadanie nocne 14/15.10)
+
+Folder → kategoria → arkusz → wiersz → płatność (`finanse/budzet.py`). Źródła: plik importu
+`Finanse/Aplikacja/import_bs.json` generowany deterministycznie z najnowszego eksportu BS (+ lista arkuszy z zakresami
+`Finanse/Aplikacja/arkusze_bs.json` ze zwiadu, bo eksport ich nie ma), zapis tylko przy zmianie treści; na to zdarzenia
+`bud` z pliku zmian (plany Mata). ID płatności z BS zachowane (`bs:<ID>:<wiersz>`; to samo ID dla części wynagrodzenia).
+Edycja w apce wyłączona do włączenia przez Mata (Budżet, Ustawienia; serwer odrzuca zmiany w trybie podglądu).
+
+Łączenie (`finanse/laczenie.py`): przychód ↔ faktura (numer, potem klient + kwota netto + miesiąc ±1), koszt ↔ dokument
+z rejestru ↔ bank albo wprost bank (kwota brutto, ±5 dni karta, ±3 przelew); koszty pracy, VAT, podatek dochodowy sumą
+w miesiącu płatności. Etap „Opłacona” tylko z banku; plan po terminie zostaje „Po terminie” do decyzji Mata
+(przesuń, zapłacone, anuluj). Rozjazdy BS ↔ bank ↔ Fakturownia w `bud_rozjazd`.
+
+Cash flow (`finanse/cashflow.py`): 13 tygodni i dziennie, saldo z ING, należności z terminem + średnie spóźnienie
+nabywcy, plany bez faktury; scenariusz ostrożny i pełny; szacunek kosztów pracy i stałych w miesiącach bez planu.
+Rentowność (`finanse/rentownosc.py`): klient z kosztem pracy z estymaty udziału czasu (wpis `estymata`), arkusz plan
+kontra wykonanie. Eksport Excel (`finanse/eksport.py`): arkusz, cash flow, rentowność, generowany w pamięci.

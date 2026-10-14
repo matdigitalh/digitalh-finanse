@@ -109,7 +109,9 @@ const Wykresy = (() => {
       const m = { l: 54, r: 8, t: 10, b: 26 };
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
       svg.setAttribute('width', W); svg.setAttribute('height', H);
-      const widoczne = opcje.serie.filter(s => !ukryte.has(s.klucz));
+      const wszystkieWidoczne = opcje.serie.filter(s => !ukryte.has(s.klucz));
+      const linie = wszystkieWidoczne.filter(s => s.typ === 'linia');
+      const widoczne = wszystkieWidoczne.filter(s => s.typ !== 'linia');
       const stosy = [...new Set(widoczne.map(s => s.stos || s.klucz))];
       const n = opcje.kategorie.length;
       // zakres: sumy dodatnie i ujemne w stosach
@@ -119,6 +121,7 @@ const Wykresy = (() => {
         for (const s of widoczne.filter(s => (s.stos || s.klucz) === st)) { const v = s.wartosci[i] || 0; v >= 0 ? plus += v : minus += v; }
         max = Math.max(max, plus); min = Math.min(min, minus);
       }
+      for (const s of linie) for (const v of s.wartosci) { max = Math.max(max, v || 0); min = Math.min(min, v || 0); }
       const ticks = podzialki(min, max, 4);
       const yMin = ticks[0], yMax = ticks[ticks.length - 1];
       const y = v => m.t + (H - m.t - m.b) * (1 - (v - yMin) / (yMax - yMin || 1));
@@ -164,6 +167,17 @@ const Wykresy = (() => {
       }
       for (const [id, e] of elementy) if (!uzyte.has(id)) { e.remove(); elementy.delete(id); }
 
+      // linie (np. saldo narastająco) na tej samej osi, 2px, kropka na końcu
+      let wLinie = svg.querySelector('g.linie'); if (!wLinie) wLinie = el('g', { class: 'linie' }, svg);
+      wLinie.replaceChildren();
+      for (const s of linie) {
+        const pts = s.wartosci.map((v, i) => `${(m.l + pasmo * i + pasmo / 2).toFixed(1)},${y(v || 0).toFixed(1)}`);
+        el('polyline', { points: pts.join(' '), fill: 'none', stroke: s.kolor, 'stroke-width': 2, 'stroke-linejoin': 'round',
+          'stroke-linecap': 'round', 'stroke-dasharray': s.przerywana ? '5 4' : '' }, wLinie);
+        const [lx, ly] = pts[pts.length - 1].split(',');
+        el('circle', { cx: lx, cy: ly, r: 4, fill: s.kolor, stroke: 'var(--tlo)', 'stroke-width': 2 }, wLinie);
+      }
+
       // strefy najechania i kliknięcia: całe pasmo kategorii
       let strefy = svg.querySelector('g.strefy'); if (!strefy) strefy = el('g', { class: 'strefy' }, svg);
       strefy.replaceChildren();
@@ -172,7 +186,7 @@ const Wykresy = (() => {
           class: opcje.naKlik ? 'klik' : '' }, strefy);
         const pokaz = ev => {
           strefy.querySelectorAll('rect').forEach(z => z.classList.toggle('aktywna', z === r));
-          const wiersze = widoczne.map(s => ({ nazwa: s.nazwa, wartosc: pelna(s.wartosci[i] || 0), kolor: s.kolor }));
+          const wiersze = wszystkieWidoczne.map(s => ({ nazwa: s.nazwa, wartosc: pelna(s.wartosci[i] || 0), kolor: s.kolor }));
           for (const [st, nazwa] of Object.entries(opcje.sumaStosu || {})) {
             const wSt = widoczne.filter(s => s.stos === st);
             if (wSt.length > 1) wiersze.push({ nazwa, wartosc: pelna(wSt.reduce((a, s) => a + (s.wartosci[i] || 0), 0)), suma: true });

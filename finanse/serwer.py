@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import baza, controlling, konfig, odbudowa, wynik, zapytania, zmiany
+from . import (baza, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
+               zapytania_budzet, zmiany)
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
 BLOKADA = threading.Lock()
@@ -51,6 +52,22 @@ def _rok(q):
     return r if len(r) == 4 and r.isdigit() else None
 
 
+def _sprawdz_bud(con, d):
+    """Zmiany budżetu tylko przy włączonym planowaniu (do 31.12.2026 tryb podglądu) i tylko do istniejących obiektów."""
+    if not zapytania_budzet.planowanie(con):
+        raise ValueError('planowanie w apce jest wyłączone (tryb podglądu do 31.12.2026); włączysz je w Budżet, Ustawienia')
+    istnieje = lambda tab, i: con.execute(f'SELECT 1 FROM {tab} WHERE id = ?', (i,)).fetchone()
+    o = d.get('obiekt', {})
+    if d['op'] == 'wiersz' and not d.get('usun') and not istnieje('bud_arkusz', o.get('arkusz') or '') and not istnieje('bud_wiersz', o['id']):
+        raise ValueError('nie ma takiego arkusza')
+    if d['op'] == 'platnosc' and not istnieje('bud_wiersz', o.get('wiersz') or '') and not istnieje('bud_platnosc', o['id']):
+        raise ValueError('nie ma takiego wiersza')
+    if d['op'] == 'przenies' and not istnieje('bud_arkusz', d['do_arkusza']):
+        raise ValueError('nie ma arkusza docelowego')
+    if d['op'] == 'decyzja_planu' and not istnieje('bud_platnosc', d['platnosc']):
+        raise ValueError('nie ma takiej płatności')
+
+
 class Obsluga(BaseHTTPRequestHandler):
     server_version = 'Finanse'
     sys_version = ''
@@ -64,6 +81,17 @@ class Obsluga(BaseHTTPRequestHandler):
     def _wyslij(self, kod, tresc: bytes, typ='application/json; charset=utf-8'):
         self.send_response(kod)
         self.send_header('Content-Type', typ)
+        self.send_header('Content-Length', str(len(tresc)))
+        for k, v in NAGLOWKI.items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(tresc)
+
+    def _plik(self, nazwa: str, tresc: bytes):
+        from urllib.parse import quote
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.send_header('Content-Disposition', f"attachment; filename*=UTF-8''{quote(nazwa)}")
         self.send_header('Content-Length', str(len(tresc)))
         for k, v in NAGLOWKI.items():
             self.send_header(k, v)
@@ -119,6 +147,35 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.wydatki(con, **{k: q.get(k) for k in ('rodzaj', 'klient', 'dokument', 'zrodlo', 'q', 'od', 'do', 'strona', 'ile')})
             elif sciezka == 'reguly':
                 dane = zapytania.reguly(con)
+            elif sciezka == 'budzet/drzewo':
+                dane = zapytania_budzet.drzewo(con)
+            elif sciezka == 'budzet/arkusz':
+                dane = zapytania_budzet.arkusz(con, q.get('id', ''))
+            elif sciezka == 'budzet/platnosc':
+                dane = zapytania_budzet.platnosc(con, q.get('id', ''))
+            elif sciezka == 'budzet/lista':
+                dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona', 1), q.get('ile', 200))
+            elif sciezka == 'budzet/rozjazdy':
+                dane = zapytania_budzet.rozjazdy(con)
+            elif sciezka == 'budzet/historia':
+                dane = zapytania_budzet.historia(con)
+            elif sciezka == 'cashflow':
+                dane = cashflow.prognoza(con)
+            elif sciezka == 'rentownosc/klienci':
+                dane = rentownosc.klienci(con, _rok(q))
+            elif sciezka == 'rentownosc/arkusze':
+                dane = rentownosc.arkusze(con)
+            elif sciezka.startswith('eksport/'):
+                rodzaj = sciezka.split('/', 1)[1]
+                nazwa, tresc = (eksport.arkusz(con, q.get('id', '')) if rodzaj == 'arkusz' else eksport.cash_flow(con)
+                                if rodzaj == 'cashflow' else eksport.rentownosc_xls(con, _rok(q)) if rodzaj == 'rentownosc' else (None, None))
+                if not tresc:
+                    return self._json({'blad': 'nieznany eksport'}, 404)
+                return self._plik(nazwa, tresc)
+            elif sciezka == 'konta-reklamowe':
+                dane = zapytania.konta_reklamowe(con)
+            elif sciezka == 'nieprzypisane-grupy':
+                dane = zapytania.nieprzypisane_grupy(con)
             elif sciezka == 'controlling':
                 dane = controlling.policz(con)
             elif sciezka == 'saldo-historia':
@@ -169,6 +226,8 @@ class Obsluga(BaseHTTPRequestHandler):
                 if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje WHERE klucz = ? AND wewnetrzna = 0',
                                                           (dane['operacja'],)).fetchone():
                     raise ValueError('nie ma takiej operacji')
+                if typ == 'bud':
+                    _sprawdz_bud(con, dane)
                 for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
                     if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
                         raise ValueError(f'nie ma faktury {n}')
