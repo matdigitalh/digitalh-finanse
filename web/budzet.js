@@ -193,10 +193,12 @@ Object.assign(WIDOKI, {
   },
 
   async eksport() {
-    return `<h1>Eksport</h1><div class="okruszki">Excel, z danych na dziś</div>
-      <div class="kafle"><a class="kafel klik" href="/api/eksport/cashflow"><div class="tytul">Cash flow</div><div class="wartosc">13 tygodni</div><div class="dop">tygodnie, pozycje, saldo dzienne</div></a>
-        <a class="kafel klik" href="/api/eksport/rentownosc"><div class="tytul">Rentowność</div><div class="wartosc">klienci i arkusze</div><div class="dop">obrót, koszty, marża, plan i wykonanie</div></a>
-        <a class="kafel klik" href="#/budzet/arkusze"><div class="tytul">Arkusz budżetu</div><div class="wartosc">wybierz arkusz</div><div class="dop">przycisk Excel w widoku arkusza</div></a></div>`;
+    return `<h1>Eksport</h1>
+      <div class="zakladki" role="tablist"><button role="tab" aria-selected="true">${ik('arkusz')}Excel</button></div>
+      <div class="kafle"><a class="kafel klik" href="/api/eksport/cashflow"><div class="tytul">${ik('fale')}Cash flow</div><div class="wartosc">13 tygodni</div><div class="dop">tygodnie, pozycje, saldo dzienne</div></a>
+        <a class="kafel klik" href="/api/eksport/rentownosc"><div class="tytul">${ik('wykres')}Rentowność</div><div class="wartosc">klienci i arkusze</div><div class="dop">obrót, koszty, marża, plan i wykonanie</div></a>
+        <a class="kafel klik" href="#/budzet/arkusze"><div class="tytul">${ik('arkusz')}Arkusz budżetu</div><div class="wartosc">wybierz arkusz</div><div class="dop">w arkuszu: Zarządzaj, Eksport arkusza do Excela</div></a></div>
+      <p class="notka">Pliki powstają z danych na dziś, w tym komputerze; nic nie wychodzi do internetu.</p>`;
   },
 });
 

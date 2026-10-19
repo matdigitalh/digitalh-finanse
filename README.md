@@ -171,3 +171,28 @@ Reguły w `finanse/plan.py` (bez bazy, testowalne wprost), zdarzenia w `finanse/
 - **Interfejs (minimum, pełny arkusz w pakiecie 3):** klik w pustą komórkę = kwota; klik w komórkę = kwota komórki i karty płatności
   z polami dozwolonymi dla tej podstawy; karta wiersza z nowymi ustawieniami i wpisaniem kwot w miesiącach (seria komórek). Zapis
   wiersza wysyła tylko zmienione cechy.
+
+## Pakiet UX: wygląd jak w Budget Studio (2026-10-19)
+
+Zrzuty BS (19.10) i pomiar `getComputedStyle` jako wzór; nazwa i znak zostają „Finanse DigitalH”. Zrzuty po zmianie:
+`Finanse/Aplikacja/zwiad-bs-2026-10-19/po/`.
+
+- **Wygląd wspólny:** tokeny kolorów BS na `:root` w `web/styl.css` (wpływy, obciążenia, fiolet akcentu, pomarańcz „dziś”, niebieski
+  planów, tła kafli) i pełna wersja ciemna (przełącznik w pasku). Font Roboto Flex (licencja OFL, `web/fonty/OFL.txt`) leży lokalnie,
+  podzbiór łaciński, osie wagi i rozmiaru optycznego; zero zasobów z sieci.
+- **Rama:** wąski ciemny pasek ikon (rozwija się po najechaniu), na dole Ustawienia, Pomoc, tryb. Panel sekcji: Budżet = Arkusze
+  budżetu z wyszukiwarką i drzewem folder, kategoria, arkusz plus pozostałe ekrany budżetu; Płatności = grupy z ikonami, licznikami
+  oczekujących i liczbą płatności list; Cash flow = zapisane widoki. Tytuł cienką czcionką, pigułka widoku, zakładki.
+- **Wspólna tabela** (`tabela()` w `web/app.js`): fioletowe nagłówki z linią, numer, opcjonalna kropka statusu (`kropka`), tło wiersza
+  (`wierszKlasa`: `wiersz-plan`, `wiersz-po`, `wiersz-plus`), sortowanie strzałką: po stronie serwera (`sort`) albo lokalnie dla list bez
+  stron (`sortLokalny`, `sortKlucz`). Stopka „Max widocznych / Wyświetlono 1-100 z N / Wyszukaj”.
+- **Pulpit:** baner oczekujących, 6 kafli BS z `GET /api/budzet/kafle` (te same warunki co listy planu), wykres 6 mies. w przód
+  tygodniowo, kafle kontrolingu niżej.
+- **Cash flow:** `GET /api/cashflow/okresy?granulacja=dzien|tydzien|miesiac&od&do&saldo_start&rodzaj&scenariusz&arkusz`
+  (`finanse/cashflow.py: okresy`). Tydzień od wtorku do poniedziałku jak w BS (`cashflow_pierwszy_dzien_tygodnia` w `ustawienia.json`,
+  0 = poniedziałek). Przed dniem stanu przepływy z banku (para przelewów główny/online się znosi, przelew na VAT to wypływ), po nim
+  prognoza jak w 13 tygodniach. Ekran: zapisane widoki (2 tyg., 13 tyg., 6 mies., 12 mies., ten rok, 30 dni), pasek filtrów, panel
+  Wygląd i filtry, tabela okresów z MAX/MIN, minimapa z ramką (do 120 punktów), wykres, lista płatności wycinka.
+- **Arkusz:** zakładki Arkusz, Płatności (lista planu z `arkusz=`), Cash flow (okresy z `arkusz=`), Zarządzaj (menu); Grupuj wiersze wg,
+  Sekcje, Ustawienia planowanych płatności, wykres nad miesiącami, kolory komórek BS (tło planów, po terminie, kropki), stopka z
+  ustawieniami zaznaczonego wiersza i wyszukiwarką. Edycja bez zmian (pakiet 3).
