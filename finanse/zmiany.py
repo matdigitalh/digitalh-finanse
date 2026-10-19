@@ -36,6 +36,7 @@ TYPY = {
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
+    'kopia_bs': ('plik', 'sha256'),           # pakiet 6: przyjęta kopia z BS (plik Aplikacja/kopia_bs_*.json i jego suma)
 }
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria',
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
@@ -46,7 +47,7 @@ MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
 NAZWY_POL = {'nazwa': 'Nazwa arkusza', 'folder': 'Folder', 'kategoria': 'Kategoria', 'komentarz': 'Komentarz', 'kontrahent': 'Kontrahent',
              'przedmiot': 'Przedmiot transakcji', 'sekcja': 'Sekcja', 'metoda': 'Metoda płatności', 'tytul': 'Tytuł',
              'dni_na_platnosc': 'Dni na płatność', 'od': 'Początek zakresu', 'do': 'Koniec zakresu', 'miesiac': 'Miesiąc'}
-USTAWIENIA = {'planowanie': ('tak', 'nie')}
+USTAWIENIA = {'planowanie': ('tak', 'nie'), 'import_bs': ('tak', 'nie')}
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
 
@@ -64,6 +65,8 @@ def sprawdz(typ: str, dane) -> dict:
         return {'klucz': dane['klucz'], 'wartosc': dane['wartosc']}
     if typ == 'umowa':
         return _sprawdz_umowe(dane)
+    if typ == 'kopia_bs':
+        return _sprawdz_kopie(dane)
     if typ == 'estymata':
         try:
             u = float(str(dane.get('udzial')).replace(',', '.'))
@@ -118,7 +121,7 @@ def sprawdz(typ: str, dane) -> dict:
 def zapisz(typ: str, dane: dict) -> dict:
     """Dopisuje jeden wpis. Zapis jednym write + fsync, plik 600."""
     wpis = {'czas': datetime.now(timezone.utc).isoformat(timespec='microseconds'), 'id': uuid.uuid4().hex,
-            'mac': konfig.nazwa_maca(), 'typ': typ, 'dane': dane}
+            'mac': konfig.nazwa_maca(), 'typ': typ, 'dane': sprawdz(typ, dane) if typ == 'kopia_bs' else dane}
     p = _plik_tego_maca()
     fd = os.open(p, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
     try:
@@ -433,6 +436,29 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         wynik['termin'] = d['termin']
     if d.get('data'):
         wynik['data'] = _data(d['data'], 'data')
+    return wynik
+
+
+def _sprawdz_kopie(d: dict) -> dict:
+    """Wpis kopii z BS (zapisuje go wyłącznie przyjęcie kopii po kontroli sum, nie zwykła zmiana z interfejsu)."""
+    if not re.fullmatch(r'kopia_bs_\d{4}-\d{2}-\d{2}(?:_\d{1,3})?\.json', str(d.get('plik') or '')):
+        raise ValueError('kopia: zła nazwa pliku')
+    for k in ('sha256', 'eksport_sha256'):
+        if k in d and not re.fullmatch(r'[0-9a-f]{64}', str(d.get(k) or '')):
+            raise ValueError('kopia: zła suma kontrolna')
+    if 'sha256' not in d:
+        raise ValueError('kopia: brak sumy kontrolnej')
+    wynik = {'plik': d['plik'], 'sha256': d['sha256']}
+    if d.get('eksport'):
+        if not re.fullmatch(r'budget_studio_[\w.-]{1,60}\.csv', str(d['eksport'])):
+            raise ValueError('kopia: zła nazwa eksportu')
+        wynik['eksport'] = d['eksport']
+    if 'eksport_sha256' in d:
+        wynik['eksport_sha256'] = d['eksport_sha256']
+    if 'roznic' in d:
+        if isinstance(d['roznic'], bool) or not isinstance(d['roznic'], int) or d['roznic'] < 0:
+            raise ValueError('kopia: liczba różnic')
+        wynik['roznic'] = d['roznic']
     return wynik
 
 

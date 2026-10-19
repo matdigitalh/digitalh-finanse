@@ -42,8 +42,11 @@ def drzewo(con) -> dict:
         f['kategorie'].setdefault(a['kategoria'], []).append(a)
         f['saldo'] += a['saldo']
     zr = con.execute("SELECT wartosc FROM meta WHERE klucz='import_bs'").fetchone()
+    kopia = con.execute("SELECT wartosc FROM meta WHERE klucz='kopia_bs'").fetchone()
+    imp_wl = con.execute("SELECT wartosc FROM meta WHERE klucz='import_bs_wl'").fetchone()
     return {'foldery': list(foldery.values()), 'import': json.loads(zr[0]) if zr else None, 'planowanie': planowanie(con),
-            'osierocone': osierocone_ile(con)}
+            'osierocone': osierocone_ile(con), 'kopia_bs': json.loads(kopia[0]) if kopia else None,
+            'import_bs': not imp_wl or imp_wl[0] != 'nie'}
 
 
 def osierocone_ile(con) -> int:
@@ -306,6 +309,12 @@ def rozjazdy(con) -> list[dict]:
                             ' JOIN bud_arkusz a ON a.id = w.arkusz WHERE p.id = ?', (x['ref'],)).fetchone()
             if p:
                 x.update(miesiac=p[0], kontrahent=p[1], arkusz=p[2], arkusz_id=p[3])
+        elif x['ref'] and x['ref'].startswith(('komorka:', 'wiersz:')):   # pakiet 6: plan w BS inny niż w apce, wiersz tylko w apce
+            wid, m = (x['ref'][8:].rsplit(':', 1) if x['ref'].startswith('komorka:') else (x['ref'][7:], ''))
+            w = con.execute('SELECT w.kontrahent, a.nazwa, a.id FROM bud_wiersz w JOIN bud_arkusz a ON a.id = w.arkusz WHERE w.id = ?',
+                            (wid,)).fetchone()
+            if w:
+                x.update(kontrahent=w[0], arkusz=w[1], arkusz_id=w[2], miesiac=m)
         elif x['ref'] and x['ref'].startswith('FV'):
             f = con.execute('SELECT fk.klient, f.data_wystawienia FROM faktury f LEFT JOIN faktury_klient fk USING(numer) WHERE f.numer = ?',
                             (x['ref'],)).fetchone()

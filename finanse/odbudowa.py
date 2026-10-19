@@ -29,6 +29,7 @@ def odcisk_kodu() -> str:
     h.update(Path(laczenie.__file__).read_bytes())
     h.update((Path(budzet.__file__).parent / 'plan.py').read_bytes())
     h.update((Path(budzet.__file__).parent / 'umowy.py').read_bytes())
+    h.update((Path(budzet.__file__).parent / 'kopia_bs.py').read_bytes())
     return h.hexdigest()[:16]
 
 
@@ -43,6 +44,8 @@ def odcisk_zrodel() -> str:
     ark = konfig.katalog_finanse() / 'Aplikacja' / 'arkusze_bs.json'
     if ark.exists():
         czesci.append(f'arkusze:{ark.stat().st_size}:{int(ark.stat().st_mtime)}')
+    for p in sorted((konfig.katalog_finanse() / 'Aplikacja').glob('kopia_bs_*.json')):   # kopia z BS dociągnięta przez iCloud później
+        czesci.append(f'kopia:{p.name}:{p.stat().st_size}')
     return '|'.join(czesci) + '#' + zmiany.odcisk()
 
 
@@ -57,7 +60,11 @@ def odbuduj(cel: Path | None = None) -> dict:
     try:
         dane = konfig.katalog_dane()
         widziane = set()
+        wpisy, ostrzezenia = zmiany.wczytaj()
+        bez_bs = not budzet.import_bs_wlaczony(wpisy)   # pakiet 6: po 1.01.2027 apka nie czyta eksportów BS
         for rodzaj, wzorzec, modul, wszystkie in ZRODLA:
+            if rodzaj == 'Budget Studio' and bez_bs:
+                continue
             lista = pliki(dane, wzorzec)
             if not lista:
                 if rodzaj not in OPCJONALNE:
@@ -83,7 +90,6 @@ def odbuduj(cel: Path | None = None) -> dict:
         con.execute('INSERT INTO import_log (rodzaj, plik, sha256, wierszy, nowych, pominietych, uwagi, czas) VALUES (?,?,?,?,?,?,?,?)',
                     ('Faktury kosztowe (folder)', 'Faktury/*/Zweryfikowane', '', ile_plikow, ile_plikow, 0,
                      'nazwy plików: kwota, data, konto reklamowe', teraz()))
-        wpisy, ostrzezenia = zmiany.wczytaj()
         raport['bledy'] += ostrzezenia
         con.execute('SAVEPOINT dopasowanie')
         try:
@@ -110,6 +116,8 @@ def odbuduj(cel: Path | None = None) -> dict:
                 con.execute(f'ROLLBACK TO {nazwa}')
                 con.execute(f'RELEASE {nazwa}')
                 raport['bledy'].append(f'{"Budżet" if nazwa == "budzet" else "Łączenie planów"}: {e}')
+        if (raport.get('budzet') or {}).get('blad'):
+            raport['bledy'].append(f"Kopia z BS: {raport['budzet']['blad']}")
         for k, v in (('odbudowa', teraz()), ('odcisk', odcisk_zrodel()), ('mac', konfig.nazwa_maca()),
                      ('zmian', str(len(wpisy))), ('bledy', '\n'.join(raport['bledy']))):
             con.execute('INSERT INTO meta VALUES (?,?)', (k, v))

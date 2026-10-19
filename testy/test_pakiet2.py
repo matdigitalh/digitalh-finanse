@@ -24,15 +24,16 @@ class TestRegulyPlanu(unittest.TestCase):
         self.assertEqual((p['wystawienie'], p['termin'], p['realny'], p['ksiegowanie'][:7]), ('2025-11-10', '2025-11-24', '2025-11-24', '2025-11'))
 
     def test_2_worek_wrzesien_2025(self):
+        # przykład ze specyfikacji: tydzień od poniedziałku (parametr 0); domyślnie od wtorku, jak w BS (decyzja Mata 2026-10-19)
         w = {'id': 'w2', 'podstawa': 'Faktura (w worku)', 'stawka_vat': 23, 'dni_na_platnosc': 0}
-        ps = plan.generuj_komorke(w, '2025-09', 300000)
+        ps = plan.generuj_komorke(w, '2025-09', 300000, pierwszy_dzien_tygodnia=0)
         self.assertEqual([p['netto'] for p in ps], [70000, 70000, 70000, 70000, 20000])
         self.assertEqual([p['wystawienie'] for p in ps], ['2025-09-01', '2025-09-08', '2025-09-15', '2025-09-22', '2025-09-29'])
         self.assertEqual({p['ksiegowanie'] for p in ps}, {'2025-09-01'})
 
     def test_worek_reszta_do_ostatniego_i_6_tygodni(self):
         # marzec 2026 zaczyna się w niedzielę: 6 części (1, 2–8, 9–15, 16–22, 23–29, 30–31)
-        czesci = plan.podziel_worek(100001, '2026-03')
+        czesci = plan.podziel_worek(100001, '2026-03', 0)
         self.assertEqual(len(czesci), 6)
         self.assertEqual(sum(k for _, k in czesci), 100001)
         self.assertEqual(czesci[0], ('2026-03-01', 3226))   # 1/31 z 1000,01 zł
@@ -178,7 +179,10 @@ class TestKomorki(Baza):
                                              'kontrahent': 'Meta', 'stawka_vat': 23, 'dni_na_platnosc': 0}})
         self.bud({'op': 'komorka', 'wiersz': 'w-w', 'miesiac': '2025-09', 'kwota': 300000})
         self.przelicz()
-        self.assertEqual([p['netto'] for p in self.plany('w-w').values()], [70000, 70000, 70000, 70000, 20000])
+        # domyślnie tydzień od wtorku (worek_pierwszy_dzien_tygodnia = 1): 1.09.2025 to poniedziałek, więc 6 części
+        ps = list(self.plany('w-w').values())
+        self.assertEqual([p['netto'] for p in ps], [10000, 70000, 70000, 70000, 70000, 10000])
+        self.assertEqual([p['wystawienie'] for p in ps], ['2025-09-01', '2025-09-02', '2025-09-09', '2025-09-16', '2025-09-23', '2025-09-30'])
 
     def test_3_umowa_o_prace_przez_komorke_i_blokada_pit_przed_wyplata(self):
         self.bud({'op': 'wiersz', 'obiekt': {'id': 'w-u', 'arkusz': 'a-test', 'rodzaj': -1, 'podstawa': 'Umowa o pracę',
