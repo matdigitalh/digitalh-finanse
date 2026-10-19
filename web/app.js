@@ -135,6 +135,7 @@ function dataPl(iso) {
 
 async function api(sciezka, parametry = {}) {
   const q = new URLSearchParams(Object.entries(parametry).filter(([, v]) => v !== '' && v != null));
+  if (typeof zapamietajZapytanie === 'function') zapamietajZapytanie(sciezka, parametry);   // eksport listy z tymi filtrami (eksport.js)
   const r = await fetch(`/api/${sciezka}${q.toString() ? '?' + q : ''}`);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).blad || `Błąd ${r.status}`);
   return r.json();
@@ -584,16 +585,6 @@ const WIDOKI = {
           ['Płatność w banku', x.data_platnosci ? `${dataPl(x.data_platnosci)}, ${zl(-x.kwota_platnosci)}` : 'nie znaleziono (karta prywatna, kompensata albo jeszcze nieopłacony)']],
           `${x.plik}, wiersz ${x.wiersz}`) })}
       ${stopka(w, p)}`;
-  },
-
-  async 'platnosci/importy'() {
-    const lista = await api('importy');
-    const wiersze = lista.map(x => `<tr><td>${esc(x.rodzaj)}</td><td>${esc(x.plik)}</td><td class="liczba-kol">${x.wierszy}</td>
-      <td class="liczba-kol">${x.nowych}</td><td class="liczba-kol szary">${x.pominietych}</td><td class="szary">${esc(x.uwagi || '')}</td></tr>`).join('');
-    return `<h1>Historia importów</h1><div class="okruszki">Płatności / Dane</div>
-      <p class="notka">Aplikacja czyta pliki z folderu Finanse/Raporty/Dane i niczego w nim nie zmienia. Baza powstaje od nowa przy każdym odświeżeniu, więc ten sam plik wczytany dwa razy nic nie dubluje. „Pominięte” to operacje, które były już w nowszym pliku.</p>
-      <p><button id="odswiez">Wczytaj pliki na nowo</button> <span class="szary">Ostatnio: ${esc(STAN.meta.odbudowa ? new Date(STAN.meta.odbudowa).toLocaleString('pl-PL') : '')}, ${esc(STAN.meta.mac || '')}</span></p>
-      <div class="tabela-ramka"><table><thead><tr><th>Źródło</th><th>Plik</th><th class="liczba-kol">Wierszy</th><th class="liczba-kol">Nowych</th><th class="liczba-kol">Pominiętych</th><th>Uwagi</th></tr></thead><tbody>${wiersze}</tbody></table></div>`;
   },
 
   async 'platnosci/wyniki-biura'() {
@@ -1211,6 +1202,7 @@ async function pokaz() {
   const widok = $('#widok');
   try {
     widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : wBudowie(t.sekcja);
+    if (typeof poWidoku === 'function') poWidoku(klucz);   // przyciski Excel i CSV nad listą (eksport.js)
     podepnijFiltry();
     document.querySelectorAll('.zakladki [data-stan]').forEach(b => b.onclick = () => ustawParametry({ stan: b.dataset.stan, strona: 1, q: '' }));
     const o = $('#odswiez');

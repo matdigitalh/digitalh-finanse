@@ -1,0 +1,53 @@
+/* Pakiet 10: eksport i import (ekran Eksport, przyciski nad listą, Historia importów, plik przeciągnięty do okna).
+   Kolory wyłącznie z tokenów (styl.css i jeden token nakładki niżej), oba tryby. */
+:root { --nakladka: rgba(255, 255, 255, .84); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --nakladka: rgba(21, 20, 28, .88); }
+}
+:root[data-theme="dark"] { --nakladka: rgba(21, 20, 28, .88); }
+
+/* przyciski Excel i CSV nad listą (w nagłówku strony albo na prawo od tytułu) */
+.eksport-pasek { float: right; display: flex; align-items: center; gap: 6px; margin: 2px 0 0 16px; font-size: 12px; }
+.naglowek-strony .eksport-pasek { float: none; margin: 4px 0 0; }
+.eksport-pasek svg.ik { width: 14px; height: 14px; }
+
+/* ekran Eksport: kafle zakresów */
+.eksport-info { display: flex; align-items: flex-start; gap: 12px; max-width: 1160px; padding: 12px 16px; margin: 0 0 22px; font-size: 12px; line-height: 1.55;
+  background: var(--plus-tlo); border: 1px solid var(--plus-tlo-2); color: var(--plus-ciemny); }
+.eksport-info svg.ik { margin-top: 1px; color: var(--plus); }
+.eksport-siatka { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; max-width: 1160px; margin-bottom: 24px; }
+.eksport-kafel { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--linia); padding: 14px 16px; background: var(--tlo); }
+.eksport-kafel.glowny { background: var(--fiolet-tlo); border-color: transparent; }
+.eksport-kafel .tytul { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.eksport-kafel .tytul svg.ik { color: var(--fiolet); }
+.eksport-kafel .opis { font-size: 12px; color: var(--tekst-2); line-height: 1.5; }
+.eksport-kafel .filtry { margin: 0; }
+.eksport-kafel .filtry select, .eksport-kafel .filtry input { min-width: 110px; }
+.eksport-kafel .filtry input[type="number"] { width: 90px; min-width: 0; }
+.eksport-kafel .dol { margin-top: auto; display: flex; justify-content: flex-end; }
+
+/* nakładka przy przeciąganiu pliku nad okno */
+#upusc { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: var(--nakladka); }
+#upusc[hidden] { display: none; }
+#upusc > div { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 520px; padding: 40px 48px; text-align: center; pointer-events: none;
+  border: 2px dashed var(--fiolet-2); border-radius: 8px; background: var(--tlo); box-shadow: var(--cien); color: var(--tekst); }
+#upusc svg.ik { width: 34px; height: 34px; color: var(--fiolet); }
+#upusc b { font-size: 17px; font-weight: 500; }
+#upusc span { font-size: 12px; line-height: 1.5; color: var(--tekst-2); }
+
+/* podgląd importu (karta z prawej) i podsumowanie importu */
+.import-liczniki { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+.import-liczniki div { border: 1px solid var(--linia); padding: 8px 10px; background: var(--tlo); }
+.import-liczniki b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.import-liczniki span { font-size: 11px; color: var(--tekst-2); }
+.import-liczniki .uwaga { border-color: var(--minus-tlo-2); background: var(--minus-tlo); }
+.import-liczniki .uwaga b { color: var(--minus); }
+.karta .przyklady { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--tekst-2); }
+.import-naglowek { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; max-width: 900px; margin: 0 0 18px; font-size: 12px; }
+.import-naglowek dt { color: var(--tekst-2); }
+.import-naglowek dd { margin: 0; word-break: break-word; }
+
+@media (max-width: 700px) {
+  .eksport-pasek { float: none; margin: 0 0 10px; flex-wrap: wrap; }
+  .import-liczniki { grid-template-columns: repeat(2, 1fr); }
+}
