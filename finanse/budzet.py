@@ -353,7 +353,8 @@ def _stan(model: dict) -> dict:
     return {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
             'platnosc': {p['id']: p for p in model['platnosci']},
             'komorka': {(k['wiersz'], k['miesiac']): k['kwota'] for k in model.get('komorki', [])},
-            'nadpisane': dict(model.get('nadpisane', {})), 'parametry': dict(model.get('parametry') or parametry_planu())}
+            'nadpisane': dict(model.get('nadpisane', {})), 'parametry': dict(model.get('parametry') or parametry_planu()),
+            'podzialy': dict(model.get('podzialy', {}))}   # podział komórki z kopii BS (pakiet 6): '<wiersz>:<miesiąc>'
 
 
 def parametry_planu() -> dict:
@@ -383,7 +384,7 @@ def _odswiez(st: dict, wid: str, miesiace=None):
             continue
         if w.get('podstawa') in plan.WOREK:
             kwota = max(0, kwota - sum(p['netto'] for p in pla.values() if p['wiersz'] == wid and p['miesiac'] == m and p['typ'] != 'plan'))
-        for p in plan.generuj_komorke(w, m, kwota, st['nadpisane'], st['parametry']['tydzien']):
+        for p in plan.generuj_komorke(w, m, kwota, st['nadpisane'], st['parametry']['tydzien'], st['podzialy'].get(f'{wid}:{m}')):
             pla[p['id']] = p
 
 
@@ -437,6 +438,9 @@ def _po_zmianie_wiersza(st: dict, wid: str, zmienione: set, przelicz: bool):
     w = st['wiersz'][wid]
     pola_planu = set().union(*(plan.GENERATORY[k] for k in zmienione)) if zmienione else set()
     prefiks = f'plan:{wid}:'
+    if przelicz:   # nowa podstawa albo proporcje: podział z kopii BS przestaje obowiązywać
+        for k in [k for k in st['podzialy'] if k.startswith(f'{wid}:')]:
+            st['podzialy'].pop(k)
     if pola_planu:
         for pid in [k for k in st['nadpisane'] if k.startswith(prefiks)]:
             st['nadpisane'][pid] = {k: v for k, v in st['nadpisane'][pid].items() if k not in pola_planu}
@@ -534,6 +538,7 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             pla.pop(p['id'])
         if kwota is None:
             st['komorka'].pop((wid, m), None)
+            st['podzialy'].pop(f'{wid}:{m}', None)
             for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:{m}:')]:
                 st['nadpisane'].pop(k)
         else:
@@ -565,6 +570,8 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
                     st['komorka'].pop(k)
                 for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{oid}:')]:
                     st['nadpisane'].pop(k)
+                for k in [k for k in st['podzialy'] if k.startswith(f'{oid}:')]:
+                    st['podzialy'].pop(k)
             return None, bylo, oid
         if op == 'arkusz':
             if bylo is None and not all(obiekt.get(k) for k in ('nazwa', 'folder', 'kategoria', 'od', 'do')):
@@ -699,6 +706,7 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict]) -> list[dict]:
     model['arkusze'], model['wiersze'], model['platnosci'] = list(st['arkusz'].values()), list(st['wiersz'].values()), list(st['platnosc'].values())
     model['komorki'] = [{'wiersz': w, 'miesiac': m, 'kwota': k} for (w, m), k in sorted(st['komorka'].items())]
     model['nadpisane'] = {k: v for k, v in st['nadpisane'].items() if v}
+    model['podzialy'] = st['podzialy']
     model['parametry'] = st['parametry']
     model['osierocone'] = osierocone
     return historia
@@ -710,10 +718,44 @@ def wczytaj_model() -> dict | None:
     return json.loads(p.read_text(encoding='utf-8')) if p.exists() else None
 
 
+def import_bs_wlaczony(wpisy: list[dict]) -> bool:
+    """Przełącznik „import_bs” (APK-FLAG-02, pakiet 6): czy apka czyta eksporty BS. Domyślnie tak; po 1.01.2027 Mat
+    wyłącza i apka działa dalej na kopii z BS i własnych planach. Ostatni nie cofnięty wpis wygrywa."""
+    cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
+    wartosc = 'tak'
+    for w in wpisy:
+        if w.get('typ') == 'ustawienie' and w['dane'].get('klucz') == 'import_bs' and w.get('id') not in cofniete:
+            wartosc = w['dane']['wartosc']
+    return wartosc == 'tak'
+
+
+def model_bazowy(wpisy: list[dict], odswiez: bool = True) -> tuple[dict | None, list[dict], dict]:
+    """Model, na który nakładamy zdarzenia „bud”: przyjęta kopia z BS (pakiet 6; zdarzenia sprzed kopii już nie
+    obowiązują), a bez niej import z najnowszego eksportu BS. Zwraca (model, wpisy do nałożenia, informacje: wpis kopii,
+    import do porównania w okresie równoległym, błąd kopii). odswiez=False: bez generowania pliku importu (próba wpisu)."""
+    from . import kopia_bs
+    info = {}
+    wlaczony = import_bs_wlaczony(wpisy)
+    k = kopia_bs.aktywna(wpisy)
+    if k:
+        try:
+            kopia = kopia_bs.wczytaj(k)
+            info.update(kopia=k, wiersze_bs=kopia.get('wiersze_bs', {}),
+                        imp=odswiez_import() if (odswiez and wlaczony) else None)
+            return kopia_bs.rozwin(kopia), kopia_bs.po_kopii(wpisy, k), info
+        except ValueError as e:
+            info['blad'] = str(e)
+    if not wlaczony:
+        return None, wpisy, info
+    imp = odswiez_import() if odswiez else wczytaj_model()
+    return (json.loads(json.dumps(imp)) if imp else None), wpisy, info   # kopia, plik importu zostaje nietknięty
+
+
 def sprawdz_wpis(dane: dict, wpisy: list[dict], model: dict | None = None, dzis: str | None = None):
-    """Próba wpisu „bud” na bieżącym stanie (import + dotychczasowe zmiany), bez zapisu, z blokadami BS (rzeczywiste
-    w wierszu, worek, składowe umowy, zakres miesięcy i dat). ValueError z powodem: wtedy do pliku zmian nie trafia nic."""
-    model = model or wczytaj_model()
+    """Próba wpisu „bud” na bieżącym stanie (kopia z BS albo import + dotychczasowe zmiany), bez zapisu, z blokadami BS
+    (rzeczywiste w wierszu, worek, składowe umowy, zakres miesięcy i dat). ValueError z powodem: wtedy do pliku zmian nie trafia nic."""
+    if model is None:
+        model, wpisy, _ = model_bazowy(wpisy, odswiez=False)
     if not model:
         raise ValueError('brak budżetu: nie ma pliku importu z Budget Studio')
     zastosuj_zdarzenia(model, wpisy)
@@ -782,6 +824,7 @@ def ustawienia_z_wpisow(con, wpisy: list[dict]):
         elif w.get('typ') == 'estymata':
             estymaty[w['dane']['klient']] = {'udzial': w['dane']['udzial'], 'od': w['dane'].get('od', ''), 'wpis': w['id']}
     con.execute("INSERT OR REPLACE INTO meta VALUES ('planowanie', ?)", (planowanie,))
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs_wl', ?)", ('tak' if import_bs_wlaczony(wpisy) else 'nie',))
     con.execute("INSERT OR REPLACE INTO meta VALUES ('estymaty', ?)", (json.dumps(estymaty, ensure_ascii=False),))
 
 
@@ -789,11 +832,10 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     ustawienia_z_wpisow(con, wpisy)
     from . import umowy
     umowy.zapisz_do_bazy(con, wpisy)
-    model = odswiez_import()
+    model, wpisy_modelu, info = model_bazowy(wpisy)
     if not model:
-        return {'arkuszy': 0}
-    model = json.loads(json.dumps(model))   # kopia, plik zostaje nietknięty
-    historia = zastosuj_zdarzenia(model, wpisy)
+        return {'arkuszy': 0, **({'blad': info['blad']} if info.get('blad') else {})}
+    historia = zastosuj_zdarzenia(model, wpisy_modelu)
     generuj_cykliczne(model)
     for a in model['arkusze']:
         con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo) VALUES (?,?,?,?,?,?,?)',
@@ -833,6 +875,17 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))
     wynik = {'arkuszy': len(model['arkusze']), 'wierszy': len(model['wiersze']), 'platnosci': len(model['platnosci'])}
+    if info.get('kopia'):   # pakiet 6: budżet z kopii; nowy eksport BS tylko porównujemy (okres równoległy)
+        k = info['kopia']
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('kopia_bs', ?)", (json.dumps(
+            {'wpis': k['id'], 'czas': k['czas'], 'plik': k['dane']['plik'], 'eksport': k['dane'].get('eksport', '')}, ensure_ascii=False),))
+        if info.get('imp'):
+            from . import kopia_bs
+            rozjazdy = kopia_bs.porownaj(info['imp'], model, info['wiersze_bs'])
+            con.executemany('INSERT INTO bud_rozjazd (rodzaj, ref, kwota, opis) VALUES (?,?,?,?)', rozjazdy)
+            wynik['rozjazdy_z_bs'] = len(rozjazdy)
+    if info.get('blad'):
+        wynik['blad'] = info['blad']
     if model['osierocone']:
         wynik['osierocone'] = len(model['osierocone'])
     return wynik

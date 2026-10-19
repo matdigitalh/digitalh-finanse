@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (baza, budzet, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
+from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, rentownosc, wynik, zapytania,
                zapytania_budzet, zmiany)
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
@@ -158,6 +158,9 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania_budzet.rozjazdy(con)
             elif sciezka == 'budzet/historia':
                 dane = zapytania_budzet.historia(con)
+            elif sciezka in ('budzet/kopia', 'budzet/zgodnosc'):   # pakiet 6: podgląd kopii z BS (bez zapisu), zgodność z BS
+                dane = (kopia_bs.podglad(wpisy=zmiany.wczytaj()[0]) if sciezka == 'budzet/kopia'
+                        else kopia_bs.zgodnosc(con, zmiany.wczytaj()[0]))
             elif sciezka == 'umowy':
                 from . import umowy
                 dane = umowy.lista(con)
@@ -171,6 +174,11 @@ class Obsluga(BaseHTTPRequestHandler):
                 rodzaj = sciezka.split('/', 1)[1]
                 nazwa, tresc = (eksport.arkusz(con, q.get('id', '')) if rodzaj == 'arkusz' else eksport.cash_flow(con)
                                 if rodzaj == 'cashflow' else eksport.rentownosc_xls(con, _rok(q)) if rodzaj == 'rentownosc' else (None, None))
+                if rodzaj == 'kontrola-bs':
+                    r = kopia_bs.podglad() if q.get('podglad') else kopia_bs.zgodnosc(con, zmiany.wczytaj()[0])
+                    if not r.get('eksport'):
+                        raise ValueError('brak eksportu BS do porównania')
+                    nazwa, tresc = f"kontrola BS {r['eksport'].removesuffix('.csv')}.xlsx", kopia_bs.xlsx(r)
                 if not tresc:
                     return self._json({'blad': 'nieznany eksport'}, 404)
                 return self._plik(nazwa, tresc)
@@ -211,6 +219,8 @@ class Obsluga(BaseHTTPRequestHandler):
             return self._json({'ok': True, 'bledy': raport['bledy'] if raport else []})
         if u.path == '/api/zmiana':
             return self._zmiana()
+        if u.path == '/api/kopia-bs':
+            return self._kopia_bs()
         self._json({'blad': 'nieznany adres'}, 404)
 
     def _zmiana(self):
@@ -222,6 +232,8 @@ class Obsluga(BaseHTTPRequestHandler):
                 raise ValueError('pusty albo za duży wpis')
             cialo = json.loads(self.rfile.read(dlugosc))
             typ = cialo.get('typ')
+            if typ == 'kopia_bs':
+                raise ValueError('kopię z Budget Studio przyjmuje się przyciskiem na ekranie Zgodność z BS, po kontroli sum')
             dane = zmiany.sprawdz(typ, cialo.get('dane'))
             con = baza.polacz(konfig.plik_bazy(), tylko_odczyt=True)
             try:
@@ -240,6 +252,21 @@ class Obsluga(BaseHTTPRequestHandler):
         wpis = zmiany.zapisz(typ, dane)
         raport = odbuduj_jesli_trzeba(wymus=True)
         self._json({'ok': True, 'wpis': wpis['id'], 'bledy': raport['bledy'] if raport else []})
+
+    def _kopia_bs(self):
+        """Pakiet 6: przyjęcie kopii z BS po podglądzie (ten sam eksport, 0 różnic w kontroli sum), potem przeliczenie."""
+        try:
+            dlugosc = int(self.headers.get('Content-Length', '0'))
+            if not 0 < dlugosc <= 2000:
+                raise ValueError('pusty albo za duży wpis')
+            cialo = json.loads(self.rfile.read(dlugosc))
+            sha = str(cialo.get('eksport_sha256') or '')
+            with BLOKADA:
+                wpis = kopia_bs.przyjmij(sha, zmiany.wczytaj()[0])
+        except (ValueError, TypeError, json.JSONDecodeError) as e:
+            return self._json({'blad': str(e)}, 400)
+        raport = odbuduj_jesli_trzeba(wymus=True)
+        self._json({'ok': True, 'wpis': wpis['id'], 'plik': wpis['dane']['plik'], 'bledy': raport['bledy'] if raport else []})
 
     def do_PUT(self):
         self._wyslij(405, b'', 'text/plain')

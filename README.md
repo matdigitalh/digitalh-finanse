@@ -166,8 +166,44 @@ Reguły w `finanse/plan.py` (bez bazy, testowalne wprost), zdarzenia w `finanse/
 - **Cechy płatności:** kontrahent planu (z wiersza albo ręczny), Księgowane (OFF = poza rentownością arkuszy), W cash flow, split
   payment w wierszu (zapisany, liczenie w pakiecie 8). Arkusz, folder, sekcja, przedmiot zawsze ze złączenia, więc zmiana nazwy arkusza
   od razu widać na listach.
-- **Parametr worka:** `worek_pierwszy_dzien_tygodnia` w `Finanse/Aplikacja/ustawienia.json` (0 = poniedziałek, domyślnie, decyzja Mata;
-  eksport BS z 14.10.2026 dzieli od wtorku, czyli 1). Zmiana pliku wymaga „Wczytaj pliki na nowo”.
+- **Parametr worka:** `worek_pierwszy_dzien_tygodnia` w `Finanse/Aplikacja/ustawienia.json`; domyślnie 1 = wtorek, jak w BS
+  (decyzja Mata 2026-10-19, wieczór; 0 = poniedziałek). Zmiana pliku wymaga „Wczytaj pliki na nowo”.
 - **Interfejs (minimum, pełny arkusz w pakiecie 3):** klik w pustą komórkę = kwota; klik w komórkę = kwota komórki i karty płatności
   z polami dozwolonymi dla tej podstawy; karta wiersza z nowymi ustawieniami i wpisaniem kwot w miesiącach (seria komórek). Zapis
   wiersza wysyła tylko zmienione cechy.
+
+## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)
+
+Moduł `finanse/kopia_bs.py`, ekran Budżet, „Zgodność z BS i kopia” (`web/kopia_bs.js`), karta w Ustawieniach budżetu.
+
+- **Kopia jako model planu, nie zrzut płatności.** Z najnowszego eksportu BS (cały 2026 z historią): arkusze (zakres poszerzony do
+  miesięcy płatności), wiersze z ustawieniami wyprowadzonymi z planów (reguła dnia wystawienia, dni na płatność, stawka, metoda,
+  Księgowane, W cash flow), komórki z kwotami. Plany liczy generator z pakietu 2; to, czym plan BS różni się od reguły wiersza (data,
+  aktualność, komentarz, stawka planu zerowego), przechodzi jako ręczna zmiana pojedynczego planu. Umowa o pracę: trzy wiersze BS
+  („- dla wykonawcy”, „- PIT”, „- ZUS”, ta sama płatność BS) scalone w jeden wiersz „Umowa o pracę” z proporcjami z najpóźniejszej
+  komórki z planami; płatności dostają składową i spinacz. Rzeczywiste przechodzą 1:1. Komórka, której generator nie odtworzy co do
+  grosza (np. dwa plany faktury w jednym miesiącu), zostaje jako plany z eksportu.
+- **Podział z eksportu:** worek zawsze z kwot tygodni BS (także miniony miesiąc zwinięty do jednego planu i bieżący z pozostałymi
+  tygodniami), umowa, gdy proporcje wiersza dają inny grosz. Podział obowiązuje, dopóki sumuje się do kwoty komórki; zmiana kwoty,
+  podstawy albo proporcji wraca do reguły. Raport podaje, ile komórek zgadza się z regułą (worek od wtorku, umowy z proporcji).
+- **Podgląd przed zapisem:** `GET /api/budzet/kopia` liczy kopię i raport kontroli sum bez żadnego zapisu (mapa ID w kopii roboczej).
+  **Przyjęcie:** `POST /api/kopia-bs` z sumą eksportu z podglądu; tylko przy 0 różnic i tym samym eksporcie. Zapis:
+  `Finanse/Aplikacja/kopia_bs_RRRR-MM-DD.json` (600), raport `..._kontrola.xlsx` (600) i jeden wpis `kopia_bs` (plik i jego SHA-256)
+  w pliku zmian. Wpisu `kopia_bs` nie da się dodać przez `/api/zmiana`. Kopię można powtórzyć albo cofnąć (`cofnij`).
+- **Kopia źródłem budżetu:** przy odbudowie model to kopia, a na nią nakładają się zdarzenia `bud` zapisane po niej (wcześniejsze
+  przestają obowiązywać; podgląd mówi, ile ich jest). Kolejne eksporty BS jej nie nadpisują. Brak pliku kopii albo inna treść niż przy
+  przyjęciu: błąd w raporcie odbudowy i budżet z importu. Pliki kopii są w odcisku źródeł (iCloud dociągnie kopię, baza przeliczy się sama).
+- **Kontrola sum:** arkusz × miesiąc × rodzaj × typ (plan, rzeczywista): liczba, netto, VAT, brutto w BS i w apce; salda arkuszy i
+  całości; cash flow (brutto wg miesiąca dnia realnej płatności) i wynik (netto wg miesiąca księgowania) w każdym miesiącu; płatność po
+  płatności po ID z BS (arkusz, miesiąc, typ, kwoty, dzień wystawienia i realny, Księgowane, W cash flow, aktualność) z przyczyną.
+  Strona BS czyta kwoty, daty i przełączniki wprost z wierszy pliku; liczba płatności sprawdzana też wprost z pliku.
+  Po kopii aktualność nie jest różnicą (BS sam przestawia plan na nieaktualny, gdy minie data), a cash flow i wynik liczą wszystkie płatności.
+- **Okres równoległy (od 1.11):** ekran „Zgodność z BS” porównuje najnowszy eksport z bazą apki tym samym raportem, a odbudowa dopisuje
+  do Rozjazdów grupy „Plan w BS inny niż w apce” (komórka wiersz × miesiąc, suma netto), „Wiersz jest tylko w BS” i „Wiersz jest tylko
+  w apce”. Wiersze łączone po mapie stałych ID (pakiet 1), umowy po scaleniu składowych, wiersz dodany osobno w obu miejscach po
+  arkuszu, rodzaju, kontrahencie, komentarzu i przedmiocie.
+- **Przełącznik `import_bs`** (wpis `ustawienie`, domyślnie tak): „nie” = apka nie czyta eksportów BS (ani budżetu, ani podpowiedzi
+  klientów); z kopią budżet działa dalej, bez kopii jest pusty (APK-FLAG-02).
+- **Wynik na eksporcie z 14.10.2026** (kopia danych, nie prawdziwy folder): 0 różnic, ta sama liczba płatności w pliku, w imporcie i w apce;
+  po przyjęciu kopii salda arkuszy, etapy, rozjazdy z bankiem, cash flow 13 tygodni i rentowność arkuszy identyczne jak przy imporcie.
+  Testy: `testy/test_pakiet6.py`, `testy_odbioru/test_pakiet6.py` (opcjonalnie klucz `kopia_bs` w `odbior.json`).
