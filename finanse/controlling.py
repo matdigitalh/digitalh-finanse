@@ -3,12 +3,14 @@
 Cele Mata: domyślne z Finanse/Aplikacja/ustawienia.json, nadpisywane wpisami „cel” z pliku zmian (z apki).
 Wszystko to szacunki z danych na dzień stanu; każdy kafel ma status (dobrze / uwaga / źle) z opisem i odnośnikiem.
 """
+import calendar
 import json
 from datetime import date
 
 from . import wynik
 from .wynik import _poprzedni
 
+# Awaryjne, gdy brak Finanse/Aplikacja/ustawienia.json; obowiązują wartości z tego pliku (APK-BUG-08, do potwierdzenia z Matem).
 CELE_DOMYSLNE = {'cel_obrot_rok': 120000000, 'cel_marza_proc': 15, 'rezerwa_miesiecy': 3}
 KLUCZE_CELOW = tuple(CELE_DOMYSLNE)
 KOSZTY_OPERACYJNE = ('przenoszony', 'praca', 'staly', 'nieprzypisany', 'podatki')
@@ -78,7 +80,7 @@ def policz(con) -> dict:
     obrot_ytd = wiersz['obrot']['razem']
     obrot_pelne = sum(wiersz['obrot']['miesiace'][m] for m in pelne_rok)
     prognoza_obrot = round(obrot_pelne / len(pelne_rok) * 12) if pelne_rok else None
-    czesc_roku = date.fromisoformat(dzien).timetuple().tm_yday / (366 if int(rok) % 4 == 0 else 365)
+    czesc_roku = date.fromisoformat(dzien).timetuple().tm_yday / (366 if calendar.isleap(int(rok)) else 365)
     plan_na_dzis = round(c['cel_obrot_rok'] * czesc_roku)
     obrot = {'ytd': obrot_ytd, 'cel': c['cel_obrot_rok'], 'plan_na_dzis': plan_na_dzis, 'czesc_roku': round(czesc_roku, 3),
              'prognoza': prognoza_obrot, 'srednio_miesiecznie': round(obrot_pelne / len(pelne_rok)) if pelne_rok else None,

@@ -11,6 +11,11 @@ const nowyId = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36
 // BS podaje stawkę jako ułamek (0.23) albo tekst („np”, „zw”); pokazujemy procent.
 const stawka = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); return isNaN(v) ? esc(s || '') : `${Math.round(v <= 1 ? v * 100 : v)} %`; };
 const naGrosze = s => Math.round(parseFloat(String(s).replace(/\s/g, '').replace(',', '.')) * 100);
+const STAWKI = [23, 8, 5, 0];
+// Stawka z zapisu BS (0,23 albo efektywna 0,2299) jako 23, 8, 5, 0; inna (kilka stawek na fakturze) albo brak: null.
+const stawkaStd = s => { let v = parseFloat(String(s ?? '').replace(',', '.')); if (isNaN(v)) return null; if (v > 0 && v < 1) v *= 100; return STAWKI.find(x => Math.abs(v - x) <= (x ? 0.1 : 0)) ?? null; };
+// Zmiany, które nie mają do czego się odnieść (np. płatności nie ma już w eksporcie BS), nie znikają po cichu.
+const banerOsieroconych = n => n ? `<div class="komunikat blad"><span>${n} ${n === 1 ? 'zmiana nie ma' : 'zmian nie ma'} do czego się odnieść. Sprawdź listę w <a href="#/budzet/historia">Historii zmian</a>.</span></div>` : '';
 
 Object.assign(POMOC, {
   budzet: { tytul: 'Budżet: arkusze', krotko: 'Foldery klientów, kategorie i arkusze jak w Budget Studio, z planem i wykonaniem.',
@@ -44,6 +49,7 @@ Object.assign(WIDOKI, {
     return `<div class="naglowek-strony"><div><h1>Arkusze budżetu ${pytajnik('budzet')}</h1>
         <div class="okruszki">Budżet / ${d.planowanie ? 'planowanie w apce włączone' : 'tryb podglądu: plany z Budget Studio, tylko do odczytu'}</div></div>
         ${d.planowanie ? '<button class="przycisk" id="dodaj-arkusz">Dodaj arkusz</button>' : ''}</div>
+      ${banerOsieroconych(d.osierocone)}
       ${imp ? `<p class="notka">Import z ${esc(imp.plik)} (${imp.wierszy} płatności, ostatnia zmiana w BS ${esc(imp.najnowsza_modyfikacja)}). Saldo arkusza jak w Budget Studio: netto wpływów minus obciążeń, razem z pozycjami nieaktualnymi.</p>` : '<p class="notka">Brak eksportu Budget Studio w folderze Dane.</p>'}
       <div class="drzewo">${foldery}</div>`;
   },
@@ -99,7 +105,7 @@ Object.assign(WIDOKI, {
   async 'platnosci/plan'(p) {
     const d = await api('budzet/lista', p);
     const kol = [
-      { naglowek: 'Rodzaj', html: x => x.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>' },
+      { id: 'rodzaj', naglowek: 'Rodzaj', html: x => x.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>' },
       { naglowek: 'Etap', html: x => chipEtap(x.etap) },
       { naglowek: 'Kontrahent', wartosc: x => x.w_kontrahent },
       { naglowek: 'Tytuł', wartosc: x => x.tytul, klasa: () => 'szary' },
@@ -113,7 +119,9 @@ Object.assign(WIDOKI, {
       <div class="filtry">${filtr('lista', 'Lista', Object.entries(d.listy), d.lista)}
         ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystko'], ['1', 'Wpływy'], ['-1', 'Obciążenia']], p.rodzaj)}</div>
       <p class="notka">Etap wynika z banku i Fakturowni, nie z kliknięcia: „Opłacona” dopiero, gdy jest wpłata albo przelew. ${d.razem} pozycji, saldo ${zl(d.suma)}.</p>
-      ${tabela({ kolumny: kol, dane: d.wiersze, poczatek: 1, stopkaSum: { kwota: zl(d.suma, false) }, onWiersz: x => kartaPlatnosci([x.id], null) })}`;
+      ${tabela({ kolumny: kol, dane: d.wiersze, poczatek: (d.strona - 1) * d.ile + 1, onWiersz: x => kartaPlatnosci([x.id], null),
+        stopkaSum: { rodzaj: `suma wszystkich ${d.razem} pozycji`, kwota: zl(d.suma, false) } })}
+      ${stopka(d, p)}`;
   },
 
   async 'budzet/rozjazdy'() {
@@ -134,11 +142,19 @@ Object.assign(WIDOKI, {
   },
 
   async 'budzet/historia'() {
-    const lista = await api('budzet/historia');
+    const h = await api('budzet/historia');
+    const lista = h.zmiany, sieroty = h.osierocone;
     const wiersze = lista.map((h, i) => `<tr><td>${esc(new Date(h.czas).toLocaleString('pl-PL'))}</td><td>${esc(h.mac)}</td><td>${esc(h.op)}</td>
       <td class="szary">${esc(h.obiekt)}</td><td class="szary">${esc(opisZmiany(h))}</td><td class="akcje-wiersz"><button data-i="${i}">Cofnij</button></td></tr>`).join('');
     setTimeout(() => document.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => zmiana('cofnij', { wpis: lista[b.dataset.i].wpis })));
+    const sierotyHtml = sieroty.length ? `<h2 class="sekcja">Zmiany bez obiektu <span class="szary">${sieroty.length}</span></h2>
+      <p class="notka">Te zmiany nie mają do czego się odnieść (np. płatności nie ma już w eksporcie BS) i nie są uwzględnione w budżecie. Cofnij je albo odtwórz brakujący obiekt.</p>
+      <div class="tabela-ramka niska"><table><thead><tr><th>Kiedy</th><th>Komputer</th><th>Zmiana</th><th>Czego dotyczy</th><th>Powód</th><th></th></tr></thead><tbody>
+      ${sieroty.map((x, i) => `<tr><td>${esc(new Date(x.czas).toLocaleString('pl-PL'))}</td><td>${esc(x.mac)}</td><td>${esc(x.op)}</td><td class="szary">${esc(x.obiekt)}</td>
+        <td>${esc(x.powod)}</td><td class="akcje-wiersz"><button data-s="${i}">Cofnij</button></td></tr>`).join('')}</tbody></table></div>` : '';
+    setTimeout(() => document.querySelectorAll('button[data-s]').forEach(b => b.onclick = () => zmiana('cofnij', { wpis: sieroty[b.dataset.s].wpis })));
     return `<h1>Historia zmian planów</h1><div class="okruszki">Budżet / kto, kiedy, było i jest</div>
+      ${banerOsieroconych(sieroty.length)}${sierotyHtml}
       ${lista.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Kiedy</th><th>Komputer</th><th>Zmiana</th><th>Czego dotyczy</th><th>Było → jest</th><th></th></tr></thead><tbody>${wiersze}</tbody></table></div>`
         : '<div class="pusto">Brak zmian. Do końca 2026 plany są w Budget Studio.</div>'}`;
   },
@@ -177,6 +193,7 @@ Object.assign(WIDOKI, {
             { klucz: 'sp', nazwa: 'Saldo pełne', typ: 'linia', przerywana: true, kolor: Wykresy.kolor('--s2'), wartosci: d.tygodnie.map(t => t.saldo_pelny) }] });
       }
       document.querySelectorAll('tr[data-t]').forEach(tr => tr.onclick = () => tr.nextElementSibling.classList.toggle('ukryty'));
+      document.querySelectorAll('tr[data-pp]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaPlatnosci([tr.dataset.pp], null); });
     });
     const tyg = d.tygodnie.map((t, i) => `<tr data-t="${i}" class="klikalny"><td>${dataPl(t.od)} – ${dataPl(t.do)}</td><td class="liczba-kol plus">${zl(t.wplywy, false)}</td>
       <td class="liczba-kol minus">${zl(t.wydatki, false)}</td><td class="liczba-kol szary">${t.tylko_pelny ? zl(t.tylko_pelny, false) : ''}</td>
@@ -192,7 +209,7 @@ Object.assign(WIDOKI, {
       <div class="karta-wyk"><h3>${dni ? 'Saldo dzień po dniu' : 'Wpływy, wydatki i saldo w tygodniach'}</h3><div class="pod">${dni ? 'linia: scenariusz ostrożny; w podpowiedzi także pełny' : 'linie: saldo na koniec tygodnia, ciągła ostrożny, przerywana pełny'}</div><div id="cf-wyk"></div></div>
       <div class="tabela-ramka niska"><table><thead><tr><th>Tydzień</th><th class="liczba-kol">Wpływy</th><th class="liczba-kol">Wydatki</th><th class="liczba-kol">Tylko pełny</th>
         <th class="liczba-kol">Saldo ostrożne</th><th class="liczba-kol">Saldo pełne</th></tr></thead><tbody>${tyg}</tbody></table></div>
-      ${d.po_terminie.length ? `<h2 class="sekcja">Plany po terminie</h2><div class="tabela-ramka niska"><table><tbody>${d.po_terminie.map(x => `<tr data-pp="${esc(x.platnosc)}"><td>${dataPl(x.termin)}</td><td>${esc(x.opis)}</td><td class="liczba-kol minus">${zl(x.kwota, false)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${d.po_terminie.length ? `<h2 class="sekcja">Plany po terminie</h2><div class="tabela-ramka niska"><table><tbody>${d.po_terminie.map(x => `<tr data-pp="${esc(x.platnosc)}" class="klikalny"><td>${dataPl(x.termin)}</td><td>${esc(x.opis)}</td><td class="liczba-kol minus">${zl(x.kwota, false)}</td></tr>`).join('')}</tbody></table></div>` : ''}
       <p class="notka">Kliknij tydzień, żeby rozwinąć pozycje. Należności liczone w dniu terminu przesuniętym o średnie spóźnienie nabywcy.</p>`;
   },
 
@@ -256,7 +273,7 @@ async function kartaPlatnosci(ids, ark) {
     <h2>${esc(p.w_kontrahent || p.tytul || 'Płatność')}</h2>
     <div class="szary">${esc(p.arkusz)} · ${mies(p.miesiac)} · ${p.typ === 'plan' ? 'plan' : 'rzeczywista'}</div>
     <dl><dt>Etap</dt><dd>${chipEtap(p.etap)}${p.uwaga_stanu ? `\n${esc(p.uwaga_stanu)}` : ''}</dd>
-      <dt>Netto</dt><dd>${zl(p.netto * p.rodzaj)}</dd><dt>Brutto</dt><dd>${zl(p.brutto * p.rodzaj)}</dd>
+      <dt>Netto</dt><dd>${zl(p.netto * p.rodzaj)}</dd><dt>VAT</dt><dd>${zl(p.vat * p.rodzaj)}${p.stawka != null ? ` (${p.stawka} %)` : ''}</dd><dt>Brutto</dt><dd>${zl(p.brutto * p.rodzaj)}</dd>
       <dt>Termin</dt><dd>${dataPl(p.termin_efektywny)}</dd>${p.data_zaplaty ? `<dt>Zapłacono</dt><dd>${dataPl(p.data_zaplaty)}</dd>` : ''}
       ${p.nr_dok ? `<dt>Nr dokumentu</dt><dd>${esc(p.nr_dok)}</dd>` : ''}${p.nr_wewn ? `<dt>Nr wewnętrzny</dt><dd>${esc(p.nr_wewn)}</dd>` : ''}
       ${p.tytul ? `<dt>Tytuł</dt><dd>${esc(p.tytul)}</dd>` : ''}<dt>Etap w BS</dt><dd>${esc(p.etap_bs || '–')}</dd>
@@ -265,6 +282,7 @@ async function kartaPlatnosci(ids, ark) {
     ${planowanie && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
       <button data-d="przesun">Przesuń</button><button data-d="zaplacone">Zapłacone</button><button data-d="anuluj">Anuluj</button></div>` : ''}
     ${planowanie ? `<h3>Zmień</h3><div class="formularz" data-edyt="${esc(p.id)}">${pole('', 'Netto (zł)', `<input data-netto value="${(p.netto / 100).toFixed(2).replace('.', ',')}">`)}
+      ${p.podstawa.startsWith('Faktura') ? pole('', 'Stawka VAT', `<select data-stawka>${STAWKI.map(x => `<option value="${x}"${p.stawka === x ? ' selected' : ''}>${x} %</option>`).join('')}</select>`) : ''}
       ${pole('', 'Termin', `<input type="date" data-nowy-termin value="${esc(p.termin_efektywny || '')}">`)}</div>
       <div class="akcje"><button data-zapisz="${esc(p.id)}">Zapisz tę płatność</button></div>` : ''}
     ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(h.op)} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
@@ -279,9 +297,13 @@ async function kartaPlatnosci(ids, ark) {
   });
   k.querySelectorAll('[data-zapisz]').forEach(b => b.onclick = () => {
     const f = k.querySelector(`[data-edyt="${CSS.escape(b.dataset.zapisz)}"]`);
-    const netto = naGrosze($('[data-netto]', f).value), termin = $('[data-nowy-termin]', f).value;
+    const netto = naGrosze($('[data-netto]', f).value), termin = $('[data-nowy-termin]', f).value, st = $('[data-stawka]', f);
     if (!(netto >= 0)) return komunikat('Podaj kwotę netto.', true);
-    zmiana('bud', { op: 'platnosc', obiekt: { id: b.dataset.zapisz, netto, brutto: netto, termin, miesiac: termin ? termin.slice(0, 7) : undefined } });
+    // VAT i brutto liczy serwer z netto i stawki (stawka z płatności, a gdy brak, z wiersza)
+    const obiekt = { id: b.dataset.zapisz, netto };
+    if (st) obiekt.stawka = +st.value;
+    if (termin) obiekt.termin = termin;
+    zmiana('bud', { op: 'platnosc', obiekt });
   });
 }
 
@@ -314,10 +336,11 @@ function kartaWiersza(w, d) {
     });
     const netto = czesci.length ? czesci.reduce((a, c) => a + c.kwota, 0) : naGrosze($('#w-netto').value);
     if (!(netto > 0)) return komunikat('Podaj kwotę netto albo części.', true);
+    const vat = $('#w-vat').value.trim().replace(',', '.');
     zmiana('bud', { op: 'wiersz', obiekt: { id: w?.id || nowyId('w'), arkusz: d.arkusz.id, rodzaj: +$('#w-rodzaj').value, podstawa: $('#w-podstawa').value,
-      kontrahent: $('#w-kontrahent').value.trim(), komentarz: $('#w-komentarz').value.trim(), stawka_vat: $('#w-vat').value,
-      dzien_wystawienia: $('#w-dzien').value, dni_na_platnosc: $('#w-dni').value, cykl: $('#w-cykl').value,
-      plan: { netto, stawka_vat: $('#w-vat').value.replace(',', '.'), cykl: $('#w-cykl').value, od: $('#w-od').value, do: $('#w-do').value,
+      kontrahent: $('#w-kontrahent').value.trim(), komentarz: $('#w-komentarz').value.trim(), stawka_vat: vat || null,
+      dzien_wystawienia: $('#w-dzien').value, dni_na_platnosc: +$('#w-dni').value, cykl: $('#w-cykl').value,
+      plan: { netto, stawka_vat: vat || null, cykl: $('#w-cykl').value, od: $('#w-od').value, do: $('#w-do').value,
         dzien_wystawienia: $('#w-dzien').value, dni_na_platnosc: +$('#w-dni').value, czesci: czesci.length ? czesci : null } } });
   };
 }
@@ -341,15 +364,18 @@ function kartaArkusza(a, drzewo) {
   };
 }
 
-// Akcje na zaznaczonych wierszach: każda z podglądem (co się stanie) i potwierdzeniem w karcie.
+// Akcje na zaznaczonych wierszach: każda z podglądem (co się stanie) i potwierdzeniem w karcie. Cała akcja to jeden
+// wpis „seria”: serwer sprawdza wszystkie operacje i zapisuje je razem albo wcale (jedno przeliczenie, cofnięcie w całości).
+// Kopie płatności powstają na serwerze ze wzoru („wzor”): ta sama stawka i daty, VAT liczony z netto.
 async function akcjaNaWierszach(akcja, d) {
   const ids = [...document.querySelectorAll('[data-zazn]:checked')].map(x => x.dataset.zazn);
   const wiersze = d.wiersze.filter(w => ids.includes(w.id));
   if (!wiersze.length) return komunikat('Zaznacz co najmniej jeden wiersz.', true);
   if ((akcja === 'scal' && wiersze.length < 2) || (akcja === 'podziel' && wiersze.length !== 1)) return komunikat(akcja === 'scal' ? 'Do scalenia zaznacz co najmniej dwa wiersze.' : 'Do podziału zaznacz jeden wiersz.', true);
+  if (akcja === 'scal' && new Set(wiersze.map(w => w.rodzaj)).size > 1) return komunikat('Scalić można tylko wiersze tego samego rodzaju (same wpływy albo same obciążenia).', true);
   const k = $('#karta');
-  const opis = { duplikuj: 'Powstanie kopia każdego wiersza z tymi samymi płatnościami planowanymi.', przenies: 'Wiersze przejdą do wybranego arkusza.',
-    scal: 'Powstanie jeden wiersz z sumą płatności w każdym miesiącu; zaznaczone wiersze znikną.', podziel: 'Powstanie drugi wiersz z podanym procentem kwot; pierwszy zostanie pomniejszony.',
+  const opis = { duplikuj: 'Powstanie kopia każdego wiersza z tymi samymi płatnościami planowanymi (ta sama stawka VAT i daty).', przenies: 'Wiersze przejdą do wybranego arkusza.',
+    scal: 'Powstanie jeden wiersz ze wszystkimi płatnościami zaznaczonych wierszy; zaznaczone wiersze znikną.', podziel: 'Powstanie drugi wiersz z podanym procentem każdej płatności; pierwszy zostanie pomniejszony.',
     usun: 'Wiersze i ich płatności znikną z budżetu (cofniesz w historii).' }[akcja];
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${{ duplikuj: 'Duplikuj', przenies: 'Przenieś', scal: 'Scal', podziel: 'Podziel', usun: 'Usuń' }[akcja]}</h2>
     <p>${esc(opis)}</p><ul class="lista">${wiersze.map(w => `<li>${esc(w.kontrahent)} · ${esc(w.komentarz)} · ${esc(w.podstawa)}</li>`).join('')}</ul>
@@ -359,31 +385,43 @@ async function akcjaNaWierszach(akcja, d) {
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
   $('#ak-ok').onclick = async () => {
-    const zdarzenia = [];
-    const platnosciWiersza = w => Object.entries(w.komorki).map(([m, c]) => ({ m, netto: Math.abs(c.netto) }));
-    const kopiaPlatnosci = (w, nowy, mnoznik = 1) => platnosciWiersza(w).map(x => ({ op: 'platnosc', obiekt: { id: nowyId('p'), wiersz: nowy, miesiac: x.m,
-      typ: 'plan', etap_bs: 'Planowana', aktualna: true, netto: Math.round(x.netto * mnoznik), brutto: Math.round(x.netto * mnoznik), termin: `${x.m}-28` } }));
-    const bezKomorek = w => { const { komorki, ...reszta } = w; return reszta; };
-    if (akcja === 'duplikuj') for (const w of wiersze) { const id = nowyId('w'); zdarzenia.push({ op: 'wiersz', obiekt: { ...bezKomorek(w), id, plan: w.plan } }, ...kopiaPlatnosci(w, id)); }
-    if (akcja === 'przenies') zdarzenia.push({ op: 'przenies', wiersze: ids, do_arkusza: $('#ak-ark').value });
-    if (akcja === 'usun') wiersze.forEach(w => zdarzenia.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
+    const ops = [];
+    // aktualne płatności wiersza z kwotami netto (te same, które sumuje komórka)
+    const platnosciWiersza = w => Object.values(w.komorki).flatMap(c => Object.entries(c.kwoty || {}).map(([id, netto]) => ({ id, netto })));
+    const kopia = (wzor, wiersz, netto) => ({ op: 'platnosc', obiekt: { id: nowyId('p'), wzor, wiersz, netto } });
+    // pola wiersza do zapisu (bez pól liczonych przez apkę)
+    const opisWiersza = w => {
+      const o = { arkusz: w.arkusz, rodzaj: w.rodzaj, podstawa: w.podstawa, kontrahent: w.kontrahent || '', komentarz: w.komentarz || '',
+        przedmiot: w.przedmiot || '', sekcja: w.sekcja || '', dzien_wystawienia: w.dzien_wystawienia || '', metoda: w.metoda || '',
+        ksiegowane: !!w.ksiegowane, w_cashflow: !!w.w_cashflow, cykl: w.cykl || 'brak', plan: w.plan || null };
+      if (stawkaStd(w.stawka_vat) != null) o.stawka_vat = stawkaStd(w.stawka_vat);
+      if (w.dni_na_platnosc !== '' && w.dni_na_platnosc != null) o.dni_na_platnosc = w.dni_na_platnosc;
+      return o;
+    };
+    if (akcja === 'duplikuj') for (const w of wiersze) {
+      const id = nowyId('w');
+      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id } }, ...platnosciWiersza(w).map(x => kopia(x.id, id, x.netto)));
+    }
+    if (akcja === 'przenies') ops.push({ op: 'przenies', wiersze: ids, do_arkusza: $('#ak-ark').value });
+    if (akcja === 'usun') wiersze.forEach(w => ops.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
     if (akcja === 'scal') {
-      const id = nowyId('w'), suma = {};
-      wiersze.forEach(w => platnosciWiersza(w).forEach(x => { suma[x.m] = (suma[x.m] || 0) + x.netto * w.rodzaj; }));
-      zdarzenia.push({ op: 'wiersz', obiekt: { ...bezKomorek(wiersze[0]), id, komentarz: `scalone: ${wiersze.map(w => w.komentarz || w.kontrahent).join(' + ')}` } });
-      Object.entries(suma).forEach(([m, v]) => zdarzenia.push({ op: 'platnosc', obiekt: { id: nowyId('p'), wiersz: id, miesiac: m, typ: 'plan', etap_bs: 'Planowana', aktualna: true,
-        netto: Math.abs(v), brutto: Math.abs(v), termin: `${m}-28` } }));
-      wiersze.forEach(w => zdarzenia.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
+      const id = nowyId('w');
+      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(wiersze[0]), id, komentarz: `scalone: ${wiersze.map(w => w.komentarz || w.kontrahent).join(' + ')}`.slice(0, 170) } });
+      wiersze.forEach(w => platnosciWiersza(w).forEach(x => ops.push(kopia(x.id, id, x.netto))));
+      wiersze.forEach(w => ops.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
     }
     if (akcja === 'podziel') {
       const proc = parseFloat($('#ak-proc').value.replace(',', '.')) / 100;
       if (!(proc > 0 && proc < 1)) return komunikat('Procent między 0 a 100.', true);
       const w = wiersze[0], id = nowyId('w');
-      zdarzenia.push({ op: 'wiersz', obiekt: { ...bezKomorek(w), id, komentarz: `${w.komentarz || ''} (część)` } }, ...kopiaPlatnosci(w, id, proc));
-      Object.values(w.komorki).forEach(c => c.platnosci.forEach(pid => zdarzenia.push({ op: 'platnosc', obiekt: { id: pid, netto: Math.round(Math.abs(c.netto) * (1 - proc) / c.platnosci.length) } })));
+      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id, komentarz: `${w.komentarz || ''} (część)`.slice(0, 170) } });
+      platnosciWiersza(w).forEach(x => {
+        const czesc = Math.round(x.netto * proc);
+        ops.push(kopia(x.id, id, czesc), { op: 'platnosc', obiekt: { id: x.id, netto: x.netto - czesc } });
+      });
     }
-    for (const z of zdarzenia.slice(0, -1)) if (!(await zmianaCicha('bud', z))) return;
-    zmiana('bud', zdarzenia[zdarzenia.length - 1]);
+    if (!ops.length) return komunikat('Brak zmian do zapisania.', true);
+    zmiana('bud', ops.length === 1 ? ops[0] : { op: 'seria', operacje: ops });
   };
 }
 

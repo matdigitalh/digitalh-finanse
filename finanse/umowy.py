@@ -73,8 +73,14 @@ def termin(u: dict, dzis: date) -> dict:
     return {'data': data.isoformat(), 'co': co, 'dni': dni, 'stan': stan, 'koniec': koniec.isoformat()}
 
 
+def dzien_stanu(con) -> date:
+    """„Dziś” w logice = dzień stanu (ostatnia data księgowania ING), jak w reszcie apki; bez banku: data systemowa."""
+    r = con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone()
+    return date.fromisoformat(r[0]) if r and r[0] else date.today()
+
+
 def lista(con, dzis: date | None = None) -> dict:
-    dzis = dzis or date.today()
+    dzis = dzis or dzien_stanu(con)
     umowy = []
     for r in con.execute('SELECT dane FROM umowy'):
         u = json.loads(r[0])

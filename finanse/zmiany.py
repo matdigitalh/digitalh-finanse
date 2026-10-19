@@ -7,7 +7,7 @@ import json
 import re
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import konfig
@@ -37,7 +37,8 @@ TYPY = {
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
-OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'przenies', 'decyzja_planu')
+OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'przenies', 'decyzja_planu', 'seria')
+MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 USTAWIENIA = {'planowanie': ('tak', 'nie')}
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
@@ -149,18 +150,182 @@ def odcisk() -> str:
     return ';'.join(f'{p.name}:{p.stat().st_size}:{int(p.stat().st_mtime)}' for p in sorted(katalog.glob('*.jsonl')))
 
 
-def _sprawdz_bud(d: dict) -> dict:
-    """Zdarzenie budżetu: kształt i rozmiar. Odwołania (czy arkusz, wiersz istnieje) sprawdza serwer."""
-    op = d.get('op')
-    if op not in OPERACJE_BUD:
+_DATA = re.compile(r'\d{4}-\d{2}-\d{2}')
+_MIESIAC = re.compile(r'\d{4}-(0[1-9]|1[0-2])')
+
+
+def _tekst(maks):
+    def f(v, pole):
+        if v is None:
+            return ''
+        if not isinstance(v, (str, int)) or isinstance(v, bool):
+            raise ValueError(f'{pole}: oczekiwany tekst')
+        v = str(v).strip()
+        if len(v) > maks:
+            raise ValueError(f'{pole}: najwyżej {maks} znaków')
+        return v
+    return f
+
+
+def _niepusty(maks):
+    t = _tekst(maks)
+
+    def f(v, pole):
+        v = t(v, pole)
+        if not v:
+            raise ValueError(f'{pole}: pole nie może być puste')
+        return v
+    return f
+
+
+def _kwota(v, pole):
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 10 ** 11:
+        raise ValueError(f'{pole}: kwota w groszach, liczba całkowita od 0')
+    return v
+
+
+def _rodzaj(v, pole):
+    if v not in (1, -1) or isinstance(v, bool):
+        raise ValueError(f'{pole}: 1 (wpływ) albo -1 (obciążenie)')
+    return v
+
+
+def _stawka(v, pole):
+    from .budzet import stawka_proc
+    return stawka_proc(v, scisle=True)
+
+
+def _data(v, pole):
+    if v in (None, ''):
+        return None
+    if not isinstance(v, str) or not _DATA.fullmatch(v):
+        raise ValueError(f'{pole}: data RRRR-MM-DD')
+    try:
+        date.fromisoformat(v)
+    except ValueError:
+        raise ValueError(f'{pole}: nie ma takiej daty')
+    return v
+
+
+def _miesiac(v, pole):
+    if not isinstance(v, str) or not _MIESIAC.fullmatch(v):
+        raise ValueError(f'{pole}: miesiąc RRRR-MM')
+    return v
+
+
+def _miesiac_lub_pusty(v, pole):
+    return '' if v in (None, '') else _miesiac(v, pole)
+
+
+def _dni(v, pole):
+    """Dni na płatność 0–99; zapis BS („Natychmiast”, „45 (nietypowe)”) zamieniany na liczbę."""
+    if isinstance(v, str):
+        t = v.strip()
+        v = 0 if t.lower() == 'natychmiast' else int(m.group()) if (m := re.match(r'\d+', t)) else None
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 99:
+        raise ValueError(f'{pole}: liczba dni od 0 do 99')
+    return v
+
+
+def _tak_nie(v, pole):
+    if v not in (True, False, 0, 1):
+        raise ValueError(f'{pole}: tak albo nie')
+    return bool(v)
+
+
+def _podstawa(v, pole):
+    from .budzet import PODSTAWY
+    if v not in PODSTAWY:
+        raise ValueError(f'{pole}: nieznana podstawa płatności')
+    return v
+
+
+def _cykl(v, pole):
+    from .budzet import CYKLE
+    if v not in CYKLE:
+        raise ValueError(f'{pole}: co miesiąc, kwartał, rok albo jednorazowo')
+    return v
+
+
+def _dzien_wyst(v, pole):
+    v = _tekst(20)(v, pole)
+    if v and not re.fullmatch(r'(Ostatni|ostatni|\(auto\)|([1-9]|[12]\d|3[01])\.?)', v):
+        raise ValueError(f'{pole}: „Ostatni”, „(auto)” albo dzień miesiąca')
+    return v
+
+
+def _czesci(v, pole):
+    if v is None:
+        return None
+    if not isinstance(v, list) or len(v) > 10:
+        raise ValueError(f'{pole}: lista najwyżej 10 części')
+    wynik = []
+    for c in v:
+        if not isinstance(c, dict) or set(c) - {'nazwa', 'kwota', 'dzien_platnosci'}:
+            raise ValueError(f'{pole}: część to nazwa, kwota i dzień płatności')
+        dz = c.get('dzien_platnosci')
+        if dz is not None and (isinstance(dz, bool) or not isinstance(dz, int) or not 1 <= dz <= 31):
+            raise ValueError(f'{pole}: dzień płatności części 1–31')
+        wynik.append({'nazwa': _tekst(60)(c.get('nazwa'), pole), 'kwota': _kwota(c.get('kwota'), pole), 'dzien_platnosci': dz})
+    return wynik
+
+
+POLA_PLANU = {'netto': _kwota, 'stawka_vat': _stawka, 'cykl': _cykl, 'od': _miesiac_lub_pusty, 'do': _miesiac_lub_pusty,
+              'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'czesci': _czesci}
+
+
+def _plan(v, pole):
+    if v is None:
+        return None
+    return _pola(v, POLA_PLANU, 'plan')
+
+
+# Biała lista pól obiektów budżetu (APK-BUG-05): nieznane pole albo zła wartość = odrzucenie z komunikatem.
+POLA_BUD = {
+    'arkusz': {'id': _niepusty(80), 'nazwa': _niepusty(80), 'folder': _niepusty(80), 'kategoria': _niepusty(80),
+               'od': _miesiac, 'do': _miesiac},
+    'wiersz': {'id': _niepusty(80), 'arkusz': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa, 'kontrahent': _tekst(200),
+               'komentarz': _tekst(170), 'przedmiot': _tekst(200), 'sekcja': _tekst(100), 'stawka_vat': _stawka,
+               'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'metoda': _tekst(60), 'ksiegowane': _tak_nie,
+               'w_cashflow': _tak_nie, 'cykl': _cykl, 'plan': _plan},
+    'platnosc': {'id': _niepusty(80), 'wzor': _niepusty(80), 'wiersz': _niepusty(80), 'miesiac': _miesiac, 'netto': _kwota,
+                 'stawka': _stawka, 'wystawienie': _data, 'termin': _data, 'realny': _data, 'ksiegowanie': _data,
+                 'metoda': _tekst(60), 'ksiegowane': _tak_nie, 'w_cashflow': _tak_nie, 'komentarz': _tekst(170), 'tytul': _tekst(200),
+                 'aktualna': _tak_nie},
+}
+
+
+def _pola(o, slownik: dict, nazwa: str) -> dict:
+    if not isinstance(o, dict):
+        raise ValueError(f'{nazwa}: oczekiwany obiekt')
+    nieznane = sorted(set(o) - set(slownik))
+    if nieznane:
+        raise ValueError(f'{nazwa}: nieznane pole {", ".join(nieznane)}')
+    return {k: slownik[k](v, k) for k, v in o.items()}
+
+
+def _sprawdz_bud(d: dict, w_serii=False) -> dict:
+    """Zdarzenie budżetu: kształt, pola i zakresy. Odwołania (czy arkusz, wiersz istnieje) sprawdza serwer próbą na modelu."""
+    op = d.get('op') if isinstance(d, dict) else None
+    if op not in OPERACJE_BUD or (w_serii and op == 'seria'):
         raise ValueError('nieznana operacja budżetu')
+    if op == 'seria':
+        ops = d.get('operacje')
+        if not isinstance(ops, list) or not 0 < len(ops) <= MAKS_SERIA:
+            raise ValueError(f'seria: od 1 do {MAKS_SERIA} operacji')
+        wynik = {'op': op, 'operacje': [_sprawdz_bud(x, w_serii=True) for x in ops]}
+        if len(json.dumps(wynik)) > 400000:
+            raise ValueError('za duży wpis')
+        return wynik
     if len(json.dumps(d)) > 8000:
         raise ValueError('za duży wpis')
     if op in ('arkusz', 'wiersz', 'platnosc'):
         o = d.get('obiekt')
         if not isinstance(o, dict) or not isinstance(o.get('id'), str) or not o['id']:
             raise ValueError('brak obiektu')
-        return {'op': op, 'obiekt': o, 'usun': bool(d.get('usun'))}
+        if d.get('usun'):
+            return {'op': op, 'obiekt': {'id': _niepusty(80)(o['id'], 'id')}, 'usun': True}
+        return {'op': op, 'obiekt': _pola(o, POLA_BUD[op], op), 'usun': False}
     if op == 'przenies':
         if not isinstance(d.get('wiersze'), list) or not d['wiersze'] or not d.get('do_arkusza'):
             raise ValueError('brak wierszy albo arkusza docelowego')
@@ -169,11 +334,11 @@ def _sprawdz_bud(d: dict) -> dict:
         raise ValueError('decyzja: przesun, zaplacone albo anuluj')
     wynik = {'op': op, 'platnosc': str(d['platnosc']), 'decyzja': d['decyzja']}
     if d['decyzja'] == 'przesun':
-        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(d.get('termin', ''))):
+        if not _data(d.get('termin'), 'nowy termin'):
             raise ValueError('nowy termin RRRR-MM-DD')
         wynik['termin'] = d['termin']
     if d.get('data'):
-        wynik['data'] = str(d['data'])[:10]
+        wynik['data'] = _data(d['data'], 'data')
     return wynik
 
 

@@ -3,11 +3,13 @@ rozjazdy BS ↔ bank ↔ Fakturownia, historia zmian planów, ustawienia."""
 import json
 from datetime import date, timedelta
 
+from .zapytania import _strona
+
 ETAP_KOLOR = {'Opłacona': 'oplacona', 'Planowana': 'planowana', 'Po terminie': 'po-terminie', 'Wystawiona': 'wystawiona',
               'Częściowo opłacona': 'czesciowo', 'Opłacona wg BS': 'wg-bs', 'Nieaktualna': 'nieaktualna'}
 
 
-def _dzien_stanu(con) -> str:
+def _dzien_stanu(con) -> str:  # „dziś” w logice = ostatni dzień księgowania w ING
     r = con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone()
     return r[0] if r and r[0] else date.today().isoformat()
 
@@ -39,7 +41,12 @@ def drzewo(con) -> dict:
         f['kategorie'].setdefault(a['kategoria'], []).append(a)
         f['saldo'] += a['saldo']
     zr = con.execute("SELECT wartosc FROM meta WHERE klucz='import_bs'").fetchone()
-    return {'foldery': list(foldery.values()), 'import': json.loads(zr[0]) if zr else None, 'planowanie': planowanie(con)}
+    return {'foldery': list(foldery.values()), 'import': json.loads(zr[0]) if zr else None, 'planowanie': planowanie(con),
+            'osierocone': osierocone_ile(con)}
+
+
+def osierocone_ile(con) -> int:
+    return con.execute('SELECT COUNT(*) FROM bud_osierocone').fetchone()[0]
 
 
 def arkusz(con, aid: str) -> dict:
@@ -51,10 +58,11 @@ def arkusz(con, aid: str) -> dict:
     wiersze = [dict(r) for r in con.execute('SELECT * FROM bud_wiersz WHERE arkusz = ? ORDER BY rodzaj DESC, kontrahent, komentarz', (aid,))]
     komorki = {}
     for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, s.etap FROM bud_platnosc p'
-                         ' JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id WHERE w.arkusz = ?', (aid,)):
-        k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': []})
+                         ' JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
+        k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': [], 'kwoty': {}})
         if r['aktualna']:
             k['netto'] += r['netto'] * r['rodzaj']
+            k['kwoty'][r['id']] = r['netto']   # do akcji na wierszach (kopie, podział) liczonych po stronie serwera
         k['platnosci'].append(r['id'])
         k['etapy'].append(r['etap'])
     for w in wiersze:
@@ -65,7 +73,7 @@ def arkusz(con, aid: str) -> dict:
                 etapy = set(k['etapy'])
                 stan = ('po-terminie' if 'Po terminie' in etapy else 'oplacona' if etapy <= {'Opłacona', 'Nieaktualna'}
                         else 'wg-bs' if 'Opłacona wg BS' in etapy else 'planowana')
-                w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'stan': stan}
+                w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan}
         w['plan'] = json.loads(w['plan']) if w['plan'] else None
     podsumowanie = []
     narast = 0
@@ -115,7 +123,9 @@ LISTY = {
 }
 
 
-def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=200) -> dict:
+def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100) -> dict:
+    """Listy płatności planu ze stronicowaniem i wyszukiwarką (kontrahent, tytuł, numer dokumentu, arkusz).
+    Suma liczona ze wszystkich pozycji listy, nie tylko z widocznej strony."""
     dzien = _dzien_stanu(con)
     za2 = (date.fromisoformat(dzien) + timedelta(days=14)).isoformat()
     przed2 = (date.fromisoformat(dzien) - timedelta(days=14)).isoformat()
@@ -129,7 +139,7 @@ def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=200) -> dic
         'do_zaplacenia': f"p.rodzaj = -1 AND s.etap IN ('Planowana', 'Po terminie') AND s.termin_efektywny <= '{za2}'",
         'zaplacone': f"s.etap = 'Opłacona' AND s.data_zaplaty BETWEEN '{przed2}' AND '{dzien}'",
     }[nazwa if nazwa in LISTY else 'wszystkie']
-    params = []
+    params = []   # daty w warunkach pochodzą z bazy (dzień stanu), wartości od użytkownika tylko jako parametry
     sql = ('SELECT p.*, s.etap, s.termin_efektywny, s.data_zaplaty, s.uwaga AS uwaga_stanu, w.kontrahent AS w_kontrahent, w.podstawa,'
            ' a.nazwa AS arkusz, a.folder, a.id AS arkusz_id FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'
            f' JOIN bud_arkusz a ON a.id = w.arkusz JOIN bud_stan s ON s.platnosc = p.id WHERE ({warunki})')
@@ -137,13 +147,12 @@ def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=200) -> dic
         sql += ' AND p.rodzaj = ?'
         params.append(int(rodzaj))
     if q:
-        sql += " AND (w.kontrahent || ' ' || p.tytul || ' ' || a.nazwa || ' ' || p.nr_dok) LIKE ?"
+        sql += (" AND (COALESCE(w.kontrahent, '') || ' ' || COALESCE(p.tytul, '') || ' ' || COALESCE(p.nr_dok, '') || ' '"
+                " || COALESCE(p.nr_wewn, '') || ' ' || COALESCE(a.nazwa, '')) LIKE ?")
         params.append(f'%{q}%')
-    razem = con.execute(f'SELECT COUNT(*), COALESCE(SUM(brutto * rodzaj), 0) FROM ({sql})', params).fetchone()
-    ile = max(1, min(int(ile or 200), 1000))
-    wiersze = [dict(r) for r in con.execute(f'{sql} ORDER BY s.termin_efektywny DESC LIMIT ? OFFSET ?', [*params, ile, (max(1, int(strona)) - 1) * ile])]
-    return {'lista': nazwa, 'nazwa': LISTY.get(nazwa, LISTY['wszystkie']), 'razem': razem[0], 'suma': razem[1], 'wiersze': wiersze,
-            'dzien_stanu': dzien, 'listy': LISTY}
+    suma = con.execute(f'SELECT COALESCE(SUM(brutto * rodzaj), 0) FROM ({sql})', params).fetchone()[0]
+    wynik = _strona(sql, params, strona, ile, con, 's.termin_efektywny DESC, p.id')
+    return {**wynik, 'lista': nazwa, 'nazwa': LISTY.get(nazwa, LISTY['wszystkie']), 'suma': suma, 'dzien_stanu': dzien, 'listy': LISTY}
 
 
 def rozjazdy(con) -> list[dict]:
@@ -163,5 +172,7 @@ def rozjazdy(con) -> list[dict]:
     return wynik
 
 
-def historia(con) -> list[dict]:
-    return [dict(r) for r in con.execute('SELECT * FROM bud_historia ORDER BY czas DESC LIMIT 500')]
+def historia(con) -> dict:
+    """Zmiany planów (ostatnie 500) i zdarzenia bez obiektu, do których nie ma się już do czego odnieść."""
+    return {'zmiany': [dict(r) for r in con.execute('SELECT * FROM bud_historia ORDER BY czas DESC LIMIT 500')],
+            'osierocone': [dict(r) for r in con.execute('SELECT * FROM bud_osierocone ORDER BY czas DESC')]}

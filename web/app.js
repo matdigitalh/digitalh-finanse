@@ -198,8 +198,11 @@ function zaznaczMenu(sekcja) {
 }
 
 // ---------- tabela w stylu listy płatności ----------
+// Każda tabela dostaje własny identyfikator, a zdarzenia podpinamy tylko w niej (dwie tabele na ekranie się nie mieszają).
+let licznikTabel = 0;
 function tabela({ kolumny, dane, poczatek, onWiersz, stopkaSum, sortuj, kierunek }) {
   if (!dane.length) return '<div class="pusto">Brak pozycji dla tych filtrów.</div>';
+  const id = `tabela-${++licznikTabel}`;
   const th = kolumny.map(k => {
     const s = k.sort ? ` class="sort${k.liczba ? ' liczba-kol' : ''}" data-sort="${k.sort}"${sortuj === k.sort ? ` data-kierunek="${kierunek}"` : ''}` : (k.liczba ? ' class="liczba-kol"' : '');
     return `<th${s}>${k.naglowek}</th>`;
@@ -207,13 +210,15 @@ function tabela({ kolumny, dane, poczatek, onWiersz, stopkaSum, sortuj, kierunek
   const tr = dane.map((w, i) => `<tr data-i="${i}" title="Źródło: ${esc(w.plik)}, wiersz ${w.wiersz}"><td class="lp">${poczatek + i}.</td>${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol ' : ''}${k.klasa ? k.klasa(w) : ''}">${k.html ? k.html(w) : esc(k.wartosc(w))}</td>`).join('')}</tr>`).join('');
   const tf = stopkaSum ? `<tfoot><tr><td></td>${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol' : ''}">${stopkaSum[k.id] ?? ''}</td>`).join('')}</tr></tfoot>` : '';
   setTimeout(() => {
-    document.querySelectorAll('tbody tr').forEach(r => r.addEventListener('click', () => onWiersz(dane[r.dataset.i])));
-    document.querySelectorAll('th.sort').forEach(h => h.addEventListener('click', () => {
+    const t = document.getElementById(id);
+    if (!t) return;
+    if (onWiersz) t.querySelectorAll('tbody tr[data-i]').forEach(r => r.addEventListener('click', () => onWiersz(dane[r.dataset.i])));
+    t.querySelectorAll('th.sort').forEach(h => h.addEventListener('click', () => {
       const nowy = sortuj === h.dataset.sort && kierunek === 'malejaco' ? 'rosnaco' : 'malejaco';
       ustawParametry({ sortuj: h.dataset.sort, kolejnosc: nowy, strona: 1 });
     }));
   });
-  return `<div class="tabela-ramka"><table><thead><tr><th></th>${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
+  return `<div class="tabela-ramka" id="${id}"><table><thead><tr><th></th>${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
 }
 
 function stopka(wynik, parametry) {

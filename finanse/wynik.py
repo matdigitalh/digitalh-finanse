@@ -8,6 +8,7 @@ Liczone przy zapytaniu z tabel z etapów 2–3. Zasady przypisania do miesiąca 
   bez okresu w tytule: płatność do 25. dnia to poprzedni miesiąc.
 VAT i podział zysku są poza wynikiem. Podatki (CIT, opłaty urzędowe) pokazane pod wynikiem.
 """
+import calendar
 import json
 import re
 from collections import defaultdict
@@ -120,7 +121,7 @@ def wynik_zarzadczy(con, rok=None) -> dict:
     from .controlling import cele as cele_mata
     cele = cele_mata(con)
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0]
-    czesc_roku = (date.fromisoformat(dzien).timetuple().tm_yday / 365) if dzien.startswith(rok) else 1
+    czesc_roku = (date.fromisoformat(dzien).timetuple().tm_yday / (366 if calendar.isleap(int(rok)) else 365)) if dzien.startswith(rok) else 1
     biuro = [dict(r) for r in con.execute(
         "SELECT okres, kod, opis, wartosc FROM wyniki_biura WHERE zestawienie = 'RZiS' AND kod IN ('A', 'B', 'C', 'D', 'L')"
         " AND okres LIKE ? ORDER BY okres DESC, wiersz", (f'{rok}%',))]

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (baza, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
+from . import (baza, budzet, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
                zapytania_budzet, zmiany)
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
@@ -53,19 +53,11 @@ def _rok(q):
 
 
 def _sprawdz_bud(con, d):
-    """Zmiany budżetu tylko przy włączonym planowaniu (do 31.12.2026 tryb podglądu) i tylko do istniejących obiektów."""
+    """Zmiany budżetu tylko przy włączonym planowaniu i tylko do istniejących obiektów: wpis (także cała seria) jest
+    najpierw próbnie nakładany na bieżący model; gdy którakolwiek operacja nie ma do czego się odnieść, nic nie trafia do pliku."""
     if not zapytania_budzet.planowanie(con):
         raise ValueError('planowanie w apce jest wyłączone (tryb podglądu do 31.12.2026); włączysz je w Budżet, Ustawienia')
-    istnieje = lambda tab, i: con.execute(f'SELECT 1 FROM {tab} WHERE id = ?', (i,)).fetchone()
-    o = d.get('obiekt', {})
-    if d['op'] == 'wiersz' and not d.get('usun') and not istnieje('bud_arkusz', o.get('arkusz') or '') and not istnieje('bud_wiersz', o['id']):
-        raise ValueError('nie ma takiego arkusza')
-    if d['op'] == 'platnosc' and not istnieje('bud_wiersz', o.get('wiersz') or '') and not istnieje('bud_platnosc', o['id']):
-        raise ValueError('nie ma takiego wiersza')
-    if d['op'] == 'przenies' and not istnieje('bud_arkusz', d['do_arkusza']):
-        raise ValueError('nie ma arkusza docelowego')
-    if d['op'] == 'decyzja_planu' and not istnieje('bud_platnosc', d['platnosc']):
-        raise ValueError('nie ma takiej płatności')
+    budzet.sprawdz_wpis(d, zmiany.wczytaj()[0])
 
 
 class Obsluga(BaseHTTPRequestHandler):
@@ -154,7 +146,7 @@ class Obsluga(BaseHTTPRequestHandler):
             elif sciezka == 'budzet/platnosc':
                 dane = zapytania_budzet.platnosc(con, q.get('id', ''))
             elif sciezka == 'budzet/lista':
-                dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona', 1), q.get('ile', 200))
+                dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona'), q.get('ile'))
             elif sciezka == 'budzet/rozjazdy':
                 dane = zapytania_budzet.rozjazdy(con)
             elif sciezka == 'budzet/historia':
@@ -219,7 +211,7 @@ class Obsluga(BaseHTTPRequestHandler):
         tego Maca i przeliczenie bazy. Odwołania sprawdzane w bazie, żeby do pliku nie trafiło nic zmyślonego."""
         try:
             dlugosc = int(self.headers.get('Content-Length', '0'))
-            if not 0 < dlugosc <= 20000:
+            if not 0 < dlugosc <= 500000:   # seria (wklejenie bloku, duplikowanie wierszy) bywa duża
                 raise ValueError('pusty albo za duży wpis')
             cialo = json.loads(self.rfile.read(dlugosc))
             typ = cialo.get('typ')

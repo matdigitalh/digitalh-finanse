@@ -135,7 +135,7 @@ class TestBudzet(unittest.TestCase):
         p = self.con.execute("SELECT miesiac, termin, netto FROM bud_platnosc WHERE wiersz = 'w-pensja' ORDER BY miesiac, termin").fetchall()
         self.assertEqual([tuple(x) for x in p], [('2026-11', '2026-12-10', 700000), ('2026-11', '2026-12-15', 300000),
                                                 ('2026-12', '2027-01-10', 700000), ('2026-12', '2027-01-15', 300000)])
-        self.assertEqual(len(zapytania_budzet.historia(self.con)), 1)
+        self.assertEqual(len(zapytania_budzet.historia(self.con)['zmiany']), 1)
         zmiany.zapisz('cofnij', {'wpis': wpis['id']})
         self.przelicz()
         self.assertIsNone(self.con.execute("SELECT 1 FROM bud_wiersz WHERE id = 'w-pensja'").fetchone())
@@ -148,7 +148,7 @@ class TestBudzet(unittest.TestCase):
         self.przelicz()
         self.assertEqual(self.etap('4')[0][0], 'Planowana')
         self.assertEqual(self.con.execute('SELECT arkusz FROM bud_wiersz WHERE id = ?', (wid,)).fetchone()[0], self.arkusz_id('Pusty arkusz'))
-        h = zapytania_budzet.historia(self.con)
+        h = zapytania_budzet.historia(self.con)['zmiany']
         self.assertEqual({x['op'] for x in h}, {'decyzja_planu', 'przenies'})
 
     def test_walidacja_zdarzen(self):
