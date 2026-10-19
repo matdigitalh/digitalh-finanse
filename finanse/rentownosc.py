@@ -29,7 +29,7 @@ def klienci(con, rok=None) -> dict:
         lista.append({**k, 'udzial_czasu': udzial, 'koszt_pracy': koszt_pracy,
                       'wynik_klienta': k['pna'] - koszt_pracy if koszt_pracy is not None else None})
     suma_udzialow = sum(v['udzial'] for v in est.values())
-    return {'rok': rok, 'klienci': lista, 'koszty_pracy_rok': praca, 'suma_udzialow': suma_udzialow,
+    return {'rok': rok, 'lata': o['lata'], 'klienci': lista, 'koszty_pracy_rok': praca, 'suma_udzialow': suma_udzialow,
             'bez_estymaty': sum(1 for x in lista if x['udzial_czasu'] is None)}
 
 

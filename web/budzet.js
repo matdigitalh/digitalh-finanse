@@ -94,8 +94,12 @@ Object.assign(WIDOKI, {
     const tytul = d.planowanie ? `<button class="tytul-ark" id="ark-nazwa" data-karta title="Zmień nazwę">${esc(a.nazwa)}</button>` : esc(a.nazwa);
     const miejsce = d.planowanie ? `<button class="ikona-ark" id="ark-miejsce" data-karta title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}. Kliknij, żeby zmienić.">${ik('folderOko', 'ik-tytul szary')}</button>`
       : `<span title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}">${ik('folderOko', 'ik-tytul szary')}</span>`;
-    const naglowek = `<h1>${ik('pinezka', 'ik-tytul')}${tytul}${miejsce}</h1>
-      <div class="pigulki"><span class="pigulka">${ik('warstwy')}${nazwyZakl[zakl]} / Widok główny</span>
+    // pakiet 11 (arkusz_widoki.js): pinezka przypina arkusz w menu Budżet, pigułka to menu zapisanych widoków arkusza
+    const pinezka = typeof pinezkaArkusza === 'function' ? pinezkaArkusza(a) : ik('pinezka', 'ik-tytul');
+    const pigulka = typeof pigulkaWidokow === 'function' ? pigulkaWidokow(a, p, nazwyZakl[zakl])
+      : `<span class="pigulka">${ik('warstwy')}${nazwyZakl[zakl]} / Widok główny</span>`;
+    const naglowek = `<h1>${pinezka}${tytul}${miejsce}</h1>
+      <div class="pigulki">${pigulka}
         <span class="szary">${esc(a.folder)} / ${esc(a.kategoria)} · ${mies(a.od)} - ${mies(a.do)} · źródło: ${esc(a.zrodlo)}</span></div>
       <div class="zakladki" role="tablist">
         <button role="tab" data-zakl="arkusz" aria-selected="${zakl === 'arkusz'}">${ik('arkusz')}Arkusz</button>
@@ -106,7 +110,7 @@ Object.assign(WIDOKI, {
         Kwotę od biura i dzień realnej płatności wpiszesz w <a href="#/budzet/podatki">Budżet, Podatki i ZUS</a>.</p>` : ''}`;
     const tresc = zakl === 'cashflow' ? await widokCashflow(p, { arkusz: a.id, ark: a })
       : zakl === 'platnosci' ? await listaPlatnosci(p, { arkusz: a.id })   // lista z pakietu 7 (listy.js)
-        : `<div id="ark-widok">${arkuszTabela(d, p)}</div>`;
+        : `<div id="ark-widok"${d.systemowy ? ' class="danina"' : ''}>${arkuszTabela(d, p)}</div>`;   // daniny brązowe (A-INN-07)
     podepnij();
     return naglowek + tresc;
   },
@@ -178,7 +182,7 @@ Object.assign(WIDOKI, {
       zmiana('estymata', { klient: d.klienci[inp.dataset.est].klient, udzial: inp.value });
     }));
     return `<div class="naglowek-strony"><div><h1>Rentowność klientów</h1><div class="okruszki">Rentowność / ${d.rok}</div></div>
-        <a class="przycisk" href="/api/eksport/rentownosc?rok=${d.rok}">Excel</a></div>
+        <a class="przycisk" href="/api/eksport/rentownosc?rok=${d.rok}">Excel</a></div>${filtrRoku(d)}
       <p class="notka">Koszt pracy klienta = udział czasu zespołu (wpisz %, zapis po wyjściu z pola) razy koszty pracy roku (${zl(d.koszty_pracy_rok)}). Suma wpisanych udziałów: ${procent(d.suma_udzialow)}. To szacunek do rozmowy o cenie, nie księgowość.</p>
       <div class="tabela-ramka niska"><table><thead><tr><th>Klient</th><th class="liczba-kol">Obrót</th><th class="liczba-kol">Koszty klienta</th><th class="liczba-kol">Po kosztach</th>
         <th class="liczba-kol">Marża</th><th>Czas %</th><th class="liczba-kol">Koszt pracy</th><th class="liczba-kol">Wynik klienta</th></tr></thead><tbody>${wiersze}</tbody></table></div>`;

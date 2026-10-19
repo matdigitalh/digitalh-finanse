@@ -10,9 +10,9 @@
 
 Object.assign(POMOC, {
   zgodnosc: { tytul: 'Kopia z BS i zgodność', krotko: 'Czy plany w apce zgadzają się z Budget Studio co do grosza.',
-    co: 'Kontrola sum: arkusz, miesiąc, rodzaj, plan albo rzeczywista; liczba płatności, netto, VAT, brutto w BS i w apce. Do tego cash flow (brutto wg miesiąca dnia realnej płatności) i wynik (netto wg miesiąca księgowania) w każdym miesiącu.',
-    skad: 'Strona BS: najnowszy eksport z folderu Dane. Strona apki: kopia z BS z Twoimi późniejszymi zmianami.',
-    jak: 'Różnice szukamy też płatność po płatności (po ID z BS), stąd przyczyna przy każdej różnicy. Kopię da się przyjąć tylko przy 0 różnic.',
+    co: 'Jednorazowa kopia wszystkich arkuszy i planów z Budget Studio do apki, a potem codzienna kontrola, czy oba miejsca mówią to samo.',
+    skad: 'Najnowszy eksport z Budget Studio w folderze Dane kontra plany w apce (kopia plus Twoje późniejsze zmiany).',
+    jak: 'Porównujemy każdy arkusz i miesiąc: liczbę płatności, netto, VAT i brutto, a przy różnicy pokazujemy, która płatność się nie zgadza i dlaczego. Kopię da się przyjąć tylko przy zerze różnic.',
     zrob: 'Do 31.10: porządki w BS, podgląd kopii, przyjęcie. Od 1.11 wpisujesz plany w obu miejscach, a ten ekran pokazuje, gdzie się rozjechały.' },
 });
 

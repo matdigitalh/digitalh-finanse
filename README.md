@@ -59,7 +59,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
 | 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów z alertami (`finanse/umowy.py`), ekran Cash flow | gotowy 2026-10-15 |
-| 6 | Pulpit jak w Budget Studio, eksport | |
+| 6 | Pulpit jak w Budget Studio, eksport | gotowy 2026-10-19 (pakiety UX, 10 i 11); planowanie w apce od 1.11.2026 |
 
 ## Dopasowanie wpłat (etap 2)
 
@@ -425,3 +425,60 @@ opłacona poza bankiem) są dla nich nieaktywne z podpowiedzią (kwota od biura 
 
 Poza zakresem: typy dat „data dodania” i „data ostatniej edycji” (A-FIL-01; dane z importu ich nie mają), usuwanie i łączenie
 rzeczywistych z listy (pakiet 5), skrót Ctrl/Cmd+F (pakiet 11).
+
+## Pakiet 11: karta klienta z umową, rentowność budżetu, widoki arkusza, wygoda (2026-10-19)
+
+Moduły serwera: `finanse/karta_klienta.py` (lista i karta klienta, alerty umów), `finanse/przestawna.py` (rentowność budżetu),
+`finanse/ostrzezenia_wierszy.py` (ustawienia wierszy psujące prognozę), `finanse/ekrany.py` (odczyty nowych ekranów w jednym miejscu,
+serwer woła `ekrany.ODCZYTY`). Interfejs w nowych plikach: `web/klienci.js`, `web/pulpit.js`, `web/przestawna.js`,
+`web/arkusz_widoki.js`, `web/skroty.js`, `web/dodatki.css`.
+
+- **Karta klienta (BL-02, część formalna)**, `#/budzet/klient?nazwa=` (`GET /api/klienci/karta?nazwa=&rok=`): dane klienta (NIP i nabywcy
+  z faktur, folder budżetu, arkusze, ostatni plan wpływu), umowa edytowana na miejscu (data podpisania, czas określony albo nieokreślony,
+  koniec, przedłużanie, okres wypowiedzenia, na koniec miesiąca, wartość netto miesięcznie, alert w dniach, uwagi; zapis istniejącym
+  wpisem `umowa`), stan umowy (ok, alert, minął, brak umowy), ostatni dzień na wypowiedzenie z naszej i ich strony, termin odejścia przy
+  wypowiedzeniu dziś, obroty i należności, rentowność (wynik zarządczy klienta obok wyniku budżetu jego folderu), plany w budżecie na
+  12 miesięcy obok wartości z umowy, faktury i koszty. Ostrzeżenia: brak umowy przy planach wpływów, plany wpływów po końcu umowy
+  na czas określony (decyzja Mata 10: plany zostają w cash flow, apka ostrzega na karcie, w arkuszu i na pulpicie).
+- **Lista klientów** (`#/budzet`): kolumny umowy (stan, typ, wypowiedzenie, termin, wartość) i plany wpływów 12 miesięcy obok obrotów;
+  filtry rok, stan umowy (także „do decyzji”), typ umowy, szukaj; sortowanie po każdej kolumnie (lokalnie, lista ma kilkadziesiąt
+  pozycji). Dane: `GET /api/klienci` (z niego eksport do Excela) + `GET /api/klienci/umowy`.
+- **Pulpit:** w żółtym pasku „Plany nieaktualne” (licznik i link do listy planów z filtrem, rytuał tygodniowy B-INNE-03) i „Ustawienia
+  wierszy do sprawdzenia”; baner alertów umów (`GET /api/pulpit/alerty`), kafel umów, kafel rachunku VAT (`/api/podatki` →
+  `rachunek_vat.vat_najblizszy`: kwota, termin, ile dołożyć z rachunku głównego), kafel „Lista płac do wpisania” (patrz niżej).
+- **Ekran Podatek VAT:** kolumny prognoza z budżetu, kwota od biura, różnica (`wynik.vat`), filtr roku; miesiące z samą prognozą też
+  na liście. Te same kolumny w eksporcie VAT.
+- **Rentowność budżetu** (`#/rentownosc/przestawna`, `GET /api/rentownosc/przestawna?rok=&poziomy=&os=&folder=`): tabela przestawna
+  płatności budżetu z Księgowane = tak (plany i rzeczywiste, netto, aktualne jak w komórkach arkusza, bez arkusza systemowego), wiersze
+  wg do czterech poziomów (folder, kategoria, arkusz, sekcja, przedmiot, kontrahent) z rozwijaniem, kolumny miesięcy, wartości wynik,
+  wpływy, obciążenia albo marża; oś miesiąc budżetu albo księgowania. Pod tabelą wynik zarządczy z banku i faktur i różnica.
+  Wynik folderu = suma jego arkuszy (test).
+- **Arkusz:** widoki arkusza (A-ARK-02, wpis `widok` z ekranem `arkusz` i parametrem `arkusz`; menu w pigułce pod tytułem: zapisz jako,
+  zapisz zmiany, zmień nazwę, usuń, przywróć), przypinanie (pinezka przy tytule, wpis `przypiecie`, sekcja Przypięte w menu Budżet),
+  wybór serii wykresu (A-ARK-07, parametr `serie`), ostrzeżenia ustawień wierszy (A-CF-17: worek przy stałej opłacie, faktura kosztowa
+  poza cash flow, 23% u kontrahenta z zagranicy, dzień wystawienia inny niż na fakturach; znak „!” przy wierszu, lista nad tabelą,
+  ekran `#/budzet/ostrzezenia`), daniny brązowym tekstem (A-INN-07) na listach i w arkuszu systemowym.
+- **Skróty (A-INN-06):** „?” lista skrótów, Cmd+K pomoc z wyszukiwarką (pole wyszukiwania w panelu pomocy zawsze), Cmd+F wyszukiwarka
+  listy, Cmd+Enter karta zaznaczonego albo wskazanego wiersza listy.
+- **Pomoc:** nowe i krótsze teksty: podatki, kopia z BS, łączenie z budżetem, Podatek VAT, karta i lista klientów, rentowność budżetu,
+  alerty umów, rachunek VAT, lista płac, plany nieaktualne, widoki arkusza, ustawienia wierszy, skróty.
+- Drobne: filtr roku w Obrotach wg klientów i Rentowności klientów (APK-BRAK-14), martwy `wBudowie()` usunięty (APK-BUG-09).
+
+**Punkty podpięcia pakietu 9** (`finanse/karta_klienta.py`, `POLA_P9`): gdy `umowy.lista()` zwróci przy umowie `folder`, `arkusze`
+(lista ID), `ostatni_dzien_wypowiedzenia` (data albo `{nasza, ich}`), `termin_odejscia`, `plany_po_koncu` (`{ile, kwota, od}` albo
+lista płatności), karta weźmie je zamiast wartości zastępczych (folder o nazwie klienta, terminy z `umowy.termin()`, plany po miesiącu
+końca umowy). Inna nazwa pola po stronie p9 = zmiana jednej linijki w `POLA_P9`. Formularz karty odsyła w zapisie wszystkie pola
+umowy, których nie edytuje (np. folder i arkusze), więc nic z p9 nie ginie.
+
+**Punkt podpięcia pakietu 5** (`web/pulpit.js`, kafel „Lista płac do wpisania”): czyta `GET /api/ostrzezenia`; przy 404 kafla nie ma.
+Oczekiwany kształt: `{"ostrzezenia": [{"rodzaj": "lista_plac" | "estymacja" | "roznica_bank", "osoba": "…", "miesiac": "RRRR-MM",
+"opis": "…", "kwota": grosze albo null, "link": "#/…"}]}` (albo sama lista). `lista_plac` = miesiąc minął, lista płac niewpisana (kafel
+czerwony), pozostałe = do sprawdzenia (żółty); link kafla = `link` pierwszej pozycji, domyślnie Do weryfikacji.
+
+**Do dokończenia** (stan pośredni): testy pakietu 11 (`testy/test_pakiet11.py`, `testy_odbioru/test_pakiet11.py`), dalsze klikanie
+w przeglądarce.
+
+### Stan etapów i planowania (APK-BRAK-04)
+
+Etap 6 (pulpit jak w Budget Studio, eksport) jest gotowy: pakiet UX (pulpit, kafle), pakiet 10 (eksport) i pakiet 11 (alerty, kafle VAT
+i umów). Planowanie w apce jest wyłączone do 1.11.2026; włącza je Mat w Budżet, Ustawienia budżetu (decyzja Mata 5).

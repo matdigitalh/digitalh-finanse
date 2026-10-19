@@ -41,6 +41,7 @@ TYPY = {
     'seria': ('wpisy',),                      # akcja grupowa na liście: kilka wpisów w jednym, wszystko albo nic
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
     'kopia_bs': ('plik', 'sha256'),           # pakiet 6: przyjęta kopia z BS (plik Aplikacja/kopia_bs_*.json i jego suma)
+    'przypiecie': ('arkusz',),                # pakiet 11: arkusz przypięty w menu Budżet (przypiety: tak/nie), widoki.py
 }
 # Co może wejść do serii z listy (akcje grupowe, pakiet 7); budżet ma własną serię w „bud” (op „seria”, pakiet 1).
 TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 'klient_faktura', 'koszt_regula', 'koszt_operacja',
@@ -83,6 +84,9 @@ def sprawdz(typ: str, dane) -> dict:
         return _sprawdz_kopie(dane)
     if typ == 'widok':
         return _sprawdz_widok(dane)
+    if typ == 'przypiecie':
+        from .widoki import sprawdz_przypiecie
+        return sprawdz_przypiecie(dane)
     if typ == 'do_weryfikacji':
         return _sprawdz_do_weryfikacji(dane)
     if typ == 'seria':

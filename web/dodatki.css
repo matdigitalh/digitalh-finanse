@@ -1,0 +1,80 @@
+/* Pakiet 11: karta klienta z umową, pulpit (alerty umów, rachunek VAT, lista płac), rentowność budżetu (tabela przestawna),
+   widoki i przypięcia arkuszy, serie wykresu, ostrzeżenia ustawień wierszy, kolor danin, skróty klawiszowe.
+   Kolory wyłącznie z tokenów (styl.css i tokeny danin niżej), oba tryby. */
+:root { --danina: rgb(139, 88, 42); --danina-tlo: rgb(250, 243, 235); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --danina: rgb(222, 170, 120); --danina-tlo: rgb(44, 34, 26); }
+}
+:root[data-theme="dark"] { --danina: rgb(222, 170, 120); --danina-tlo: rgb(44, 34, 26); }
+
+/* daniny (VAT, CIT, PIT i ZUS) brązowym tekstem, jak w Budget Studio (A-INN-07) */
+tr.wiersz-danina td:not(.lp):not(.kr) { color: var(--danina); }
+#ark-widok.danina td.opis-kom, #ark-widok.danina td .kom { color: var(--danina); }
+
+/* karta klienta */
+.karta-klienta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 18px; max-width: 1160px; }
+.karta-klienta .karta-wyk { margin-bottom: 22px; padding-bottom: 14px; }
+@media (max-width: 1100px) { .karta-klienta { grid-template-columns: minmax(0, 1fr); } }
+.dane-klienta, .umowa-stan { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 6px 14px; margin: 10px 0; font-size: 12px; line-height: 1.5; }
+.dane-klienta dt, .umowa-stan dt { color: var(--tekst-2); }
+.dane-klienta dd, .umowa-stan dd { margin: 0; }
+.umowa-form { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin-top: 14px; }
+.karta-klienta .akcje { margin-bottom: 0; }
+tr.wynik td { border-top: 1px solid var(--linia); }
+
+/* pulpit: alerty umów i kafle dodatkowe */
+.baner.baner-umow { gap: 8px 12px; }
+.baner.baner-umow > svg.ik { color: var(--ostrzezenie); }
+.baner.baner-umow.pilny { background: var(--minus-tlo); color: var(--minus); }
+.baner.baner-umow a.minus { color: var(--minus); }
+.kafle-dodatkowe { margin-top: -6px; }
+
+/* rentowność budżetu: tabela przestawna */
+table.przestawna td.nazwa-przest { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+table.przestawna tr.poz-0 td { font-weight: 600; }
+table.przestawna tr.poz-1 td.nazwa-przest { padding-left: 26px; }
+table.przestawna tr.poz-2 td.nazwa-przest { padding-left: 44px; }
+table.przestawna tr.poz-3 td.nazwa-przest { padding-left: 62px; }
+table.przestawna tr.rozwijany { cursor: pointer; }
+table.przestawna tr.rozwijany:hover td { background: var(--fiolet-tlo); }
+table.przestawna .rozwin { all: unset; display: inline-grid; place-items: center; width: 16px; color: var(--fiolet); cursor: pointer; }
+table.przestawna .rozwin-pusty { display: inline-block; width: 16px; }
+table.przestawna td.sep, table.przestawna th.sep { border-left: 1px solid var(--linia); }
+table.przestawna td a svg.ik { width: 12px; height: 12px; vertical-align: -2px; }
+table.przestawna tfoot td { font-weight: 600; border-top: 1px solid var(--linia); }
+table.przestawna tfoot tr.zarzadczy td, table.przestawna tfoot tr.roznica td { font-weight: 400; color: var(--tekst-2); }
+table.przestawna tfoot tr.zarzadczy td.minus, table.przestawna tfoot tr.roznica td.minus { color: var(--minus); }
+.filtry .prawo { margin-left: auto; display: flex; gap: 8px; }
+
+/* arkusz: pinezka, menu widoków, serie wykresu, ostrzeżenia wierszy, umowa */
+.pinezka-ark { all: unset; cursor: pointer; display: inline-grid; place-items: center; border-radius: 4px; }
+h1 .pinezka-ark .ik-tytul { color: var(--tekst-3); }
+.pinezka-ark:hover .ik-tytul, h1 .pinezka-ark.przypiety .ik-tytul { color: var(--fiolet); }
+.pinezka-ark.przypiety svg.ik { fill: var(--fiolet-tlo-2); }
+.pinezka-ark:focus-visible { outline: 2px solid var(--fiolet-2); }
+.pigulka-widokow { cursor: pointer; border: none; font: inherit; font-size: 12px; }
+.pigulka-widokow:hover { background: var(--fiolet-tlo-2); }
+.pigulka-widokow svg.ik { width: 13px; height: 13px; }
+.menu-widokow a.aktywny { font-weight: 600; color: var(--fiolet); }
+.menu-widokow .oddziel { height: 1px; margin: 4px 0; background: var(--linia); }
+.menu-widokow button:disabled { opacity: .45; cursor: default; }
+.serie-ark { display: flex; align-items: center; gap: 6px; font-size: 12px; align-self: center; }
+.seria-ark { all: unset; cursor: pointer; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--linia); color: var(--tekst-2); font-size: 11px; }
+.seria-ark[aria-pressed="true"] { background: var(--fiolet-tlo); border-color: transparent; color: var(--fiolet); }
+.seria-ark:focus-visible { outline: 2px solid var(--fiolet-2); }
+.ostrz-wiersza { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-right: 3px; border-radius: 50%; background: var(--dzis); color: #fff;
+  font-size: 10px; font-weight: 700; cursor: help; vertical-align: 1px; }
+.ostrzezenia-ark { margin: 8px 0; padding: 8px 12px; background: var(--ostrzezenie-tlo); color: var(--ostrzezenie); font-size: 12px; max-width: 1160px; border-radius: 4px; }
+.ostrzezenia-ark summary { cursor: pointer; display: flex; gap: 6px; align-items: center; font-weight: 600; }
+.ostrzezenia-ark ul { margin: 8px 0 2px; padding-left: 18px; line-height: 1.55; color: var(--tekst); }
+.ostrzezenia-ark .link { all: unset; color: var(--fiolet); cursor: pointer; font-weight: 600; }
+.ostrzezenia-ark .link:hover { text-decoration: underline; }
+.przypiete-wysuw { margin-bottom: 6px; }
+
+/* skróty klawiszowe i wyszukiwarka pomocy */
+dl.skroty { display: grid; grid-template-columns: max-content 1fr; gap: 7px 14px; font-size: 12px; margin: 0; }
+dl.skroty dd { margin: 0; color: var(--tekst-2); }
+kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--linia); border-bottom-width: 2px; border-radius: 4px; background: var(--tlo-2);
+  color: var(--tekst); font: inherit; font-size: 11px; white-space: nowrap; }
+.szukaj-pomocy { width: 100%; height: 30px; box-sizing: border-box; border: 1px solid var(--linia); border-radius: 4px; padding: 0 10px; background: var(--tlo);
+  color: var(--tekst); margin: 0 0 12px; font: inherit; font-size: 12px; }

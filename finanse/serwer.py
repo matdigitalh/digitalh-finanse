@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, podatki, rentownosc, wynik, zapytania,
                zapytania_budzet, zapytania_listy, zmiany)
+from . import ekrany   # pakiet 11: karta klienta, alerty pulpitu, rentowność przestawna, widoki i przypięcia arkuszy
 from .importy import podsumowanie as importy_podsumowanie, reczny
 
 mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
@@ -86,6 +87,7 @@ def _sprawdz_odwolania(con, typ, dane):
         podatki.sprawdz_wpis(dane, zmiany.wczytaj()[0], zapytania_budzet._dzien_stanu(con))
     if typ == 'do_weryfikacji' and not dane.get('usun') and not con.execute(OBIEKTY_SQL[dane['obiekt']], (dane['ref'],)).fetchone():
         raise ValueError(f"nie ma pozycji {dane['ref']}")
+    ekrany.sprawdz_odwolania(con, typ, dane)   # pakiet 11: przypięcie i widok arkusza wskazują istniejący arkusz
     for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
         if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
             raise ValueError(f'nie ma faktury {n}')
@@ -243,6 +245,8 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.importy(con)
             elif sciezka == 'wyniki-biura':
                 dane = zapytania.wyniki_biura(con)
+            elif sciezka in ekrany.ODCZYTY:   # pakiet 11: nowe ekrany (finanse/ekrany.py)
+                dane = ekrany.ODCZYTY[sciezka](con, q)
             else:
                 return self._json({'blad': 'nieznany adres'}, 404)
         except (ValueError, TypeError) as e:

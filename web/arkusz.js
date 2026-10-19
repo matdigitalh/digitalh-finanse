@@ -242,6 +242,7 @@ function podepnijArkusz() {
   const m = d.miesiace, stanM = (STAN?.naleznosci?.dzien_stanu || '').slice(0, 7);
   const naglowkiMies = () => [...tab.querySelectorAll('tr.ark-mies th:not([colspan])')].slice(0, m.length);
   Wykresy.bs($('#ark-wyk'), { wysokosc: 118, opis: 'Arkusz miesięcznie: wpływy, obciążenia i saldo narastające',
+    serie: typeof serieArkusza === 'function' ? serieArkusza(p) : undefined,   // wybór serii wykresu (A-ARK-07, arkusz_widoki.js)
     okresy: d.podsumowanie.map(s => ({ etykieta: mies(s.miesiac), wplywy: s.wplywy, obciazenia: s.obciazenia, saldo: s.saldo, narastajaco: s.narastajaco, biezacy: s.miesiac === stanM })),
     kolumny: () => { const r0 = $('#ark-wyk').getBoundingClientRect(); return naglowkiMies().map(th => { const r = th.getBoundingClientRect(); return { x: r.left - r0.left, w: r.width }; }); } });
   if (ARK.scroll) { [tab.scrollTop, tab.scrollLeft] = ARK.scroll; ARK.scroll = null; }
@@ -303,6 +304,7 @@ function podepnijArkusz() {
   if (ARK.sel) rysujZaznaczenie(false);
   else if (d.wiersze[0]) pokazWiersz(d.wiersze[0]);
   pasekAkcji();
+  if (typeof poArkuszu === 'function') poArkuszu(d, p);   // pakiet 11: serie wykresu, ostrzeżenia ustawień wierszy, umowa (arkusz_widoki.js)
 }
 
 // ---------- Zaznaczenie, zakres i panel podglądu ----------

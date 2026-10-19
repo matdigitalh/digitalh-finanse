@@ -92,7 +92,7 @@ const EKRANY_LIST = {
       ['ksiegowanie', 'Miesiąc księgowania', true], ['miesiac', 'Miesiąc budżetowy', true]],
     kwoty: x => ({ rodzaj: x.rodzaj, netto: x.netto * x.rodzaj, vat: (x.vat || 0) * x.rodzaj, brutto: x.brutto * x.rodzaj }),
     kropka: x => `<span class="kropka ${x.aktualnosc === 'Nieaktualna' ? 'czerwona' : KROPKA_ETAPU_L[x.etap] || 'szara'}" title="${esc(x.etap || '')}${x.aktualnosc === 'Nieaktualna' ? ', nieaktualna' : ''}"></span>`,
-    wierszKlasa: x => `${x.typ === 'plan' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.rodzaj === 1 ? ' wiersz-plus' : ''}`,
+    wierszKlasa: x => `${x.typ === 'plan' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.rodzaj === 1 ? ' wiersz-plus' : ''}${typeof klasaDaniny === 'function' ? klasaDaniny(x) : ''}`,
     onWiersz: x => kartaPlatnosci([x.id], null),
     stopkaSum: d => ({ rodzaj: `suma ${d.razem} pozycji`, netto: zl(d.podsumowanie.razem.netto, false), brutto: zl(d.podsumowanie.razem.brutto, false),
       vat: zl(d.podsumowanie.razem.vat, false) }),

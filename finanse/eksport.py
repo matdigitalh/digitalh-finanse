@@ -448,7 +448,10 @@ def _koszty(con, q):
 
 VAT = [('Miesiąc', 'miesiac', 'tekst'), ('VAT należny (faktury)', 'nalezny', 'kwota'), ('VAT naliczony (rejestr biura)', 'naliczony', 'kwota'),
        ('Do zapłaty', 'do_zaplaty', 'kwota'), ('Zapłacony (bank)', 'zaplacony', 'kwota'),
-       ('Rejestr biura obejmuje', lambda x: 'tak' if x.get('rejestr') else 'nie', 'tekst')]
+       ('Rejestr biura obejmuje', lambda x: 'tak' if x.get('rejestr') else 'nie', 'tekst'),
+       # pakiet 11: kolumny jak na ekranie Podatek VAT (prognoza z budżetu i kwota od biura z arkusza systemowego)
+       ('Prognoza z budżetu', 'prognoza', 'kwota'), ('Kwota od biura', 'od_biura', 'kwota'),
+       ('Różnica prognozy i biura', 'roznica_biuro', 'kwota')]
 
 
 def _vat(con, q):
@@ -632,6 +635,7 @@ EKSPORTY = {
     'budzet/rozjazdy': _lista('Rozjazdy z Budget Studio', ROZJAZDY, zapytania_budzet.rozjazdy),
     'klienci': _klienci,
     'klient': _klient,
+    'klienci/karta': _klient,   # pakiet 11: karta klienta (te same parametry: nazwa, rok)
     'wynik': _wynik,
     'obroty-klientow': _obroty,
     'koszty-kategorii': _koszty,

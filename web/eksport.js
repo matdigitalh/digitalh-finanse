@@ -24,7 +24,7 @@ const EKSPORT_EKRANU = {
   'platnosci/do-weryfikacji': ['lista/do-weryfikacji', 'do-weryfikacji'],
   'platnosci/wyniki-biura': ['wyniki-biura'],
   budzet: ['klienci'],
-  'budzet/klient': ['klient'],
+  'budzet/klient': ['klienci/karta', 'klient'],   // pakiet 11: karta klienta pyta klienci/karta
   'budzet/wydatki': ['lista/wydatki', 'wydatki'],
   'budzet/nieprzypisane': ['nieprzypisane-grupy'],
   'budzet/konta': ['konta-reklamowe'],
