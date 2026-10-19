@@ -3,6 +3,7 @@ rozjazdy BS ↔ bank ↔ Fakturownia, historia zmian planów, ustawienia."""
 import json
 from datetime import date, timedelta
 
+from . import plan as reguly
 from .zapytania import _strona
 
 ETAP_KOLOR = {'Opłacona': 'oplacona', 'Planowana': 'planowana', 'Po terminie': 'po-terminie', 'Wystawiona': 'wystawiona',
@@ -55,7 +56,11 @@ def arkusz(con, aid: str) -> dict:
         raise ValueError('nie ma takiego arkusza')
     a = dict(a)
     miesiace = _miesiace(a['od'], a['do'])
-    wiersze = [dict(r) for r in con.execute('SELECT * FROM bud_wiersz WHERE arkusz = ? ORDER BY rodzaj DESC, kontrahent, komentarz', (aid,))]
+    wiersze = [dict(r) for r in con.execute(
+        "SELECT w.*, EXISTS (SELECT 1 FROM bud_platnosc p WHERE p.wiersz = w.id AND p.typ != 'plan') AS ma_rzeczywiste"
+        ' FROM bud_wiersz w WHERE w.arkusz = ? ORDER BY w.rodzaj DESC, w.kontrahent, w.komentarz', (aid,))]
+    kwoty_komorek = {(r['wiersz'], r['miesiac']): r['kwota'] for r in con.execute(
+        'SELECT k.* FROM bud_komorka k JOIN bud_wiersz w ON w.id = k.wiersz WHERE w.arkusz = ?', (aid,))}
     komorki = {}
     for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, s.etap FROM bud_platnosc p'
                          ' JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
@@ -73,8 +78,13 @@ def arkusz(con, aid: str) -> dict:
                 etapy = set(k['etapy'])
                 stan = ('po-terminie' if 'Po terminie' in etapy else 'oplacona' if etapy <= {'Opłacona', 'Nieaktualna'}
                         else 'wg-bs' if 'Opłacona wg BS' in etapy else 'planowana')
-                w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan}
+                w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan,
+                                   'kwota': kwoty_komorek.get((w['id'], m))}   # kwota wpisana w apce (plany z niej liczone)
         w['plan'] = json.loads(w['plan']) if w['plan'] else None
+        w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None
+        w['ma_rzeczywiste'] = bool(w['ma_rzeczywiste'])
+        w['dzien_opis'] = 'tydzień (worek)' if w['podstawa'] in reguly.WOREK else reguly.regula_opis(w['dzien_wystawienia'])
+        w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
     podsumowanie = []
     narast = 0
     for m in miesiace:
@@ -84,12 +94,13 @@ def arkusz(con, aid: str) -> dict:
         podsumowanie.append({'miesiac': m, 'wplywy': wp, 'obciazenia': ob, 'saldo': wp + ob, 'narastajaco': narast})
     inne = [dict(r) for r in con.execute('SELECT id, folder, kategoria, nazwa FROM bud_arkusz ORDER BY folder, nazwa')]
     return {'arkusz': a, 'miesiace': miesiace, 'wiersze': wiersze, 'podsumowanie': podsumowanie, 'planowanie': planowanie(con),
-            'arkusze': inne}
+            'arkusze': inne, 'podstawy': reguly.PODSTAWY_WIERSZA}
 
 
 def platnosc(con, pid: str) -> dict:
-    p = con.execute('SELECT p.*, w.kontrahent AS w_kontrahent, w.podstawa, w.komentarz AS w_komentarz, a.nazwa AS arkusz, a.folder, a.id AS arkusz_id,'
-                    ' s.etap, s.zaplacono, s.data_zaplaty, s.termin_efektywny, s.uwaga AS uwaga_stanu FROM bud_platnosc p'
+    p = con.execute("SELECT p.*, COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS w_kontrahent, w.podstawa, w.komentarz AS w_komentarz,"
+                    ' a.nazwa AS arkusz, a.folder, a.kategoria, a.id AS arkusz_id, w.przedmiot, w.sekcja,'
+                    ' s.etap, s.zaplacono, s.data_zaplaty, s.termin_efektywny, s.uwaga AS uwaga_stanu, s.etap_wg_bs, s.aktualnosc FROM bud_platnosc p'
                     ' JOIN bud_wiersz w ON w.id = p.wiersz JOIN bud_arkusz a ON a.id = w.arkusz LEFT JOIN bud_stan s ON s.platnosc = p.id'
                     ' WHERE p.id = ?', (pid,)).fetchone()
     if not p:
@@ -108,8 +119,17 @@ def platnosc(con, pid: str) -> dict:
             z = con.execute('SELECT nr_dok, podmiot, netto, data FROM zakupy WHERE nr_ewid = ?', (x['ref'],)).fetchone()
             x['opis'] = f"{z['nr_dok']} · {z['podmiot']} · {z['data']}" if z else x['ref']
         pow_.append(x)
-    historia = [dict(r) for r in con.execute('SELECT * FROM bud_historia WHERE obiekt = ? OR obiekt = ? ORDER BY czas', (pid, p['wiersz']))]
-    return {'platnosc': dict(p), 'powiazania': pow_, 'historia': historia, 'planowanie': planowanie(con)}
+    historia = [dict(r) for r in con.execute('SELECT * FROM bud_historia WHERE obiekt = ? OR obiekt = ? OR obiekt = ? ORDER BY czas',
+                                             (pid, p['wiersz'], f"{p['wiersz']}:{p['miesiac']}"))]
+    p = dict(p)
+    p['nadpisane'] = json.loads(p['nadpisane']) if p['nadpisane'] else {}
+    p['podstawa_platnosci'] = reguly.ETYKIETY_SKLADOWYCH.get(p['podstawa'], {}).get(p['skladowa'] or '', p['podstawa'])
+    w = dict(con.execute('SELECT * FROM bud_wiersz WHERE id = ?', (p['wiersz'],)).fetchone())
+    w['dni'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
+    w['dzien_opis'] = reguly.regula_opis(w['dzien_wystawienia'])
+    k = con.execute('SELECT kwota FROM bud_komorka WHERE wiersz = ? AND miesiac = ?', (p['wiersz'], p['miesiac'])).fetchone()
+    return {'platnosc': p, 'wiersz': w, 'kwota_komorki': k[0] if k else None, 'powiazania': pow_, 'historia': historia,
+            'planowanie': planowanie(con)}
 
 
 LISTY = {
@@ -140,18 +160,21 @@ def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100) -> dic
         'zaplacone': f"s.etap = 'Opłacona' AND s.data_zaplaty BETWEEN '{przed2}' AND '{dzien}'",
     }[nazwa if nazwa in LISTY else 'wszystkie']
     params = []   # daty w warunkach pochodzą z bazy (dzień stanu), wartości od użytkownika tylko jako parametry
-    sql = ('SELECT p.*, s.etap, s.termin_efektywny, s.data_zaplaty, s.uwaga AS uwaga_stanu, w.kontrahent AS w_kontrahent, w.podstawa,'
+    sql = ("SELECT p.*, s.etap, s.termin_efektywny, s.data_zaplaty, s.uwaga AS uwaga_stanu, s.etap_wg_bs, s.aktualnosc,"
+           " COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS w_kontrahent, w.podstawa,"
            ' a.nazwa AS arkusz, a.folder, a.id AS arkusz_id FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'
            f' JOIN bud_arkusz a ON a.id = w.arkusz JOIN bud_stan s ON s.platnosc = p.id WHERE ({warunki})')
     if rodzaj in ('1', '-1'):
         sql += ' AND p.rodzaj = ?'
         params.append(int(rodzaj))
     if q:
-        sql += (" AND (COALESCE(w.kontrahent, '') || ' ' || COALESCE(p.tytul, '') || ' ' || COALESCE(p.nr_dok, '') || ' '"
+        sql += (" AND (COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent, '') || ' ' || COALESCE(p.tytul, '') || ' ' || COALESCE(p.nr_dok, '') || ' '"
                 " || COALESCE(p.nr_wewn, '') || ' ' || COALESCE(a.nazwa, '')) LIKE ?")
         params.append(f'%{q}%')
     suma = con.execute(f'SELECT COALESCE(SUM(brutto * rodzaj), 0) FROM ({sql})', params).fetchone()[0]
     wynik = _strona(sql, params, strona, ile, con, 's.termin_efektywny DESC, p.id')
+    for x in wynik['wiersze']:   # odbiorca składowej umowy (PIT, ZUS) widoczny w podstawie, kontrahent = osoba
+        x['podstawa_platnosci'] = reguly.ETYKIETY_SKLADOWYCH.get(x['podstawa'], {}).get(x.get('skladowa') or '', x['podstawa'])
     return {**wynik, 'lista': nazwa, 'nazwa': LISTY.get(nazwa, LISTY['wszystkie']), 'suma': suma, 'dzien_stanu': dzien, 'listy': LISTY}
 
 

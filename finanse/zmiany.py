@@ -31,13 +31,13 @@ TYPY = {
     'korekta': ('numer', 'faktura', 'kwota'),  # korekta wpisana ręcznie: numer, faktura pierwotna, kwota brutto (grosze)
     'konto_reklamowe': ('konto', 'klient'),   # konto Google Ads / Meta należy do klienta
     'cel': ('klucz', 'wartosc'),              # cel controllingu: obrót roczny (grosze), marża %, rezerwa w miesiącach
-    'bud': ('op',),                           # zmiana w budżecie (arkusz, wiersz, płatność, przenieś, decyzja planu)
+    'bud': ('op',),                           # zmiana w budżecie (arkusz, wiersz, komórka, płatność, przenieś, decyzja planu)
     'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
-OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'przenies', 'decyzja_planu', 'seria')
+OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 USTAWIENIA = {'planowanie': ('tak', 'nie')}
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
@@ -248,10 +248,36 @@ def _cykl(v, pole):
 
 
 def _dzien_wyst(v, pole):
+    """Reguła dnia wystawienia (A-KOL-12): „Ostatni”, „Pierwszy”, „10.”, „10. +1”, „9. +1 B”, „20. -1”; zapis kanoniczny."""
+    from .plan import regula, regula_tekst
     v = _tekst(20)(v, pole)
-    if v and not re.fullmatch(r'(Ostatni|ostatni|\(auto\)|([1-9]|[12]\d|3[01])\.?)', v):
-        raise ValueError(f'{pole}: „Ostatni”, „(auto)” albo dzień miesiąca')
+    if not v or v == '(auto)':
+        return v
+    return regula_tekst(regula(v))
+
+
+def _proporcje(v, pole):
+    """Kwoty referencyjne umowy od księgowej (grosze): dla osoby, PIT (US), ZUS. Udział = kwota / suma; zero dozwolone."""
+    if v is None:
+        return None
+    if not isinstance(v, dict) or not v or set(v) - {'osoba', 'us', 'zus'}:
+        raise ValueError(f'{pole}: kwoty dla osoby, PIT (us) i ZUS (zus)')
+    wynik = {k: _kwota(x, pole) for k, x in v.items()}
+    if not sum(wynik.values()):
+        raise ValueError(f'{pole}: co najmniej jedna kwota większa od zera')
+    return wynik
+
+
+def _kup(v, pole):
+    if v in (None, ''):
+        return None
+    if v not in (20, 50) or isinstance(v, bool):
+        raise ValueError(f'{pole}: koszty uzyskania przychodu 20 albo 50 %')
     return v
+
+
+def _kwota_lub_pusta(v, pole):
+    return None if v is None else _kwota(v, pole)
 
 
 def _czesci(v, pole):
@@ -287,11 +313,14 @@ POLA_BUD = {
     'wiersz': {'id': _niepusty(80), 'arkusz': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa, 'kontrahent': _tekst(200),
                'komentarz': _tekst(170), 'przedmiot': _tekst(200), 'sekcja': _tekst(100), 'stawka_vat': _stawka,
                'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'metoda': _tekst(60), 'ksiegowane': _tak_nie,
-               'w_cashflow': _tak_nie, 'cykl': _cykl, 'plan': _plan},
+               'w_cashflow': _tak_nie, 'cykl': _cykl, 'plan': _plan, 'split': _tak_nie, 'proporcje': _proporcje, 'kup': _kup},
     'platnosc': {'id': _niepusty(80), 'wzor': _niepusty(80), 'wiersz': _niepusty(80), 'miesiac': _miesiac, 'netto': _kwota,
                  'stawka': _stawka, 'wystawienie': _data, 'termin': _data, 'realny': _data, 'ksiegowanie': _data,
                  'metoda': _tekst(60), 'ksiegowane': _tak_nie, 'w_cashflow': _tak_nie, 'komentarz': _tekst(170), 'tytul': _tekst(200),
-                 'aktualna': _tak_nie},
+                 'aktualna': _tak_nie, 'kontrahent': _tekst(200)},
+    # komórka (wiersz × miesiąc): kwota w groszach (netto, kwota bez faktury, brutto umowy o dzieło, pełny koszt umowy),
+    # 0 = plan zerowy (będzie płatność, kwota nieznana), brak kwoty = pusta komórka
+    'komorka': {'wiersz': _niepusty(80), 'miesiac': _miesiac, 'kwota': _kwota_lub_pusta},
 }
 
 
@@ -326,6 +355,12 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         if d.get('usun'):
             return {'op': op, 'obiekt': {'id': _niepusty(80)(o['id'], 'id')}, 'usun': True}
         return {'op': op, 'obiekt': _pola(o, POLA_BUD[op], op), 'usun': False}
+    if op == 'komorka':
+        if not d.get('wiersz') or not d.get('miesiac'):
+            raise ValueError('komórka: wiersz i miesiąc')
+        if set(d) - {'op', 'wiersz', 'miesiac', 'kwota'}:
+            raise ValueError(f"komórka: nieznane pole {', '.join(sorted(set(d) - {'op', 'wiersz', 'miesiac', 'kwota'}))}")
+        return {'op': op, **_pola({k: d.get(k) for k in ('wiersz', 'miesiac', 'kwota')}, POLA_BUD['komorka'], 'komórka')}
     if op == 'przenies':
         if not isinstance(d.get('wiersze'), list) or not d['wiersze'] or not d.get('do_arkusza'):
             raise ValueError('brak wierszy albo arkusza docelowego')

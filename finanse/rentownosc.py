@@ -37,7 +37,7 @@ def arkusze(con) -> list[dict]:
     t = defaultdict(lambda: {'plan_przychod': 0, 'plan_koszt': 0, 'wyk_przychod': 0, 'wyk_koszt': 0, 'po_terminie': 0})
     for r in con.execute('SELECT a.id, a.folder, a.kategoria, a.nazwa, p.rodzaj, p.netto, s.etap FROM bud_platnosc p'
                          ' JOIN bud_wiersz w ON w.id = p.wiersz JOIN bud_arkusz a ON a.id = w.arkusz JOIN bud_stan s ON s.platnosc = p.id'
-                         ' WHERE p.aktualna = 1'):
+                         ' WHERE p.aktualna = 1 AND COALESCE(p.ksiegowane, 1) = 1'):   # Księgowane: OFF = poza rentownością (A-KOL-17)
         x = t[r['id']]
         x.update(folder=r['folder'], kategoria=r['kategoria'], nazwa=r['nazwa'], id=r['id'])
         if r['rodzaj'] == 1:

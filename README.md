@@ -39,7 +39,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 
 ```bash
 .venv/bin/python -m unittest discover -s testy -t .        # zmyślone dane
-.venv/bin/python -m unittest testy_odbioru.test_etap1 testy_odbioru.test_etap2 testy_odbioru.test_etap3 testy_odbioru.test_etap4 testy_odbioru.test_budzet   # prawdziwe pliki, baza w katalogu tymczasowym
+.venv/bin/python -m unittest discover testy_odbioru   # prawdziwe pliki, baza w katalogu tymczasowym (iCloud może najpierw pobierać pliki)
 ```
 
 ## Formaty plików (sprawdzone 14.10.2026, różnice wobec briefu)
@@ -140,3 +140,34 @@ kontra wykonanie. Eksport Excel (`finanse/eksport.py`): arkusz, cash flow, rento
 - **Listy planu** ze stronicowaniem 50/100/200/500 i wyszukiwarką; suma w stopce ze wszystkich pozycji.
 - Drobne: tabela podpina zdarzenia tylko w sobie, klik w plan po terminie w Cash flow otwiera kartę, umowy od dnia stanu,
   część roku z 366 dniami w roku przestępnym.
+
+## Pakiet 2: model planu jak w Budget Studio (2026-10-19)
+
+Reguły w `finanse/plan.py` (bez bazy, testowalne wprost), zdarzenia w `finanse/budzet.py`.
+
+- **Komórka = kwota, plany = pochodna.** Nowe zdarzenie `bud` `op: "komorka"` (`wiersz`, `miesiac`, `kwota` w groszach, `null` = pusta
+  komórka, 0 = ukryty plan zerowy). Plany komórki (`plan:<wiersz>:<miesiąc>:<część>`) liczą się przy każdej odbudowie z kwoty, ustawień
+  wiersza i ręcznych zmian planu. Kwoty komórek w tabeli `bud_komorka`. Komórka wpisana na wierszu z importu BS zastępuje plany BS
+  tej komórki (cofnięcie przywraca). Plany z BS bez komórki zostają jak w eksporcie.
+- **Podstawy:** faktura i bez faktury (1 plan), worek (tygodnie przycięte do miesiąca, kwota proporcjonalnie do dni, reszta groszy do
+  ostatniego), umowa o pracę i zlecenie (osoba, PIT, ZUS), dzieło (osoba, PIT), daniny (1 plan bez VAT). Umowy: kwoty referencyjne
+  od księgowej (`proporcje`), udział = kwota / suma (Fraction), PIT i ZUS połówkami w górę, reszta do osoby; PIT 20., ZUS 15. dnia
+  miesiąca po wypłacie; wystawienie PIT i ZUS = osoby. Umowa zawsze obciążenie, Księgowane tak, VAT „-”.
+- **Reguła dnia wystawienia** w wierszu: `Ostatni`, `1.`, `10.`, `10. +1`, `9. +1 B` (B = księgowanie wg miesiąca budżetu, tylko dzień
+  1 do 15), `20. -1`; przesunięcie do 12 miesięcy. Termin = wystawienie + dni (0 do 99), dzień realny = termin.
+- **Reguła nadpisań:** ręczna zmiana planu (kontrahent, komentarz, daty, metoda, Księgowane, W cash flow; stawka tylko w fakturze
+  jednej; w worku tylko kontrahent i komentarz; PIT i ZUS umowy nic) zapisuje się przy planie. Zmiana tej samej cechy w wierszu kasuje
+  ręczny wyjątek we wszystkich planach wiersza (także planach z BS); rzeczywistych nie rusza. Zapis wiersza bez zmiany wartości niczego nie kasuje.
+- **Blokady** (sprawdzane przy zapisie, nie przy odtwarzaniu historii): po pierwszej rzeczywistej w wierszu podstawa, rodzaj i proporcje
+  umowy o pracę i zlecenia; komórka z rzeczywistą (worek: nie mniej niż suma rzeczywistych); miesiąc poza zakresem arkusza; data planu
+  ponad 5 lat od dnia stanu; PIT i ZUS zapłacone dopiero po wypłacie dla osoby. Komunikat mówi, co zrobić zamiast.
+- **Etap i aktualność wg BS** w `bud_stan.etap_wg_bs` i `bud_stan.aktualnosc` (obok naszego etapu z banku): plan nieaktualny, gdy minął
+  dzień wystawienia, płatności albo realny; rzeczywista nieopłacona, gdy minął dzień realny.
+- **Cechy płatności:** kontrahent planu (z wiersza albo ręczny), Księgowane (OFF = poza rentownością arkuszy), W cash flow, split
+  payment w wierszu (zapisany, liczenie w pakiecie 8). Arkusz, folder, sekcja, przedmiot zawsze ze złączenia, więc zmiana nazwy arkusza
+  od razu widać na listach.
+- **Parametr worka:** `worek_pierwszy_dzien_tygodnia` w `Finanse/Aplikacja/ustawienia.json` (0 = poniedziałek, domyślnie, decyzja Mata;
+  eksport BS z 14.10.2026 dzieli od wtorku, czyli 1). Zmiana pliku wymaga „Wczytaj pliki na nowo”.
+- **Interfejs (minimum, pełny arkusz w pakiecie 3):** klik w pustą komórkę = kwota; klik w komórkę = kwota komórki i karty płatności
+  z polami dozwolonymi dla tej podstawy; karta wiersza z nowymi ustawieniami i wpisaniem kwot w miesiącach (seria komórek). Zapis
+  wiersza wysyła tylko zmienione cechy.

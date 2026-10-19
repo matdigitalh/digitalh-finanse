@@ -93,12 +93,15 @@ CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
 CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT);
 CREATE TABLE bud_wiersz (id TEXT PRIMARY KEY, arkusz TEXT, rodzaj INTEGER, podstawa TEXT, kontrahent TEXT, komentarz TEXT,
   przedmiot TEXT, sekcja TEXT, stawka_vat TEXT, dzien_wystawienia TEXT, dni_na_platnosc TEXT, metoda TEXT, ksiegowane INTEGER,
-  w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT);
+  w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT, split INTEGER, proporcje TEXT, kup INTEGER);
 CREATE INDEX bud_wiersz_ark ON bud_wiersz(arkusz);
 CREATE TABLE bud_platnosc (id TEXT PRIMARY KEY, bs_id TEXT, wiersz TEXT, miesiac TEXT, typ TEXT, etap_bs TEXT, aktualna INTEGER,
   netto INTEGER, vat INTEGER, brutto INTEGER, stawka INTEGER, rodzaj INTEGER, nr_dok TEXT, nr_wewn TEXT, tytul TEXT, wystawienie TEXT, termin TEXT,
-  realny TEXT, ksiegowanie TEXT, metoda TEXT, w_cashflow INTEGER, komentarz TEXT, decyzja TEXT, zrodlo TEXT, wiersz_pliku INTEGER);
+  realny TEXT, ksiegowanie TEXT, metoda TEXT, w_cashflow INTEGER, komentarz TEXT, decyzja TEXT, zrodlo TEXT, wiersz_pliku INTEGER,
+  kontrahent TEXT, ksiegowane INTEGER, skladowa TEXT, spinacz TEXT, generowany INTEGER, nadpisane TEXT, ukryty INTEGER);
 CREATE INDEX bud_platnosc_w ON bud_platnosc(wiersz);
+-- Kwoty komórek (wiersz × miesiąc) wpisane w apce; plany z nich są pochodną (pakiet 2).
+CREATE TABLE bud_komorka (wiersz TEXT, miesiac TEXT, kwota INTEGER, PRIMARY KEY (wiersz, miesiac));
 CREATE TABLE bud_historia (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT, bylo TEXT, jest TEXT);
 -- Zdarzenia budżetu, które nie mają do czego się odnieść (np. płatności nie ma już w eksporcie BS): pokazywane, nie gubione.
 CREATE TABLE bud_osierocone (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT, powod TEXT);
@@ -107,7 +110,9 @@ CREATE TABLE bud_powiazanie (platnosc TEXT, typ TEXT, ref TEXT, kwota INTEGER, m
 CREATE INDEX bud_powiazanie_p ON bud_powiazanie(platnosc);
 CREATE TABLE umowy (id TEXT PRIMARY KEY, dane TEXT);
 CREATE TABLE bud_rozjazd (rodzaj TEXT, ref TEXT, kwota INTEGER, opis TEXT);
-CREATE TABLE bud_stan (platnosc TEXT PRIMARY KEY, etap TEXT, zaplacono INTEGER, data_zaplaty TEXT, termin_efektywny TEXT, uwaga TEXT);
+-- etap: nasz (z banku i Fakturowni); etap_wg_bs i aktualnosc: reguły BS (B-MOD-08 do 10) na dzień stanu.
+CREATE TABLE bud_stan (platnosc TEXT PRIMARY KEY, etap TEXT, zaplacono INTEGER, data_zaplaty TEXT, termin_efektywny TEXT, uwaga TEXT,
+  etap_wg_bs TEXT, aktualnosc TEXT);
 CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), stan TEXT, operacja_id INTEGER);
 """
 

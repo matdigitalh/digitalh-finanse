@@ -5,12 +5,31 @@
 const ETAPY_KLASA = { 'Opłacona': 'plus', 'Planowana': 'neutral', 'Po terminie': 'minus', 'Wystawiona': 'akcent',
   'Częściowo opłacona': 'ostrzezenie', 'Opłacona wg BS': 'ostrzezenie', 'Nieaktualna': 'neutral' };
 const chipEtap = e => `<span class="chip ${ETAPY_KLASA[e] || 'neutral'}">${esc(e || '')}</span>`;
-const PODSTAWY = ['Faktura (jedna)', 'Faktura (w worku)', 'Bez faktury', 'Umowa o pracę - dla wykonawcy', 'Umowa o pracę - PIT',
-  'Umowa o pracę - ZUS', 'Podatek VAT', 'Podatek dochodowy'];
+const PODSTAWY = ['Faktura (jedna)', 'Faktura (w worku)', 'Bez faktury', 'Bez faktury (w worku)', 'Umowa o dzieło', 'Umowa zlecenie',
+  'Umowa o pracę', 'Podatek VAT', 'Podatek dochodowy'];
+const WOREK = ['Faktura (w worku)', 'Bez faktury (w worku)'];
+const UMOWY = { 'Umowa o dzieło': ['osoba', 'us'], 'Umowa zlecenie': ['osoba', 'us', 'zus'], 'Umowa o pracę': ['osoba', 'us', 'zus'] };
+const SKLADOWE = { osoba: 'dla osoby (na rękę)', us: 'PIT (urząd skarbowy)', zus: 'ZUS (wszystkie składki)' };
+// Co oznacza kwota w komórce (A-KOL-10)
+const KWOTA_KOMORKI = { 'Faktura (jedna)': 'netto; VAT i brutto policzy apka ze stawki wiersza', 'Faktura (w worku)': 'netto na cały miesiąc; apka podzieli ją na tygodnie',
+  'Bez faktury': 'kwota tak, jak jest, bez VAT', 'Bez faktury (w worku)': 'kwota na cały miesiąc; apka podzieli ją na tygodnie',
+  'Umowa o dzieło': 'brutto umowy (wynagrodzenie z zaliczką PIT)', 'Umowa zlecenie': 'pełny koszt zleceniodawcy', 'Umowa o pracę': 'pełny koszt pracodawcy' };
+const zlWpis = gr => gr == null || gr === '' ? '' : (gr / 100).toFixed(2).replace('.', ',');
+const plusDni = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const roznicaDni = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 86400000);
+const nastMies = (m, o = 1) => { const x = +m.slice(0, 4) * 12 + +m.slice(5, 7) - 1 + o; return `${Math.floor(x / 12)}-${String(x % 12 + 1).padStart(2, '0')}`; };
+// Reguła dnia wystawienia: „Ostatni”, „1.”, „10. +1 B” (B: księgowanie wg miesiąca budżetu), „20. -1”.
+const regulaZ = t => { const m = /^(ostatni|pierwszy|(\d{1,2})\.?)(?:\s*([+-]\d{1,2}))?(\s*b)?$/i.exec(String(t || '').trim());
+  if (!m) return { typ: 'ostatni', dzien: 10, przes: 0, b: false };
+  const typ = /^ostatni/i.test(m[1]) ? 'ostatni' : (/^pierwszy/i.test(m[1]) || m[2] === '1') ? 'pierwszy' : 'dzien';
+  return { typ, dzien: m[2] ? +m[2] : 10, przes: +(m[3] || 0), b: !!m[4] }; };
+const regulaNa = r => (r.typ === 'ostatni' ? 'Ostatni' : r.typ === 'pierwszy' ? '1.' : `${r.dzien}.`) + (r.przes ? ` ${r.przes > 0 ? '+' : ''}${r.przes}` : '') + (r.przes && r.b ? ' B' : '');
 const nowyId = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 // BS podaje stawkę jako ułamek (0.23) albo tekst („np”, „zw”); pokazujemy procent.
 const stawka = s => { const v = parseFloat(String(s ?? '').replace(',', '.')); return isNaN(v) ? esc(s || '') : `${Math.round(v <= 1 ? v * 100 : v)} %`; };
-const naGrosze = s => Math.round(parseFloat(String(s).replace(/\s/g, '').replace(',', '.')) * 100);
+// Kwota z pola („1 234,56”) na grosze bez liczb zmiennoprzecinkowych; zły zapis: NaN.
+const naGrosze = s => { const t = String(s ?? '').replace(/[\s\u00a0]/g, '').replace(',', '.'); const m = /^(\d+)(?:\.(\d{1,2}))?$/.exec(t);
+  return m ? (+m[1]) * 100 + +((m[2] || '') + '00').slice(0, 2) : NaN; };
 const STAWKI = [23, 8, 5, 0];
 // Stawka z zapisu BS (0,23 albo efektywna 0,2299) jako 23, 8, 5, 0; inna (kilka stawek na fakturze) albo brak: null.
 const stawkaStd = s => { let v = parseFloat(String(s ?? '').replace(',', '.')); if (isNaN(v)) return null; if (v > 0 && v < 1) v *= 100; return STAWKI.find(x => Math.abs(v - x) <= (x ? 0.1 : 0)) ?? null; };
@@ -60,12 +79,12 @@ Object.assign(WIDOKI, {
     const a = d.arkusz, m = d.miesiace;
     const kom = (w, x) => {
       const k = w.komorki[x];
-      if (!k) return '<td class="liczba-kol pusta">–</td>';
-      return `<td class="liczba-kol komorka ${k.stan}" data-p="${k.platnosci.join(',')}" title="${k.platnosci.length} płatności">${zl(k.netto, false)}</td>`;
+      if (!k) return `<td class="liczba-kol pusta${d.planowanie ? ' klik' : ''}" data-w="${esc(w.id)}" data-m="${x}">–</td>`;
+      return `<td class="liczba-kol komorka ${k.stan}" data-p="${k.platnosci.join(',')}" data-w="${esc(w.id)}" data-m="${x}" title="${k.platnosci.length} płatności">${zl(k.netto, false)}</td>`;
     };
     const wiersze = d.wiersze.map(w => `<tr data-w="${w.id}">${d.planowanie ? `<td><input type="checkbox" data-zazn="${w.id}" aria-label="Zaznacz wiersz"></td>` : ''}
-      <td>${esc(w.podstawa)}</td><td class="liczba-kol">${stawka(w.stawka_vat)}</td>
-      <td>${esc(w.dzien_wystawienia)}</td><td>${esc(w.dni_na_platnosc)}</td><td>${esc(w.metoda)}</td>
+      <td>${esc(w.podstawa)}</td><td class="liczba-kol">${w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : '-'}</td>
+      <td title="${esc(w.dzien_wystawienia)}">${esc(w.dzien_opis)}</td><td>${esc(w.dni_na_platnosc)}</td><td>${esc(w.metoda)}</td>
       <td>${esc(w.kontrahent)}</td><td class="szary">${esc(w.sekcja || '–')}</td><td>${esc(w.komentarz)}</td>
       <td>${w.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>'}</td>
       ${m.map(x => kom(w, x)).join('')}</tr>`).join('');
@@ -76,10 +95,13 @@ Object.assign(WIDOKI, {
           { klucz: 'w', nazwa: 'Wpływy', kolor: Wykresy.kolor('--plus'), wartosci: d.podsumowanie.map(s => s.wplywy) },
           { klucz: 'o', nazwa: 'Obciążenia', kolor: Wykresy.kolor('--minus'), wartosci: d.podsumowanie.map(s => s.obciazenia) },
           { klucz: 'n', nazwa: 'Narastająco', typ: 'linia', kolor: Wykresy.kolor('--s1'), wartosci: d.podsumowanie.map(s => s.narastajaco) }] });
-      document.querySelectorAll('td.komorka').forEach(td => td.onclick = e => { e.stopPropagation(); kartaPlatnosci(td.dataset.p.split(','), d); });
+      const wiersz = id => d.wiersze.find(w => w.id === id);
+      document.querySelectorAll('td.komorka').forEach(td => td.onclick = e => { e.stopPropagation();
+        kartaPlatnosci(td.dataset.p.split(','), d, { w: wiersz(td.dataset.w), m: td.dataset.m }); });
       if (d.planowanie) {
+        document.querySelectorAll('td.pusta.klik').forEach(td => td.onclick = e => { e.stopPropagation(); kartaKomorki(wiersz(td.dataset.w), td.dataset.m); });
         $('#dodaj-wiersz').onclick = e => { e.stopPropagation(); kartaWiersza(null, d); };
-        document.querySelectorAll('tr[data-w] td:not(.komorka):not(:first-child)').forEach(td => td.onclick = e => {
+        document.querySelectorAll('tr[data-w] td:not(.komorka):not(.pusta):not(:first-child)').forEach(td => td.onclick = e => {
           e.stopPropagation(); kartaWiersza(d.wiersze.find(w => w.id === td.parentElement.dataset.w), d); });
         document.querySelectorAll('[data-akcja]').forEach(b => b.onclick = e => { e.stopPropagation(); akcjaNaWierszach(b.dataset.akcja, d); });
       }
@@ -91,7 +113,8 @@ Object.assign(WIDOKI, {
       ${d.planowanie ? `<div class="akcje">
         <button class="glowny" id="dodaj-wiersz">Dodaj wiersz</button>
         <span class="szary">Zaznaczone:</span><button data-akcja="duplikuj">Duplikuj</button><button data-akcja="przenies">Przenieś do arkusza</button>
-        <button data-akcja="scal">Scal</button><button data-akcja="podziel">Podziel</button><button data-akcja="usun">Usuń</button></div>`
+        <button data-akcja="scal">Scal</button><button data-akcja="podziel">Podziel</button><button data-akcja="usun">Usuń</button></div>
+        <p class="notka">Kliknij pustą komórkę, żeby wpisać kwotę planu; kliknij wiersz (opis), żeby zmienić jego ustawienia. Plany liczą się z kwoty komórki i ustawień wiersza.</p>`
         : '<p class="notka">Tryb podglądu: plany z Budget Studio. Edycję włącza przełącznik w Budżet, Ustawienia (planowanie w apce od 2027).</p>'}
       <div class="legenda-stany"><span class="komorka oplacona">opłacone (bank)</span><span class="komorka planowana">plan</span>
         <span class="komorka po-terminie">po terminie</span><span class="komorka wg-bs">opłacone tylko wg BS</span></div>
@@ -108,6 +131,7 @@ Object.assign(WIDOKI, {
       { id: 'rodzaj', naglowek: 'Rodzaj', html: x => x.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>' },
       { naglowek: 'Etap', html: x => chipEtap(x.etap) },
       { naglowek: 'Kontrahent', wartosc: x => x.w_kontrahent },
+      { naglowek: 'Podstawa', wartosc: x => x.podstawa_platnosci, klasa: x => x.skladowa === 'us' || x.skladowa === 'zus' ? 'szary' : '' },
       { naglowek: 'Tytuł', wartosc: x => x.tytul, klasa: () => 'szary' },
       { naglowek: 'Arkusz', wartosc: x => x.arkusz },
       { naglowek: 'Miesiąc', wartosc: x => mies(x.miesiac) },
@@ -265,83 +289,241 @@ function opisZmiany(h) {
   } catch (e) { return ''; }
 }
 
-// ---------- Karty: płatność, wiersz, arkusz ----------
-async function kartaPlatnosci(ids, ark) {
+// ---------- Karty: komórka, płatność, wiersz, arkusz ----------
+// Komórka (wiersz × miesiąc) ma kwotę; plany są z niej liczone wg podstawy i ustawień wiersza (pakiet 2).
+function komorkaHtml(w, m, kwota) {
+  return `<div class="formularz" data-komorka>
+      ${pole('', `Kwota w komórce (${esc(KWOTA_KOMORKI[w.podstawa] || 'kwota')})`, `<input data-kwota inputmode="decimal" value="${esc(zlWpis(kwota))}">`)}</div>
+    <div class="akcje"><button class="glowny" data-zapisz-komorke>Zapisz kwotę</button>${kwota != null ? '<button data-wyczysc-komorke>Wyczyść komórkę</button>' : ''}</div>
+    <p class="szary">0 znaczy: płatność będzie, kwota jeszcze nieznana. Pusta komórka nie ma planów.</p>`;
+}
+
+function podepnijKomorke(k, w, m) {
+  const b = k.querySelector('[data-zapisz-komorke]');
+  if (!b) return;
+  b.onclick = () => {
+    const kwota = naGrosze(k.querySelector('[data-kwota]').value);
+    if (!(kwota >= 0)) return komunikat('Wpisz kwotę liczbą, np. 1 234,56.', true);
+    zmiana('bud', { op: 'komorka', wiersz: w.id, miesiac: m, kwota });
+  };
+  const c = k.querySelector('[data-wyczysc-komorke]');
+  if (c) c.onclick = () => zmiana('bud', { op: 'komorka', wiersz: w.id, miesiac: m, kwota: null });
+}
+
+function kartaKomorki(w, m) {
+  const k = $('#karta');
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${esc(miesPelny(m))}</h2>
+    <div class="szary">${esc(w.kontrahent || w.komentarz || 'Wiersz')} · ${esc(w.podstawa)}</div>${komorkaHtml(w, m, null)}`;
+  k.hidden = false;
+  $('.zamknij', k).onclick = () => { k.hidden = true; };
+  podepnijKomorke(k, w, m);
+  $('[data-kwota]', k).focus();
+}
+
+// Pola planu, które wolno zmienić na pojedynczej płatności (reszta przychodzi z wiersza; serwer sprawdza to samo).
+function polaPlanu(p) {
+  if (p.typ !== 'plan') return ['netto', 'stawka', 'termin'];
+  if (WOREK.includes(p.podstawa)) return ['kontrahent', 'komentarz'];
+  if (p.skladowa === 'us' || p.skladowa === 'zus') return [];
+  const pola = ['kontrahent', 'komentarz', 'wystawienie', 'dni', 'termin', 'realny', 'metoda', 'ksiegowane', 'w_cashflow'];
+  if (!UMOWY[p.podstawa]) pola.unshift('netto');
+  if (p.podstawa === 'Faktura (jedna)' || (!p.generowany && p.podstawa.startsWith('Faktura'))) pola.push('stawka');
+  return pola;
+}
+
+function formularzPlatnosci(p) {
+  const pola = polaPlanu(p);
+  if (!pola.length) return '<p class="szary">PIT i ZUS umowy idą za składową dla osoby: zmień ją albo ustawienia wiersza.</p>';
+  const dni = p.wystawienie && p.termin ? roznicaDni(p.wystawienie, p.termin) : '';
+  const f = {
+    netto: () => pole('', p.generowany ? 'Kwota (zmienia kwotę komórki)' : 'Netto (zł)', `<input data-f="netto" inputmode="decimal" value="${zlWpis(p.netto)}">`),
+    stawka: () => pole('', 'Stawka VAT', `<select data-f="stawka">${STAWKI.map(x => `<option value="${x}"${p.stawka === x ? ' selected' : ''}>${x} %</option>`).join('')}</select>`),
+    kontrahent: () => pole('', 'Kontrahent', `<input data-f="kontrahent" value="${esc(p.w_kontrahent || '')}">`),
+    komentarz: () => pole('', 'Komentarz', `<input data-f="komentarz" maxlength="170" value="${esc(p.komentarz || '')}">`),
+    wystawienie: () => pole('', 'Dzień wystawienia', `<input type="date" data-f="wystawienie" value="${esc(p.wystawienie || '')}">`),
+    dni: () => pole('', 'Dni na płatność', `<input data-f="dni" inputmode="numeric" value="${dni}">`),
+    termin: () => pole('', 'Dzień płatności', `<input type="date" data-f="termin" value="${esc((p.typ === 'plan' ? p.termin : p.termin_efektywny) || '')}">`),
+    realny: () => pole('', 'Dzień realnej płatności', `<input type="date" data-f="realny" value="${esc(p.realny || '')}">`),
+    metoda: () => pole('', 'Metoda płatności', `<input data-f="metoda" value="${esc(p.metoda || '')}">`),
+    ksiegowane: () => pole('', 'Księgowane (VAT, CIT, rentowność)', `<select data-f="ksiegowane"><option value="1">tak</option><option value=""${p.ksiegowane ? '' : ' selected'}>nie</option></select>`),
+    w_cashflow: () => pole('', 'W cash flow', `<select data-f="w_cashflow"><option value="1">tak</option><option value=""${p.w_cashflow ? '' : ' selected'}>nie</option></select>`),
+  };
+  return `<div class="formularz" data-edyt="${esc(p.id)}">${pola.map(x => f[x]()).join('')}</div>
+    <div class="akcje"><button data-zapisz="${esc(p.id)}">Zapisz tę płatność</button></div>
+    ${p.typ === 'plan' ? '<p class="szary">Zmiana tej samej cechy w wierszu nadpisze ręczną zmianę we wszystkich planach wiersza.</p>' : ''}`;
+}
+
+function zbierzPlatnosc(box) {
+  const o = {};
+  box.querySelectorAll('[data-f]').forEach(el => { o[el.dataset.f] = el.value; });
+  return o;
+}
+
+async function kartaPlatnosci(ids, ark, kom) {
   const k = $('#karta');
   const dane = await Promise.all(ids.slice(0, 8).map(id => api('budzet/platnosc', { id })));
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button>` + dane.map(({ platnosc: p, powiazania, historia, planowanie }) => `
+  const planowanie = dane[0]?.planowanie;
+  const naglowekKomorki = kom && kom.w && planowanie && !dane.some(x => x.platnosc.typ !== 'plan' && !WOREK.includes(kom.w.podstawa))
+    ? `<h2>${esc(miesPelny(kom.m))}</h2><div class="szary">${esc(kom.w.kontrahent || kom.w.komentarz || '')} · ${esc(kom.w.podstawa)}</div>
+       ${komorkaHtml(kom.w, kom.m, dane[0]?.kwota_komorki ?? kom.w.komorki?.[kom.m]?.kwota ?? null)}<hr>` : '';
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button>${naglowekKomorki}` + dane.map(({ platnosc: p, powiazania, historia }) => `
     <h2>${esc(p.w_kontrahent || p.tytul || 'Płatność')}</h2>
-    <div class="szary">${esc(p.arkusz)} · ${mies(p.miesiac)} · ${p.typ === 'plan' ? 'plan' : 'rzeczywista'}</div>
-    <dl><dt>Etap</dt><dd>${chipEtap(p.etap)}${p.uwaga_stanu ? `\n${esc(p.uwaga_stanu)}` : ''}</dd>
+    <div class="szary">${esc(p.folder)} / ${esc(p.arkusz)} · ${mies(p.miesiac)} · ${p.typ === 'plan' ? 'plan' : 'rzeczywista'}</div>
+    <dl><dt>Podstawa</dt><dd>${esc(p.podstawa_platnosci)}</dd><dt>Etap</dt><dd>${chipEtap(p.etap)}${p.uwaga_stanu ? `\n${esc(p.uwaga_stanu)}` : ''}</dd>
+      <dt>Wg reguł BS</dt><dd>${esc(p.etap_wg_bs || '')}, ${esc((p.aktualnosc || '').toLowerCase())}</dd>
       <dt>Netto</dt><dd>${zl(p.netto * p.rodzaj)}</dd><dt>VAT</dt><dd>${zl(p.vat * p.rodzaj)}${p.stawka != null ? ` (${p.stawka} %)` : ''}</dd><dt>Brutto</dt><dd>${zl(p.brutto * p.rodzaj)}</dd>
-      <dt>Termin</dt><dd>${dataPl(p.termin_efektywny)}</dd>${p.data_zaplaty ? `<dt>Zapłacono</dt><dd>${dataPl(p.data_zaplaty)}</dd>` : ''}
+      ${p.wystawienie ? `<dt>Wystawienie</dt><dd>${dataPl(p.wystawienie)}</dd>` : ''}<dt>Termin</dt><dd>${dataPl(p.termin_efektywny)}</dd>
+      ${p.realny ? `<dt>Realna płatność</dt><dd>${dataPl(p.realny)}</dd>` : ''}${p.ksiegowanie ? `<dt>Księgowanie</dt><dd>${mies(p.ksiegowanie.slice(0, 7))}</dd>` : ''}
+      ${p.data_zaplaty ? `<dt>Zapłacono</dt><dd>${dataPl(p.data_zaplaty)}</dd>` : ''}
+      <dt>Metoda</dt><dd>${esc(p.metoda || '–')}</dd><dt>Księgowane, W cash flow</dt><dd>${p.ksiegowane ? 'tak' : 'nie'}, ${p.w_cashflow ? 'tak' : 'nie'}</dd>
+      ${p.komentarz ? `<dt>Komentarz</dt><dd>${esc(p.komentarz)}</dd>` : ''}
       ${p.nr_dok ? `<dt>Nr dokumentu</dt><dd>${esc(p.nr_dok)}</dd>` : ''}${p.nr_wewn ? `<dt>Nr wewnętrzny</dt><dd>${esc(p.nr_wewn)}</dd>` : ''}
-      ${p.tytul ? `<dt>Tytuł</dt><dd>${esc(p.tytul)}</dd>` : ''}<dt>Etap w BS</dt><dd>${esc(p.etap_bs || '–')}</dd>
-      ${p.decyzja ? `<dt>Decyzja</dt><dd>${esc(p.decyzja)}</dd>` : ''}</dl>
+      ${p.tytul ? `<dt>Tytuł</dt><dd>${esc(p.tytul)}</dd>` : ''}${p.bs_id ? `<dt>Etap w BS</dt><dd>${esc(p.etap_bs || '–')}</dd>` : ''}
+      ${p.decyzja ? `<dt>Decyzja</dt><dd>${esc(p.decyzja)}</dd>` : ''}
+      ${Object.keys(p.nadpisane || {}).length ? `<dt>Zmienione ręcznie</dt><dd>${esc(Object.keys(p.nadpisane).join(', '))}</dd>` : ''}</dl>
     <h3>Powiązania</h3>${powiazania.length ? `<ul class="lista">${powiazania.map(x => `<li><b>${esc(x.typ)}</b> ${esc((x.opis || '').replace(/(-?\d+) gr/g, (_, v) => zl(+v)))} <span class="szary">${esc(x.metoda)}, ${esc(x.pewnosc)}</span></li>`).join('')}</ul>` : '<p class="szary">Brak: ani faktury, ani przelewu.</p>'}
     ${planowanie && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
       <button data-d="przesun">Przesuń</button><button data-d="zaplacone">Zapłacone</button><button data-d="anuluj">Anuluj</button></div>` : ''}
-    ${planowanie ? `<h3>Zmień</h3><div class="formularz" data-edyt="${esc(p.id)}">${pole('', 'Netto (zł)', `<input data-netto value="${(p.netto / 100).toFixed(2).replace('.', ',')}">`)}
-      ${p.podstawa.startsWith('Faktura') ? pole('', 'Stawka VAT', `<select data-stawka>${STAWKI.map(x => `<option value="${x}"${p.stawka === x ? ' selected' : ''}>${x} %</option>`).join('')}</select>`) : ''}
-      ${pole('', 'Termin', `<input type="date" data-nowy-termin value="${esc(p.termin_efektywny || '')}">`)}</div>
-      <div class="akcje"><button data-zapisz="${esc(p.id)}">Zapisz tę płatność</button></div>` : ''}
+    ${planowanie ? `<h3>Zmień</h3>${formularzPlatnosci(p)}` : ''}
     ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(h.op)} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
     <div class="zrodlo">Źródło: ${esc(p.zrodlo || '')}${p.bs_id ? `, ID w BS ${esc(p.bs_id)}, wiersz ${p.wiersz_pliku}` : ''}</div>`).join('<hr>');
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
+  if (naglowekKomorki) podepnijKomorke(k, kom.w, kom.m);
   k.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
     const box = b.closest('[data-pid]');
     const termin = $('[data-termin]', box).value;
     if (b.dataset.d === 'przesun' && !termin) return komunikat('Wybierz nowy termin.', true);
     zmiana('bud', { op: 'decyzja_planu', platnosc: box.dataset.pid, decyzja: b.dataset.d, termin, data: termin });
   });
+  k.querySelectorAll('[data-edyt]').forEach(box => {
+    // dni na płatność ↔ dzień płatności: zmiana jednego przelicza drugie; zmiana dnia płatności ustawia dzień realny
+    const el = n => box.querySelector(`[data-f="${n}"]`);
+    if (el('dni') && el('termin') && el('wystawienie')) {
+      el('dni').oninput = () => { const n = parseInt(el('dni').value, 10); if (n >= 0 && el('wystawienie').value) { el('termin').value = plusDni(el('wystawienie').value, n); if (el('realny')) el('realny').value = el('termin').value; } };
+      el('termin').onchange = () => { if (el('wystawienie').value && el('termin').value) el('dni').value = roznicaDni(el('wystawienie').value, el('termin').value); if (el('realny')) el('realny').value = el('termin').value; };
+      el('wystawienie').onchange = () => el('dni').oninput();
+    }
+    box.dataset.poczatek = JSON.stringify(zbierzPlatnosc(box));
+  });
   k.querySelectorAll('[data-zapisz]').forEach(b => b.onclick = () => {
-    const f = k.querySelector(`[data-edyt="${CSS.escape(b.dataset.zapisz)}"]`);
-    const netto = naGrosze($('[data-netto]', f).value), termin = $('[data-nowy-termin]', f).value, st = $('[data-stawka]', f);
-    if (!(netto >= 0)) return komunikat('Podaj kwotę netto.', true);
-    // VAT i brutto liczy serwer z netto i stawki (stawka z płatności, a gdy brak, z wiersza)
-    const obiekt = { id: b.dataset.zapisz, netto };
-    if (st) obiekt.stawka = +st.value;
-    if (termin) obiekt.termin = termin;
+    const box = k.querySelector(`[data-edyt="${CSS.escape(b.dataset.zapisz)}"]`);
+    const przed = JSON.parse(box.dataset.poczatek), po = zbierzPlatnosc(box);
+    // tylko pola zmienione na karcie; VAT i brutto liczy serwer z netto i stawki
+    const obiekt = { id: b.dataset.zapisz };
+    for (const [k2, v] of Object.entries(po)) {
+      if (v === przed[k2] || k2 === 'dni') continue;
+      if (k2 === 'netto') { const g = naGrosze(v); if (!(g >= 0)) return komunikat('Podaj kwotę liczbą, np. 1 234,56.', true); obiekt.netto = g; }
+      else if (k2 === 'stawka') obiekt.stawka = +v;
+      else if (k2 === 'ksiegowane' || k2 === 'w_cashflow') obiekt[k2] = !!v;
+      else obiekt[k2] = v;
+    }
+    if (Object.keys(obiekt).length === 1) return komunikat('Nic się nie zmieniło.', true);
     zmiana('bud', { op: 'platnosc', obiekt });
   });
 }
 
+// Wiersz = generator planów (pakiet 2): podstawa, VAT, reguła dnia wystawienia, dni na płatność, metoda, przełączniki,
+// proporcje umów. Zapis wysyła tylko zmienione cechy: zmiana cechy nadpisuje ją we wszystkich planach wiersza.
 function kartaWiersza(w, d) {
   const k = $('#karta');
-  const plan = w?.plan || {};
+  const r = regulaZ(w?.dzien_wystawienia || 'Ostatni');
+  const prop = w?.proporcje || {};
+  const zablokowane = !!w?.ma_rzeczywiste;
+  const sel = (id, opcje, wartosc, wyl = false) => `<select id="${id}"${wyl ? ' disabled' : ''}>${opcje.map(([v, n]) => `<option value="${esc(v)}"${String(wartosc) === String(v) ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  const taknie = [['1', 'tak'], ['', 'nie']];
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${w ? 'Wiersz' : 'Nowy wiersz'}</h2>
     <div class="szary">${esc(d.arkusz.nazwa)}</div>
+    ${zablokowane ? '<p class="notka">Wiersz ma płatność rzeczywistą: podstawy, rodzaju i proporcji umowy już nie zmienisz (obejście: zduplikuj wiersz). Reszta ustawień dotyczy tylko planów.</p>' : ''}
     <div class="formularz">
-      ${pole('', 'Rodzaj', `<select id="w-rodzaj"><option value="1"${w?.rodzaj === 1 ? ' selected' : ''}>wpływy</option><option value="-1"${w?.rodzaj === -1 ? ' selected' : ''}>obciążenia</option></select>`)}
-      ${pole('', 'Podstawa płatności', `<select id="w-podstawa">${PODSTAWY.map(x => `<option${w?.podstawa === x ? ' selected' : ''}>${x}</option>`).join('')}</select>`)}
+      ${pole('', 'Przedmiot transakcji', `<input id="w-przedmiot" value="${esc(w?.przedmiot || '')}">`)}
       ${pole('', 'Kontrahent', `<input id="w-kontrahent" value="${esc(w?.kontrahent || '')}">`)}
-      ${pole('', 'Komentarz (opis wiersza)', `<input id="w-komentarz" value="${esc(w?.komentarz || '')}">`)}
-      ${pole('', 'Kwota netto na okres (zł)', `<input id="w-netto" inputmode="decimal" value="${plan.netto ? (plan.netto / 100).toFixed(2).replace('.', ',') : ''}">`)}
-      ${pole('', 'Stawka VAT (%)', `<input id="w-vat" inputmode="decimal" value="${esc(plan.stawka_vat ?? w?.stawka_vat ?? '23')}">`)}
-      ${pole('', 'Cykl', `<select id="w-cykl">${[['miesiac', 'co miesiąc'], ['kwartal', 'co kwartał'], ['rok', 'co rok'], ['brak', 'jednorazowo']].map(([v, n]) => `<option value="${v}"${(plan.cykl || 'miesiac') === v ? ' selected' : ''}>${n}</option>`).join('')}</select>`)}
-      ${pole('', 'Od miesiąca', `<input id="w-od" type="month" value="${esc(plan.od || d.arkusz.od)}">`)}
-      ${pole('', 'Do miesiąca', `<input id="w-do" type="month" value="${esc(plan.do || d.arkusz.do)}">`)}
-      ${pole('', 'Dzień wystawienia', `<select id="w-dzien">${['Ostatni', '15.', '2.', '1.', '10.', '20.'].map(x => `<option${(plan.dzien_wystawienia || 'Ostatni') === x ? ' selected' : ''}>${x}</option>`).join('')}</select>`)}
-      ${pole('', 'Dni na płatność', `<select id="w-dni">${['0', '7', '14', '21', '30', '60'].map(x => `<option${String(plan.dni_na_platnosc ?? 14) === x ? ' selected' : ''}>${x}</option>`).join('')}</select>`)}
-      ${pole('', 'Części (wynagrodzenie): nazwa:kwota:dzień, po przecinku', `<input id="w-czesci" placeholder="netto:7000:10, ZUS:2500:15, PIT:800:20" value="${esc((plan.czesci || []).map(c => `${c.nazwa}:${(c.kwota / 100).toFixed(2)}:${c.dzien_platnosci || ''}`).join(', '))}">`)}
+      ${pole('', 'Sekcja', `<input id="w-sekcja" value="${esc(w?.sekcja || '')}" placeholder="-">`)}
+      ${pole('', 'Komentarz (do 170 znaków)', `<input id="w-komentarz" maxlength="170" value="${esc(w?.komentarz || '')}">`)}
+      ${pole('', 'Rodzaj', sel('w-rodzaj', [['-1', 'obciążenia (koszt)'], ['1', 'wpływy (przychód)']], w?.rodzaj ?? -1, zablokowane))}
+      ${pole('', 'Podstawa płatności', sel('w-podstawa', (PODSTAWY.includes(w?.podstawa) || !w ? PODSTAWY : [w.podstawa, ...PODSTAWY]).map(x => [x, x]), w?.podstawa || 'Faktura (jedna)', zablokowane))}
+      ${pole('', 'Stawka VAT', sel('w-vat', STAWKI.map(x => [x, `${x} %`]), stawkaStd(w?.stawka_vat) ?? 23))}
+      ${pole('', 'Dzień wystawienia', sel('w-dzien-typ', [['ostatni', 'ostatni dzień miesiąca'], ['pierwszy', 'pierwszy dzień miesiąca'], ['dzien', 'wybrany dzień']], r.typ))}
+      ${pole('', 'Który dzień (1–31)', `<input id="w-dzien" inputmode="numeric" value="${r.dzien}">`)}
+      ${pole('', 'Miesiąc wystawienia względem kolumny', sel('w-przes', [...Array(25)].map((_, i) => i - 12).map(n => [n, n === 0 ? 'ten sam miesiąc' : n > 0 ? `${n} mies. później (z dołu)` : `${-n} mies. wcześniej (z góry)`]), r.przes))}
+      ${pole('', 'Miesiąc księgowania (przy przesunięciu i dniu 1–15)', sel('w-ksieg', [['', 'wg daty wystawienia'], ['B', 'wg miesiąca budżetu']], r.b ? 'B' : ''))}
+      ${pole('', 'Dni na płatność (0–99)', `<input id="w-dni" inputmode="numeric" list="w-dni-lista" value="${w ? esc(String(w.dni_na_platnosc ?? '').replace(/\D.*$/, '') || '0') : '14'}"><datalist id="w-dni-lista">${[0, 7, 14, 21, 30, 60].map(x => `<option value="${x}">`).join('')}</datalist>`)}
+      ${pole('', 'Metoda płatności', `<input id="w-metoda" value="${esc(w?.metoda || 'Konto firmowe')}">`)}
+      ${pole('', 'Księgowane (VAT, CIT, rentowność)', sel('w-ksiegowane', taknie, w ? (w.ksiegowane ? '1' : '') : '1'))}
+      ${pole('', 'W cash flow', sel('w-cf', taknie, w ? (w.w_cashflow ? '1' : '') : '1'))}
+      ${pole('', 'Split payment', sel('w-split', taknie, w?.split ? '1' : ''))}
+      <p class="szary">Wzorce: odsetki od kredytu K tak, CF tak; kapitał kredytu K nie, CF tak; wypłata zysku K nie, CF tak; amortyzacja i różnice kursowe K tak, CF nie;
+        koszt opłacony prywatnie to dwa wiersze: koszt (K tak, CF nie) i zwrot pracownikowi bez faktury (K nie, CF tak). K = Księgowane, CF = W cash flow.</p>
+      <div class="formularz" id="w-umowa">
+        <p class="szary">Kwoty od księgowej z jednej umowy albo suma kilku list płac. Z nich apka liczy udziały i dzieli każdą komórkę.</p>
+        ${['osoba', 'us', 'zus'].map(x => pole('', `Kwota ${SKLADOWE[x]} (zł)`, `<input id="w-prop-${x}" inputmode="decimal" value="${zlWpis(prop[x])}"${zablokowane ? ' disabled' : ''}>`)).join('')}
+        ${pole('', 'Koszty uzyskania przychodu (dzieło)', sel('w-kup', [['', 'nie dotyczy'], ['20', '20 %'], ['50', '50 %']], w?.kup ?? ''))}
+      </div>
+    </div>
+    <h3>Kwoty w miesiącach</h3>
+    <div class="formularz">
+      ${pole('', 'Kwota (zostaw puste, żeby nie zmieniać komórek)', '<input id="w-kwota" inputmode="decimal">')}
+      ${pole('', 'Co ile', sel('w-co', [['1', 'co miesiąc'], ['3', 'co kwartał'], ['12', 'co rok'], ['0', 'tylko w pierwszym miesiącu']], '1'))}
+      ${pole('', 'Od miesiąca', `<input id="w-od" type="month" value="${esc(d.arkusz.od)}">`)}
+      ${pole('', 'Do miesiąca', `<input id="w-do" type="month" value="${esc(d.arkusz.do)}">`)}
     </div>
     <div class="akcje"><button class="glowny" id="w-zapisz">Zapisz wiersz</button></div>
-    <p class="szary">Plan cykliczny tworzy płatności planowane w każdym okresie zakresu. Części dzielą płatność (np. wypłata 10., ZUS 15., PIT 20. następnego miesiąca).</p>`;
+    <p class="szary" id="w-opis-kwoty"></p>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
+  const odswiez = () => {
+    const pod = $('#w-podstawa').value, umowa = !!UMOWY[pod], worek = WOREK.includes(pod);
+    $('#w-vat').disabled = !pod.startsWith('Faktura');
+    $('#w-umowa').hidden = !umowa;
+    $('#w-prop-zus').closest('.pole').hidden = pod === 'Umowa o dzieło';
+    $('#w-kup').closest('.pole').hidden = pod !== 'Umowa o dzieło';
+    ['#w-dzien-typ', '#w-przes', '#w-ksieg'].forEach(x => { $(x).disabled = worek; });
+    $('#w-dzien').disabled = worek || $('#w-dzien-typ').value !== 'dzien';
+    $('#w-ksieg').disabled = worek || +$('#w-przes').value === 0 || ($('#w-dzien-typ').value === 'dzien' && +$('#w-dzien').value > 15) || $('#w-dzien-typ').value === 'ostatni';
+    if (umowa) { $('#w-rodzaj').value = '-1'; $('#w-ksiegowane').value = '1'; }
+    $('#w-rodzaj').disabled = zablokowane || umowa;
+    $('#w-ksiegowane').disabled = umowa;
+    $('#w-opis-kwoty').textContent = `Kwota w komórce: ${KWOTA_KOMORKI[pod] || 'kwota planu'}.${worek ? ' Dzień wystawienia: początek każdego tygodnia.' : ''}`;
+  };
+  ['#w-podstawa', '#w-dzien-typ', '#w-przes', '#w-dzien'].forEach(x => { $(x).onchange = odswiez; });
+  odswiez();
+  const zbierz = () => {
+    const pod = $('#w-podstawa').value;
+    const o = { przedmiot: $('#w-przedmiot').value.trim(), kontrahent: $('#w-kontrahent').value.trim(), sekcja: $('#w-sekcja').value.trim(),
+      komentarz: $('#w-komentarz').value.trim(), rodzaj: +$('#w-rodzaj').value, podstawa: pod, metoda: $('#w-metoda').value.trim(),
+      ksiegowane: !!$('#w-ksiegowane').value, w_cashflow: !!$('#w-cf').value, split: !!$('#w-split').value,
+      dni_na_platnosc: parseInt($('#w-dni').value, 10) };
+    if (pod.startsWith('Faktura')) o.stawka_vat = +$('#w-vat').value;
+    if (!WOREK.includes(pod)) o.dzien_wystawienia = regulaNa({ typ: $('#w-dzien-typ').value, dzien: +$('#w-dzien').value, przes: +$('#w-przes').value, b: $('#w-ksieg').value === 'B' && !$('#w-ksieg').disabled });
+    if (UMOWY[pod]) {
+      o.proporcje = {};
+      UMOWY[pod].forEach(x => { o.proporcje[x] = naGrosze($(`#w-prop-${x}`).value || '0'); });
+      if (pod === 'Umowa o dzieło' && $('#w-kup').value) o.kup = +$('#w-kup').value;
+    }
+    return o;
+  };
+  const poczatek = JSON.stringify(zbierz());
   $('#w-zapisz').onclick = () => {
-    const czesci = $('#w-czesci').value.split(',').map(s => s.trim()).filter(Boolean).map(s => {
-      const [nazwa, kwota, dzien] = s.split(':'); return { nazwa: nazwa.trim(), kwota: naGrosze(kwota), dzien_platnosci: dzien ? +dzien : null };
-    });
-    const netto = czesci.length ? czesci.reduce((a, c) => a + c.kwota, 0) : naGrosze($('#w-netto').value);
-    if (!(netto > 0)) return komunikat('Podaj kwotę netto albo części.', true);
-    const vat = $('#w-vat').value.trim().replace(',', '.');
-    zmiana('bud', { op: 'wiersz', obiekt: { id: w?.id || nowyId('w'), arkusz: d.arkusz.id, rodzaj: +$('#w-rodzaj').value, podstawa: $('#w-podstawa').value,
-      kontrahent: $('#w-kontrahent').value.trim(), komentarz: $('#w-komentarz').value.trim(), stawka_vat: vat || null,
-      dzien_wystawienia: $('#w-dzien').value, dni_na_platnosc: +$('#w-dni').value, cykl: $('#w-cykl').value,
-      plan: { netto, stawka_vat: vat || null, cykl: $('#w-cykl').value, od: $('#w-od').value, do: $('#w-do').value,
-        dzien_wystawienia: $('#w-dzien').value, dni_na_platnosc: +$('#w-dni').value, czesci: czesci.length ? czesci : null } } });
+    const o = zbierz(), stare = JSON.parse(poczatek);
+    if (!(o.dni_na_platnosc >= 0 && o.dni_na_platnosc <= 99)) return komunikat('Dni na płatność: liczba od 0 do 99.', true);
+    if ($('#w-dzien-typ').value === 'dzien' && !(+$('#w-dzien').value >= 1 && +$('#w-dzien').value <= 31)) return komunikat('Dzień wystawienia: od 1 do 31.', true);
+    if (o.proporcje && Object.values(o.proporcje).some(x => !(x >= 0))) return komunikat('Kwoty umowy wpisz liczbami, np. 2 700,96.', true);
+    if (o.proporcje && !Object.values(o.proporcje).some(x => x > 0)) return komunikat('Podaj kwoty od księgowej (dla osoby, PIT i ZUS).', true);
+    const id = w?.id || nowyId('w');
+    // nowy wiersz: wszystkie pola; istniejący: tylko zmienione (zmiana cechy kasuje ręczne wyjątki w planach)
+    const obiekt = w ? Object.fromEntries(Object.entries(o).filter(([x, v]) => JSON.stringify(v) !== JSON.stringify(stare[x]))) : { ...o, arkusz: d.arkusz.id };
+    const ops = Object.keys(obiekt).length ? [{ op: 'wiersz', obiekt: { id, ...obiekt } }] : [];
+    const kwotaTxt = $('#w-kwota').value.trim();
+    if (kwotaTxt) {
+      const kwota = naGrosze(kwotaTxt), co = +$('#w-co').value, od = $('#w-od').value, doM = $('#w-do').value;
+      if (!(kwota >= 0)) return komunikat('Kwotę wpisz liczbą, np. 1 234,56.', true);
+      if (!od || !doM || od > doM || od < d.arkusz.od || doM > d.arkusz.do) return komunikat(`Miesiące w zakresie arkusza: ${mies(d.arkusz.od)} do ${mies(d.arkusz.do)}.`, true);
+      for (let m = od, i = 0; m <= doM; m = nastMies(m), i++) {
+        if (co === 0 ? i === 0 : i % co === 0) ops.push({ op: 'komorka', wiersz: id, miesiac: m, kwota });
+      }
+    }
+    if (!ops.length) return komunikat('Nic się nie zmieniło.', true);
+    zmiana('bud', ops.length === 1 ? ops[0] : { op: 'seria', operacje: ops });
   };
 }
 
@@ -393,14 +575,20 @@ async function akcjaNaWierszach(akcja, d) {
     const opisWiersza = w => {
       const o = { arkusz: w.arkusz, rodzaj: w.rodzaj, podstawa: w.podstawa, kontrahent: w.kontrahent || '', komentarz: w.komentarz || '',
         przedmiot: w.przedmiot || '', sekcja: w.sekcja || '', dzien_wystawienia: w.dzien_wystawienia || '', metoda: w.metoda || '',
-        ksiegowane: !!w.ksiegowane, w_cashflow: !!w.w_cashflow, cykl: w.cykl || 'brak', plan: w.plan || null };
+        ksiegowane: !!w.ksiegowane, w_cashflow: !!w.w_cashflow, cykl: w.cykl || 'brak', plan: w.plan || null, split: !!w.split };
+      if (w.proporcje) o.proporcje = w.proporcje;
+      if (w.kup) o.kup = w.kup;
       if (stawkaStd(w.stawka_vat) != null) o.stawka_vat = stawkaStd(w.stawka_vat);
       if (w.dni_na_platnosc !== '' && w.dni_na_platnosc != null) o.dni_na_platnosc = w.dni_na_platnosc;
       return o;
     };
+    // komórki z kwotą wpisaną w apce kopiujemy jako kwoty (plany policzą się z ustawień kopii), resztę jako kopie płatności
+    const zKomorek = w => Object.entries(w.komorki).filter(([, c]) => c.kwota != null);
+    const spozaKomorek = w => Object.values(w.komorki).filter(c => c.kwota == null).flatMap(c => Object.entries(c.kwoty || {}).map(([id, netto]) => ({ id, netto })));
     if (akcja === 'duplikuj') for (const w of wiersze) {
       const id = nowyId('w');
-      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id } }, ...platnosciWiersza(w).map(x => kopia(x.id, id, x.netto)));
+      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id } }, ...zKomorek(w).map(([m, c]) => ({ op: 'komorka', wiersz: id, miesiac: m, kwota: c.kwota })),
+        ...spozaKomorek(w).map(x => kopia(x.id, id, x.netto)));
     }
     if (akcja === 'przenies') ops.push({ op: 'przenies', wiersze: ids, do_arkusza: $('#ak-ark').value });
     if (akcja === 'usun') wiersze.forEach(w => ops.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));

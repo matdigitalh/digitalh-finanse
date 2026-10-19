@@ -57,7 +57,14 @@ def _sprawdz_bud(con, d):
     najpierw próbnie nakładany na bieżący model; gdy którakolwiek operacja nie ma do czego się odnieść, nic nie trafia do pliku."""
     if not zapytania_budzet.planowanie(con):
         raise ValueError('planowanie w apce jest wyłączone (tryb podglądu do 31.12.2026); włączysz je w Budżet, Ustawienia')
-    budzet.sprawdz_wpis(d, zmiany.wczytaj()[0])
+    dzis = zapytania_budzet._dzien_stanu(con)
+    for o in (d['operacje'] if d['op'] == 'seria' else [d]):
+        if o['op'] == 'decyzja_planu' and o['decyzja'] == 'zaplacone':   # PIT i ZUS umowy dopiero po wypłacie dla osoby
+            r = con.execute('SELECT p.spinacz, s.etap FROM bud_platnosc p LEFT JOIN bud_stan s ON s.platnosc = p.spinacz'
+                            ' WHERE p.id = ?', (o['platnosc'],)).fetchone()
+            if r and r['spinacz'] and r['etap'] != 'Opłacona':
+                raise ValueError('PIT i ZUS oznaczysz jako zapłacone dopiero, gdy wypłata dla osoby jest opłacona.')
+    budzet.sprawdz_wpis(d, zmiany.wczytaj()[0], dzis=dzis)
 
 
 class Obsluga(BaseHTTPRequestHandler):

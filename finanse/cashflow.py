@@ -47,7 +47,7 @@ def prognoza(con) -> dict:
             d = max(start + timedelta(days=1), _d(r['termin']) + timedelta(days=spoz.get(r['nip'] or r['nabywca'], 0)))
             zdarzenia.append((d, r['pozostalo'], f"{r['numer']} {r['klient'] or r['nabywca']}", 'należność', 'oba', r['numer']))
     po_terminie = []
-    for r in con.execute("SELECT p.id, p.rodzaj, p.brutto, s.termin_efektywny, s.etap, w.kontrahent, a.nazwa FROM bud_platnosc p"
+    for r in con.execute("SELECT p.id, p.rodzaj, p.brutto, s.termin_efektywny, s.etap, COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS kontrahent, a.nazwa FROM bud_platnosc p"
                          ' JOIN bud_stan s ON s.platnosc = p.id JOIN bud_wiersz w ON w.id = p.wiersz JOIN bud_arkusz a ON a.id = w.arkusz'
                          " WHERE p.aktualna = 1 AND p.w_cashflow = 1 AND s.etap IN ('Planowana', 'Po terminie')"
                          " AND NOT EXISTS (SELECT 1 FROM bud_powiazanie b WHERE b.platnosc = p.id AND b.typ = 'faktura')"):

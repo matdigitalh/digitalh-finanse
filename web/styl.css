@@ -353,3 +353,9 @@ tr.klikalny { cursor: pointer; }
 input.maly { width: 64px; height: 26px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--tekst); padding: 0 6px; }
 .karta hr { border: none; border-top: 1px solid var(--linia); margin: 20px 0; }
 a.przycisk { display: inline-flex; align-items: center; }
+
+/* Pakiet 2: komórki i karty planu */
+td.pusta.klik { cursor: pointer; }
+td.pusta.klik:hover { background: var(--tlo-2); color: var(--tekst-2); }
+.formularz[hidden], .pole[hidden] { display: none; }
+.pole select:disabled, .pole input:disabled { opacity: .55; }

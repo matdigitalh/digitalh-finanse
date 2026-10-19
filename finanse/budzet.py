@@ -21,11 +21,10 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
-from . import konfig
-from .format import data_iso, grosze, norm
+from . import konfig, plan
+from .format import data_iso, grosze, norm, zl
 
-PODSTAWY = ['Faktura (jedna)', 'Faktura (w worku)', 'Bez faktury', 'Bez faktury (w worku)', 'Umowa o pracę - dla wykonawcy',
-            'Umowa o pracę - PIT', 'Umowa o pracę - ZUS', 'Podatek VAT', 'Podatek dochodowy']
+PODSTAWY = plan.PODSTAWY_WIERSZA + plan.PODSTAWY_SKLADOWE_BS
 ETAPY = ['Planowana', 'Niewymagana', 'Opłacona', 'Po terminie']
 CYKLE = {'brak': 0, 'miesiac': 1, 'kwartal': 3, 'rok': 12}
 
@@ -349,16 +348,208 @@ def _roznica_mies(z: str, na: str) -> int:
     return (int(na[:4]) - int(z[:4])) * 12 + int(na[5:7]) - int(z[5:7])
 
 
-def _zastosuj_op(st: dict, d: dict, stare: dict):
-    """Jedna operacja na stanie modelu. Zwraca (powód osierocenia albo None, było, id obiektu). Przy osieroceniu nic nie zmienia."""
+def _stan(model: dict) -> dict:
+    """Stan roboczy modelu: obiekty po ID, kwoty komórek {(wiersz, miesiąc): grosze} i ręczne zmiany planów z komórek."""
+    return {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
+            'platnosc': {p['id']: p for p in model['platnosci']},
+            'komorka': {(k['wiersz'], k['miesiac']): k['kwota'] for k in model.get('komorki', [])},
+            'nadpisane': dict(model.get('nadpisane', {})), 'parametry': dict(model.get('parametry') or parametry_planu())}
+
+
+def parametry_planu() -> dict:
+    """Parametry techniczne generatora (DOMYSŁ do sprawdzenia na eksporcie BS), z Finanse/Aplikacja/ustawienia.json."""
+    from .wynik import ustawienia
+    try:
+        tydzien = int(ustawienia().get('worek_pierwszy_dzien_tygodnia', plan.PIERWSZY_DZIEN_TYGODNIA))
+    except (TypeError, ValueError):
+        tydzien = plan.PIERWSZY_DZIEN_TYGODNIA
+    return {'tydzien': tydzien if 0 <= tydzien <= 6 else plan.PIERWSZY_DZIEN_TYGODNIA}
+
+
+def _odswiez(st: dict, wid: str, miesiace=None):
+    """Plany z komórek wiersza liczone na nowo z kwoty, ustawień wiersza i ręcznych zmian (pakiet 2: plan = pochodna komórki).
+    Worek z rzeczywistymi: plany tylko na resztę kwoty ponad sumę rzeczywistych."""
+    pla, kom = st['platnosc'], st['komorka']
+    if miesiace is None:
+        miesiace = {m for (w, m) in kom if w == wid} | {p['miesiac'] for p in pla.values() if p['wiersz'] == wid and p.get('generowany')}
+    for pid in [pid for pid, p in pla.items() if p.get('generowany') and p['wiersz'] == wid and p['miesiac'] in miesiace]:
+        pla.pop(pid)
+    w = st['wiersz'].get(wid)
+    if not w:
+        return
+    for m in sorted(miesiace):
+        kwota = kom.get((wid, m))
+        if kwota is None:
+            continue
+        if w.get('podstawa') in plan.WOREK:
+            kwota = max(0, kwota - sum(p['netto'] for p in pla.values() if p['wiersz'] == wid and p['miesiac'] == m and p['typ'] != 'plan'))
+        for p in plan.generuj_komorke(w, m, kwota, st['nadpisane'], st['parametry']['tydzien']):
+            pla[p['id']] = p
+
+
+def _ma_rzeczywiste(st: dict, wid: str) -> bool:
+    return any(p['wiersz'] == wid and p['typ'] != 'plan' for p in st['platnosc'].values())
+
+
+def _rowne(pole: str, a, b) -> bool:
+    """Porównanie wartości cechy wiersza po normalizacji (stawka 0,23 = 23, „14” = 14, „10” = „10.”)."""
+    try:
+        if pole == 'stawka_vat':
+            return stawka_proc(a) == stawka_proc(b)
+        if pole == 'dni_na_platnosc':
+            return plan.dni_na_platnosc(a) == plan.dni_na_platnosc(b)
+        if pole == 'dzien_wystawienia':
+            return plan.regula_tekst(plan.regula(a)) == plan.regula_tekst(plan.regula(b))
+        if pole in ('ksiegowane', 'w_cashflow'):
+            return bool(a if a is not None else True) == bool(b if b is not None else True)
+    except ValueError:
+        pass
+    return (a or '') == (b or '') if pole in ('kontrahent', 'komentarz', 'metoda') else a == b
+
+
+def _blokady_wiersza(st: dict, oid: str, bylo: dict | None, nowy: dict, obiekt: dict) -> str | None:
+    """Reguły BS przy zapisie wiersza z interfejsu (A-KOL-08, 09, B-POD-02, 06). Przy odtwarzaniu historii nie sprawdzamy:
+    zmiana zapisana, gdy była dozwolona, zostaje, nawet jeśli eksport BS dołożył potem rzeczywistą."""
+    pod = nowy.get('podstawa', '')
+    if bylo and _ma_rzeczywiste(st, oid):
+        if pod != bylo.get('podstawa'):
+            return 'Wiersz ma już płatność rzeczywistą, więc podstawy nie zmienisz. Zduplikuj wiersz i ustaw nową podstawę w kopii.'
+        if nowy.get('rodzaj') != bylo.get('rodzaj'):
+            return 'Wiersz ma już płatność rzeczywistą, więc rodzaju (wpływ albo obciążenie) nie zmienisz. Zduplikuj wiersz i zmień rodzaj w kopii.'
+        if pod in ('Umowa zlecenie', 'Umowa o pracę') and 'proporcje' in obiekt and obiekt['proporcje'] != bylo.get('proporcje'):
+            return 'Wiersz ma już wypłatę rzeczywistą, więc proporcji nie zmienisz. Zduplikuj wiersz i podaj nowe kwoty w kopii.'
+    if pod in plan.PODSTAWY_SKLADOWE_BS and pod != (bylo or {}).get('podstawa'):
+        return 'Ta podstawa jest tylko w imporcie z Budget Studio. Wybierz umowę o pracę, zlecenie albo o dzieło.'
+    if plan.jest_umowa(pod):
+        if nowy.get('rodzaj') != -1:
+            return 'Umowa to zawsze obciążenie (koszt). Ustaw rodzaj: obciążenia.'
+        prop = nowy.get('proporcje') or {}
+        if pod == 'Umowa o dzieło' and prop.get('zus'):
+            return 'Umowa o dzieło nie ma ZUS: podaj tylko kwotę dla wykonawcy i PIT.'
+        if not sum(int(prop.get(k) or 0) for k in plan.UMOWY[pod]):
+            return 'Podaj kwoty od księgowej (dla osoby, PIT i ZUS); z nich apka liczy proporcje podziału każdej komórki.'
+    return None
+
+
+def _po_zmianie_wiersza(st: dict, wid: str, zmienione: set, przelicz: bool):
+    """Reguła nadpisań: zmieniona cecha-generator przechodzi do WSZYSTKICH planów wiersza (ręczny wyjątek ginie),
+    rzeczywistych nie rusza. Zmiana podstawy albo proporcji: plany spoza komórek stają się komórkami i liczą się od nowa."""
+    w = st['wiersz'][wid]
+    pola_planu = set().union(*(plan.GENERATORY[k] for k in zmienione)) if zmienione else set()
+    prefiks = f'plan:{wid}:'
+    if pola_planu:
+        for pid in [k for k in st['nadpisane'] if k.startswith(prefiks)]:
+            st['nadpisane'][pid] = {k: v for k, v in st['nadpisane'][pid].items() if k not in pola_planu}
+    for pid, p in list(st['platnosc'].items()):
+        if p['wiersz'] != wid or p['typ'] != 'plan' or p.get('generowany'):
+            continue
+        if przelicz:
+            klucz = (wid, p['miesiac'])
+            st['komorka'][klucz] = st['komorka'].get(klucz, 0) + p['netto']
+            st['platnosc'].pop(pid)
+        elif zmienione:
+            st['platnosc'][pid] = plan.przelicz_jawny(p, w, zmienione)
+    _odswiez(st, wid)
+
+
+def _zmien_plan_z_komorki(st: dict, d: dict, obiekt: dict, p: dict, scisle: bool, dzis: str | None):
+    """Zmiana pojedynczego planu z komórki = ręczny wyjątek zapisany przy planie (nadpisanie), plan liczony od nowa.
+    Kwota planu jednej faktury albo bez faktury to kwota komórki. Worek: tylko kontrahent i komentarz; PIT i ZUS umowy:
+    nic (daty idą za składową dla osoby); stawka tylko w fakturze jednej."""
+    wid, m, pid = p['wiersz'], p['miesiac'], p['id']
+    w = st['wiersz'][wid]
+    pod = w.get('podstawa', '')
+    bylo = dict(p)
+    pojedynczy = pod not in plan.WOREK and not plan.jest_umowa(pod)
+    if d.get('usun'):
+        if not pojedynczy:
+            return 'Pojedynczego planu z worka ani składowej umowy nie usuniesz. Wyczyść kwotę w komórce.', None, pid
+        st['komorka'].pop((wid, m), None)
+        for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:{m}:')]:
+            st['nadpisane'].pop(k)
+        _odswiez(st, wid, {m})
+        return None, bylo, pid
+    pola = {k: v for k, v in obiekt.items() if k not in ('id', 'vat', 'brutto')}
+    if pola.get('wiersz', wid) != wid or pola.get('miesiac', m) != m:
+        if scisle:
+            return 'Plan należy do swojej komórki. Żeby przenieść kwotę na inny miesiąc, zmień kwoty w komórkach.', None, pid
+    pola.pop('wiersz', None)
+    pola.pop('miesiac', None)
+    if scisle:
+        if pod in plan.WOREK:
+            dozwolone = plan.NADPISANIA_WOREK
+        elif p.get('skladowa') in ('us', 'zus'):
+            dozwolone = set()
+        else:
+            dozwolone = plan.NADPISANIA_ZWYKLE | ({'netto'} if pojedynczy else set())
+        if 'stawka' in pola and pod != 'Faktura (jedna)':
+            return 'Stawkę VAT zmienisz na pojedynczym planie tylko przy fakturze jednej; dla reszty zmień ją w wierszu.', None, pid
+        if 'netto' in pola and not pojedynczy:
+            return 'Kwotę worka i umowy zmieniasz w komórce miesiąca, nie na pojedynczym planie.', None, pid
+        zle = sorted(set(pola) - dozwolone)
+        if zle:
+            return ('W worku na pojedynczym planie zmienisz tylko kontrahenta i komentarz.' if pod in plan.WOREK else
+                    'PIT i ZUS umowy idą za składową dla osoby; zmień ją albo ustawienia wiersza.' if p.get('skladowa') in ('us', 'zus')
+                    else f'Tego pola nie zmienisz na planie: {", ".join(zle)}.'), None, pid
+        for k in ('wystawienie', 'termin', 'realny', 'ksiegowanie'):
+            if pola.get(k) and dzis:
+                plan.zakres_daty_planu(pola[k], dzis)
+    if 'netto' in pola:
+        st['komorka'][(wid, m)] = pola.pop('netto')
+    n = {**st['nadpisane'].get(pid, {}), **pola}
+    if pola.get('wystawienie') and 'termin' not in pola:
+        n.pop('termin', None)
+    if (pola.get('wystawienie') or pola.get('termin')) and 'realny' not in pola:
+        n.pop('realny', None)   # zmiana dnia płatności ustawia dzień realny = dzień płatności
+    st['nadpisane'][pid] = n
+    _odswiez(st, wid, {m})
+    return None, bylo, pid
+
+
+def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str | None = None):
+    """Jedna operacja na stanie modelu. Zwraca (powód odrzucenia albo osierocenia, było, id obiektu); przy powodzie nic
+    nie zmienia. scisle=True przy sprawdzaniu nowego wpisu z interfejsu: wtedy obowiązują też blokady BS."""
     ark, wie, pla = st['arkusz'], st['wiersz'], st['platnosc']
     op = d['op']
+    if op == 'komorka':
+        wid, m, kwota = d['wiersz'], d['miesiac'], d.get('kwota')
+        oid = f'{wid}:{m}'
+        if wid not in wie:
+            return 'nie ma wiersza tej komórki', None, oid
+        w = wie[wid]
+        w_komorce = [p for p in pla.values() if p['wiersz'] == wid and p['miesiac'] == m]
+        rz = sum(p['netto'] for p in w_komorce if p['typ'] != 'plan')
+        ma_rz = any(p['typ'] != 'plan' for p in w_komorce)
+        if scisle:
+            a = ark.get(w['arkusz'])
+            if a and not (a['od'] <= m <= a['do']):
+                return f"Miesiąc {m} jest poza zakresem arkusza ({a['od']} do {a['do']}). Najpierw wydłuż arkusz.", None, oid
+            if ma_rz and w.get('podstawa') not in plan.WOREK:
+                return 'W tej komórce jest już płatność rzeczywista, więc kwoty nie zmienisz. Wpisz plan w innym miesiącu albo zduplikuj wiersz.', None, oid
+            if ma_rz and (kwota is None or kwota < rz):
+                return f'W worku są już płatności rzeczywiste na {zl(rz)}, więc kwota komórki nie może być mniejsza.', None, oid
+        jawne = [p for p in w_komorce if p['typ'] == 'plan' and not p.get('generowany')]
+        bylo = {'kwota': st['komorka'].get((wid, m), sum(p['netto'] for p in jawne) if jawne else None)}
+        for p in jawne:
+            pla.pop(p['id'])
+        if kwota is None:
+            st['komorka'].pop((wid, m), None)
+            for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:{m}:')]:
+                st['nadpisane'].pop(k)
+        else:
+            st['komorka'][(wid, m)] = kwota
+        _odswiez(st, wid, {m})
+        return None, bylo, oid
     if op in ('arkusz', 'wiersz', 'platnosc'):
         obiekt = dict(d.get('obiekt', {}))
         if op == 'platnosc':
             obiekt['id'] = stare.get(obiekt['id'], obiekt['id'])
             if obiekt.get('wzor'):
                 obiekt['wzor'] = stare.get(obiekt['wzor'], obiekt['wzor'])
+            ist = pla.get(obiekt['id'])
+            if ist and ist.get('generowany'):
+                obiekt.pop('wzor', None)
+                return _zmien_plan_z_komorki(st, d, obiekt, ist, scisle, dzis)
         zbior = {'arkusz': ark, 'wiersz': wie, 'platnosc': pla}[op]
         oid = obiekt['id']
         bylo = dict(zbior[oid]) if oid in zbior else None
@@ -370,6 +561,10 @@ def _zastosuj_op(st: dict, d: dict, stare: dict):
             if op == 'wiersz':
                 for pid in [p for p, x in pla.items() if x['wiersz'] == oid]:
                     pla.pop(pid)
+                for k in [k for k in st['komorka'] if k[0] == oid]:
+                    st['komorka'].pop(k)
+                for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{oid}:')]:
+                    st['nadpisane'].pop(k)
             return None, bylo, oid
         if op == 'arkusz':
             if bylo is None and not all(obiekt.get(k) for k in ('nazwa', 'folder', 'kategoria', 'od', 'do')):
@@ -381,9 +576,21 @@ def _zastosuj_op(st: dict, d: dict, stare: dict):
                 return 'nie ma arkusza tego wiersza', None, oid
             if bylo is None and not ('arkusz' in obiekt and obiekt.get('rodzaj') in (1, -1) and obiekt.get('podstawa')):
                 return 'nie ma takiego wiersza', None, oid
-            wie[oid] = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            nowy = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            if scisle:
+                powod = _blokady_wiersza(st, oid, bylo, nowy, obiekt)
+                if powod:
+                    return powod, None, oid
+            if plan.jest_umowa(nowy.get('podstawa', '')):   # umowa: Księgowane zawsze tak, VAT „-”
+                nowy['ksiegowane'], nowy['stawka_vat'] = True, None
+            wie[oid] = nowy
+            if bylo:
+                zmienione = {k for k in plan.GENERATORY if k in nowy and not _rowne(k, bylo.get(k), nowy.get(k))}
+                przelicz = nowy.get('podstawa') != bylo.get('podstawa') or nowy.get('proporcje') != bylo.get('proporcje')
+                if zmienione or przelicz:
+                    _po_zmianie_wiersza(st, oid, zmienione, przelicz)
             return None, bylo, oid
-        # płatność
+        # płatność (z importu BS, kopia albo dodana w apce, nie z komórki)
         if 'wiersz' in obiekt and obiekt['wiersz'] not in wie:
             return 'nie ma wiersza tej płatności', None, oid
         wzor = obiekt.pop('wzor', None)
@@ -400,7 +607,13 @@ def _zastosuj_op(st: dict, d: dict, stare: dict):
             if not (obiekt.get('wiersz') in wie and obiekt.get('miesiac') and 'netto' in obiekt):
                 return 'nie ma takiej płatności', None, oid
             obiekt = {'typ': 'plan', 'etap_bs': 'Planowana', 'aktualna': True, 'nr_dok': '', 'nr_wewn': '', **obiekt}
+        if scisle and dzis and (bylo or obiekt).get('typ') == 'plan':
+            for k in ('wystawienie', 'termin', 'realny', 'ksiegowanie'):
+                if obiekt.get(k) and (bylo is None or obiekt[k] != bylo.get(k)):
+                    plan.zakres_daty_planu(obiekt[k], dzis)
         nowa = {**(bylo or {}), **{k: v for k, v in obiekt.items() if k not in ('vat', 'brutto')}, 'zrodlo': 'apka'}
+        if bylo and bylo.get('typ') == 'plan' and obiekt.get('termin') and 'realny' not in obiekt:
+            nowa['realny'] = obiekt['termin']   # zmiana dnia płatności ustawia dzień realny
         if bylo is None or 'netto' in obiekt or 'stawka' in obiekt:
             _przelicz_vat(nowa, wie.get(nowa['wiersz']), None if 'stawka' in obiekt else (bylo or (pla.get(wzor) if wzor else None)))
         pla[oid] = nowa
@@ -418,8 +631,20 @@ def _zastosuj_op(st: dict, d: dict, stare: dict):
         if not p:
             return 'nie ma takiej płatności', None, pid
         bylo = dict(p)
+        if p.get('generowany'):   # plan z komórki: decyzja jako ręczna zmiana planu, plan zostaje w swojej komórce
+            n = dict(st['nadpisane'].get(pid, {}))
+            if d['decyzja'] == 'przesun':
+                n.update(termin=d['termin'], decyzja='przesunięte')
+                n.pop('realny', None)
+            elif d['decyzja'] == 'anuluj':
+                n.update(aktualna=False, decyzja='anulowane')
+            elif d['decyzja'] == 'zaplacone':
+                n.update(decyzja='zapłacone (Mat)', **({'realny': d['data']} if d.get('data') else {}))
+            st['nadpisane'][pid] = n
+            _odswiez(st, p['wiersz'], {p['miesiac']})
+            return None, bylo, pid
         if d['decyzja'] == 'przesun':
-            pla[pid] = {**p, 'termin': d['termin'], 'miesiac': d['termin'][:7], 'decyzja': 'przesunięte'}
+            pla[pid] = {**p, 'termin': d['termin'], 'realny': d['termin'], 'miesiac': d['termin'][:7], 'decyzja': 'przesunięte'}
         elif d['decyzja'] == 'anuluj':
             pla[pid] = {**p, 'aktualna': False, 'decyzja': 'anulowane'}
         elif d['decyzja'] == 'zaplacone':
@@ -428,20 +653,22 @@ def _zastosuj_op(st: dict, d: dict, stare: dict):
     return 'nieznana operacja', None, ''
 
 
-def _zastosuj_wpis(st: dict, w: dict, stare: dict):
+def _zastosuj_wpis(st: dict, w: dict, stare: dict, scisle: bool = False, dzis: str | None = None):
     """Wpis „bud” w całości albo wcale: seria na kopii stanu, podmiana dopiero, gdy wszystkie operacje się udały.
     Zwraca (powód osierocenia albo None, lista (operacja, było, id))."""
     d = w['dane']
     ops = d['operacje'] if d['op'] == 'seria' else [d]
-    roboczy = {k: dict(v) for k, v in st.items()} if len(ops) > 1 else st
+    roboczy = {k: dict(v) for k, v in st.items()}
     wykonane = []
     for i, o in enumerate(ops, start=1):
-        powod, bylo, oid = _zastosuj_op(roboczy, o, stare)
+        try:
+            powod, bylo, oid = _zastosuj_op(roboczy, o, stare, scisle, dzis)
+        except ValueError as e:
+            powod = str(e)
         if powod:
             return (f'operacja {i} z {len(ops)}: {powod}' if len(ops) > 1 else powod), []
         wykonane.append((o, bylo, oid))
-    if roboczy is not st:
-        st.update(roboczy)
+    st.update(roboczy)
     return None, wykonane
 
 
@@ -450,8 +677,7 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict]) -> list[dict]:
     (np. płatność, której już nie ma w eksporcie BS) zapisuje w model['osierocone'] zamiast gubić je po cichu."""
     cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
     stare = model.get('stare_id', {})
-    st = {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
-          'platnosc': {p['id']: p for p in model['platnosci']}}
+    st = _stan(model)
     historia, osierocone = [], []
     for w in wpisy:
         if w.get('typ') != 'bud' or w.get('id') in cofniete:
@@ -459,14 +685,21 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict]) -> list[dict]:
         powod, wykonane = _zastosuj_wpis(st, w, stare)
         if powod:
             d = w['dane']
-            obiekt = (d.get('obiekt') or {}).get('id') or d.get('platnosc') or ','.join(d.get('wiersze', [])) or f"{len(d.get('operacje', []))} operacji"
+            obiekt = ((d.get('obiekt') or {}).get('id') or d.get('platnosc') or ','.join(d.get('wiersze', []))
+                      or (f"{d['wiersz']}:{d['miesiac']}" if d['op'] == 'komorka' else f"{len(d.get('operacje', []))} operacji"))
             osierocone.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': d['op'], 'obiekt': obiekt, 'powod': powod})
             continue
         for o, bylo, oid in wykonane:
-            jest = st['arkusz'].get(oid) or st['wiersz'].get(oid) or st['platnosc'].get(oid)
+            if o['op'] == 'komorka':
+                jest = {'kwota': st['komorka'].get((o['wiersz'], o['miesiac']))}
+            else:
+                jest = st['arkusz'].get(oid) or st['wiersz'].get(oid) or st['platnosc'].get(oid)
             historia.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''),
                              'op': o['op'] if w['dane']['op'] != 'seria' else f"seria: {o['op']}", 'obiekt': oid, 'bylo': bylo, 'jest': jest})
     model['arkusze'], model['wiersze'], model['platnosci'] = list(st['arkusz'].values()), list(st['wiersz'].values()), list(st['platnosc'].values())
+    model['komorki'] = [{'wiersz': w, 'miesiac': m, 'kwota': k} for (w, m), k in sorted(st['komorka'].items())]
+    model['nadpisane'] = {k: v for k, v in st['nadpisane'].items() if v}
+    model['parametry'] = st['parametry']
     model['osierocone'] = osierocone
     return historia
 
@@ -477,16 +710,14 @@ def wczytaj_model() -> dict | None:
     return json.loads(p.read_text(encoding='utf-8')) if p.exists() else None
 
 
-def sprawdz_wpis(dane: dict, wpisy: list[dict], model: dict | None = None):
-    """Próba wpisu „bud” na bieżącym stanie (import + dotychczasowe zmiany), bez zapisu. ValueError z powodem, gdy
-    którakolwiek operacja nie ma do czego się odnieść: wtedy do pliku zmian nie trafia nic (seria w całości albo wcale)."""
+def sprawdz_wpis(dane: dict, wpisy: list[dict], model: dict | None = None, dzis: str | None = None):
+    """Próba wpisu „bud” na bieżącym stanie (import + dotychczasowe zmiany), bez zapisu, z blokadami BS (rzeczywiste
+    w wierszu, worek, składowe umowy, zakres miesięcy i dat). ValueError z powodem: wtedy do pliku zmian nie trafia nic."""
     model = model or wczytaj_model()
     if not model:
         raise ValueError('brak budżetu: nie ma pliku importu z Budget Studio')
     zastosuj_zdarzenia(model, wpisy)
-    st = {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
-          'platnosc': {p['id']: p for p in model['platnosci']}}
-    powod, _ = _zastosuj_wpis(st, {'dane': dane}, model.get('stare_id', {}))
+    powod, _ = _zastosuj_wpis(_stan(model), {'dane': dane}, model.get('stare_id', {}), scisle=True, dzis=dzis)
     if powod:
         raise ValueError(f'zmiana odrzucona, nic nie zapisano ({powod})')
 
@@ -569,24 +800,32 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
                     (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', '')))
     for w in model['wiersze']:
         con.execute('INSERT INTO bud_wiersz (id, arkusz, rodzaj, podstawa, kontrahent, komentarz, przedmiot, sekcja, stawka_vat,'
-                    ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo, split, proporcje, kup)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (w['id'], w['arkusz'], w['rodzaj'], w['podstawa'], w.get('kontrahent', ''), w.get('komentarz', ''), w.get('przedmiot', ''),
-                     w.get('sekcja', ''), str(w.get('stawka_vat', '')), w.get('dzien_wystawienia', ''), w.get('dni_na_platnosc', ''),
-                     w.get('metoda', ''), int(bool(w.get('ksiegowane', True))), int(bool(w.get('w_cashflow', True))), w.get('cykl', 'brak'),
-                     json.dumps(w.get('plan')) if w.get('plan') else None, w.get('zrodlo', '')))
+                     w.get('sekcja', ''), '' if w.get('stawka_vat') is None else str(w['stawka_vat']), w.get('dzien_wystawienia', ''),
+                     str(w.get('dni_na_platnosc', '')), w.get('metoda', ''), int(bool(w.get('ksiegowane', True))), int(bool(w.get('w_cashflow', True))),
+                     w.get('cykl', 'brak'), json.dumps(w.get('plan')) if w.get('plan') else None, w.get('zrodlo', ''), int(bool(w.get('split'))),
+                     json.dumps(w['proporcje'], sort_keys=True) if w.get('proporcje') else None, w.get('kup')))
     znak = {w['id']: w['rodzaj'] for w in model['wiersze']}
+    kontrahent = {w['id']: w.get('kontrahent', '') for w in model['wiersze']}
     for p in model['platnosci']:
         if p['wiersz'] not in znak:
             continue
         st = stawka_proc(p.get('stawka'))
         con.execute('INSERT INTO bud_platnosc (id, bs_id, wiersz, miesiac, typ, etap_bs, aktualna, netto, vat, brutto, stawka, rodzaj, nr_dok, nr_wewn,'
-                    ' tytul, wystawienie, termin, realny, ksiegowanie, metoda, w_cashflow, komentarz, decyzja, zrodlo, wiersz_pliku)'
-                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    ' tytul, wystawienie, termin, realny, ksiegowanie, metoda, w_cashflow, komentarz, decyzja, zrodlo, wiersz_pliku,'
+                    ' kontrahent, ksiegowane, skladowa, spinacz, generowany, nadpisane, ukryty)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (p['id'], p.get('bs_id'), p['wiersz'], p['miesiac'], p['typ'], p.get('etap_bs', ''), int(bool(p.get('aktualna', True))),
                      p['netto'], p.get('vat', 0), p.get('brutto', p['netto']), st, znak[p['wiersz']], p.get('nr_dok', ''), p.get('nr_wewn', ''),
                      p.get('tytul', ''), p.get('wystawienie'), p.get('termin'), p.get('realny'), p.get('ksiegowanie'), p.get('metoda', ''),
                      int(bool(p.get('w_cashflow', True))), p.get('komentarz', ''), p.get('decyzja', ''), p.get('zrodlo', 'Budget Studio'),
-                     p.get('wiersz_pliku')))
+                     p.get('wiersz_pliku'), p.get('kontrahent') or kontrahent[p['wiersz']], int(bool(p.get('ksiegowane', True))),
+                     p.get('skladowa'), p.get('spinacz'), int(bool(p.get('generowany'))),
+                     json.dumps(p['nadpisane'], ensure_ascii=False, sort_keys=True) if p.get('nadpisane') else None, int(bool(p.get('ukryty')))))
+    con.executemany('INSERT INTO bud_komorka (wiersz, miesiac, kwota) VALUES (?,?,?)',
+                    [(k['wiersz'], k['miesiac'], k['kwota']) for k in model.get('komorki', []) if k['wiersz'] in znak])
     con.executemany('INSERT INTO bud_historia (wpis, czas, mac, op, obiekt, bylo, jest) VALUES (?,?,?,?,?,?,?)',
                     [(h['wpis'], h['czas'], h['mac'], h['op'], h['obiekt'], json.dumps(h['bylo'], ensure_ascii=False),
                       json.dumps(h['jest'], ensure_ascii=False)) for h in historia])

@@ -11,6 +11,7 @@ import re
 from collections import defaultdict
 from datetime import date, timedelta
 
+from . import plan
 from .dopasowanie import klucz_fv, tokeny
 
 
@@ -32,7 +33,7 @@ def policz(con) -> dict:
     dzien_stanu = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0]
     dzis = _d(dzien_stanu) if dzien_stanu else date.today()
     platnosci = [dict(r) for r in con.execute(
-        'SELECT p.*, w.kontrahent AS w_kontrahent, w.podstawa, a.folder, a.nazwa AS arkusz_nazwa, a.id AS arkusz_id'
+        "SELECT p.*, COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS w_kontrahent, w.podstawa, a.folder, a.nazwa AS arkusz_nazwa, a.id AS arkusz_id"
         ' FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz JOIN bud_arkusz a ON a.id = w.arkusz')]
     faktury = {r['numer']: dict(r) for r in con.execute(
         'SELECT f.numer, f.netto, f.brutto, f.data_sprzedazy, f.data_wystawienia, fk.klient, s.stan, s.pozostalo, s.ostatnia_wplata,'
@@ -106,7 +107,7 @@ def policz(con) -> dict:
     #     BS wg dnia płatności (realny, inaczej termin), bank wg daty księgowania, tylko przelewy z reguł wbudowanych.
     wbudowane = {r[0]: r[1] for r in con.execute("SELECT operacja_id, rodzaj FROM wydatki WHERE zrodlo = 'reguła wbudowana'")}
     def grupa_bs(p):
-        if p['podstawa'].startswith('Umowa o pracę') or ('pracownic' in p['arkusz_nazwa'].lower() and p['podstawa'].startswith('Bez faktury')):
+        if p['podstawa'].startswith(('Umowa o pracę', 'Umowa zlecenie', 'Umowa o dzieło')) or ('pracownic' in p['arkusz_nazwa'].lower() and p['podstawa'].startswith('Bez faktury')):
             return 'praca'
         return {'Podatek VAT': 'vat', 'Podatek dochodowy': 'podatki'}.get(p['podstawa'])
     bs_grupy, bank_grupy = defaultdict(list), defaultdict(list)
@@ -171,10 +172,16 @@ def policz(con) -> dict:
             etap = 'Po terminie'
         else:
             etap = 'Planowana'
-        stany[p['id']] = (etap, zaplacono, data_z, termin, uwaga)
+        # etap i aktualność wg reguł BS (opłacona = z banku albo decyzja Mata z datą), obok naszego etapu
+        oplacona = etap == 'Opłacona'
+        dzis_iso = dzis.isoformat()
+        etap_bs = plan.etap_wg_bs(p['typ'], oplacona, p['termin'], dzis_iso)
+        akt = plan.aktualna_wg_bs(p['typ'], oplacona, p['wystawienie'], p['termin'], p['realny'], dzis_iso)
+        stany[p['id']] = (etap, zaplacono, data_z, termin, uwaga, etap_bs, 'Aktualna' if akt else 'Nieaktualna')
 
     con.executemany('INSERT INTO bud_powiazanie (platnosc, typ, ref, kwota, metoda, pewnosc) VALUES (?,?,?,?,?,?)', powiazania)
-    con.executemany('INSERT INTO bud_stan (platnosc, etap, zaplacono, data_zaplaty, termin_efektywny, uwaga) VALUES (?,?,?,?,?,?)',
+    con.executemany('INSERT INTO bud_stan (platnosc, etap, zaplacono, data_zaplaty, termin_efektywny, uwaga, etap_wg_bs, aktualnosc)'
+                    ' VALUES (?,?,?,?,?,?,?,?)',
                     [(k, *v) for k, v in stany.items()])
 
     # 4. Rozjazdy BS ↔ bank ↔ Fakturownia (lista do decyzji Mata)
