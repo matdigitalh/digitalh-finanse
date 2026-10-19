@@ -143,14 +143,12 @@ LISTY = {
 }
 
 
-def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100) -> dict:
-    """Listy płatności planu ze stronicowaniem i wyszukiwarką (kontrahent, tytuł, numer dokumentu, arkusz).
-    Suma liczona ze wszystkich pozycji listy, nie tylko z widocznej strony."""
-    dzien = _dzien_stanu(con)
+def _warunki_list(dzien: str) -> dict:
+    """Warunki SQL list jak w BS (B-LIS-03); daty pochodzą z bazy (dzień stanu), nie od użytkownika."""
     za2 = (date.fromisoformat(dzien) + timedelta(days=14)).isoformat()
     przed2 = (date.fromisoformat(dzien) - timedelta(days=14)).isoformat()
     bez_faktury = "NOT EXISTS (SELECT 1 FROM bud_powiazanie b WHERE b.platnosc = p.id AND b.typ = 'faktura')"
-    warunki = {
+    return {
         'wszystkie': '1=1',
         'nieoplacone': f"p.rodzaj = 1 AND (s.etap IN ('Wystawiona', 'Częściowo opłacona') OR (s.etap = 'Po terminie' AND NOT {bez_faktury}))",
         'niewystawione': f"p.rodzaj = 1 AND p.aktualna = 1 AND {bez_faktury} AND s.etap IN ('Planowana', 'Po terminie') AND p.miesiac <= '{dzien[:7]}'",
@@ -158,7 +156,31 @@ def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100) -> dic
         'do_wystawienia': f"p.rodzaj = 1 AND s.etap = 'Planowana' AND {bez_faktury} AND COALESCE(p.wystawienie, s.termin_efektywny) BETWEEN '{dzien}' AND '{za2}'",
         'do_zaplacenia': f"p.rodzaj = -1 AND s.etap IN ('Planowana', 'Po terminie') AND s.termin_efektywny <= '{za2}'",
         'zaplacone': f"s.etap = 'Opłacona' AND s.data_zaplaty BETWEEN '{przed2}' AND '{dzien}'",
-    }[nazwa if nazwa in LISTY else 'wszystkie']
+    }
+
+
+def kafle(con) -> dict:
+    """Pulpit jak w BS: dla każdej listy (poza „wszystkie”) liczba płatności i suma brutto osobno dla wpływów
+    i obciążeń. Te same warunki co listy, więc kafel i lista po kliknięciu pokazują to samo."""
+    dzien = _dzien_stanu(con)
+    wynik = {}
+    for nazwa, warunek in _warunki_list(dzien).items():
+        if nazwa == 'wszystkie':
+            continue
+        r = {1: {'ile': 0, 'kwota': 0}, -1: {'ile': 0, 'kwota': 0}}
+        for x in con.execute('SELECT p.rodzaj, COUNT(*), COALESCE(SUM(p.brutto), 0) FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'
+                             f' JOIN bud_arkusz a ON a.id = w.arkusz JOIN bud_stan s ON s.platnosc = p.id WHERE ({warunek}) GROUP BY p.rodzaj'):
+            if x[0] in r:
+                r[x[0]] = {'ile': x[1], 'kwota': x[2] * x[0]}
+        wynik[nazwa] = {'nazwa': LISTY[nazwa], 'wplywy': r[1], 'obciazenia': r[-1]}
+    return {'dzien_stanu': dzien, 'listy': wynik}
+
+
+def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100, arkusz=None) -> dict:
+    """Listy płatności planu ze stronicowaniem i wyszukiwarką (kontrahent, tytuł, numer dokumentu, arkusz).
+    Suma liczona ze wszystkich pozycji listy, nie tylko z widocznej strony. arkusz: tylko płatności tego arkusza."""
+    dzien = _dzien_stanu(con)
+    warunki = _warunki_list(dzien)[nazwa if nazwa in LISTY else 'wszystkie']
     params = []   # daty w warunkach pochodzą z bazy (dzień stanu), wartości od użytkownika tylko jako parametry
     sql = ("SELECT p.*, s.etap, s.termin_efektywny, s.data_zaplaty, s.uwaga AS uwaga_stanu, s.etap_wg_bs, s.aktualnosc,"
            " COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS w_kontrahent, w.podstawa,"
@@ -167,6 +189,9 @@ def lista(con, nazwa='wszystkie', rodzaj=None, q=None, strona=1, ile=100) -> dic
     if rodzaj in ('1', '-1'):
         sql += ' AND p.rodzaj = ?'
         params.append(int(rodzaj))
+    if arkusz:
+        sql += ' AND a.id = ?'
+        params.append(arkusz)
     if q:
         sql += (" AND (COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent, '') || ' ' || COALESCE(p.tytul, '') || ' ' || COALESCE(p.nr_dok, '') || ' '"
                 " || COALESCE(p.nr_wewn, '') || ' ' || COALESCE(a.nazwa, '')) LIKE ?")

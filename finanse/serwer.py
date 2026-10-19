@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from . import (baza, budzet, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
                zapytania_budzet, zmiany)
 
+mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
 WEB = Path(__file__).resolve().parent.parent / 'web'
 BLOKADA = threading.Lock()
 NAGLOWKI = {
@@ -153,7 +154,10 @@ class Obsluga(BaseHTTPRequestHandler):
             elif sciezka == 'budzet/platnosc':
                 dane = zapytania_budzet.platnosc(con, q.get('id', ''))
             elif sciezka == 'budzet/lista':
-                dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona'), q.get('ile'))
+                dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona'), q.get('ile'),
+                                              q.get('arkusz'))
+            elif sciezka == 'budzet/kafle':
+                dane = zapytania_budzet.kafle(con)
             elif sciezka == 'budzet/rozjazdy':
                 dane = zapytania_budzet.rozjazdy(con)
             elif sciezka == 'budzet/historia':
@@ -163,6 +167,9 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = umowy.lista(con)
             elif sciezka == 'cashflow':
                 dane = cashflow.prognoza(con)
+            elif sciezka == 'cashflow/okresy':
+                dane = cashflow.okresy(con, **{k: q.get(k) for k in ('granulacja', 'od', 'do', 'saldo_start', 'rodzaj', 'arkusz')},
+                                       scenariusz=q.get('scenariusz') or 'ostrozny')
             elif sciezka == 'rentownosc/klienci':
                 dane = rentownosc.klienci(con, _rok(q))
             elif sciezka == 'rentownosc/arkusze':
