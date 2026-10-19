@@ -131,6 +131,17 @@ class OdbiorKopiiWBazie(unittest.TestCase):
         self.assertEqual(self.zgodnosc['kopia']['plik'], self.wpis['dane']['plik'])
         self.assertEqual(self.rownolegle, 0)
 
+    def test_liczby_bez_arkusza_systemowego(self):
+        """Pakiet 8 po scaleniu: raport odbudowy liczy budżet jak w eksporcie BS (bez arkusza systemowego Opłaty urzędowe),
+        a zgodność porównuje zwykłe wiersze (VAT i podatek dochodowy z BS zastępuje arkusz systemowy)."""
+        csv_path = kopia_bs.eksporty()[0]
+        b = self.raport_odbudowy['budzet']
+        self.assertEqual(b['platnosci'], kopia_bs.liczba_w_csv(csv_path))
+        self.assertEqual(b['arkuszy'], len(json.loads(kopia_bs.plik_kopii(self.wpis['dane']['plik']).read_text(encoding='utf-8'))['arkusze']))
+        z = self.zgodnosc
+        self.assertEqual((z['liczba_bs'], z['liczba_apka']), (kopia_bs.liczba_w_csv(csv_path, bez_podatkow=True),) * 2)
+        self.assertFalse(any(a['folder'] == 'System' for a in z['arkusze']))
+
     def test_te_same_liczby_co_przy_imporcie(self):
         for k in self.przed:
             self.assertEqual([tuple(x) for x in self.przed[k]] if isinstance(self.przed[k], list) else self.przed[k],

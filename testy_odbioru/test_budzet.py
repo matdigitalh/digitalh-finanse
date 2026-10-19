@@ -55,6 +55,8 @@ class OdbiorBudzet(unittest.TestCase):
     def test_salda_jak_w_budget_studio(self):
         salda = {a['nazwa']: a['saldo'] for f in zapytania_budzet.drzewo(self.con)['foldery'] for ark in f['kategorie'].values() for a in ark}
         for nazwa, saldo in self.o['salda_arkuszy_bs_gr'].items():
+            if nazwa.startswith('Opłaty urzędowe'):   # od pakietu 8 arkusz systemowy liczy apka; zgodność z BS: test_pakiet8
+                continue
             self.assertEqual(salda[nazwa], saldo, nazwa)
 
     def test_oplacona_z_banku(self):

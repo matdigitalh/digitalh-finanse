@@ -30,7 +30,7 @@ function naglowekKontroli(d) {
       <div class="wartosc ${ok ? 'plus' : 'minus'}">${ok ? '0 różnic' : `${d.roznic} ${d.roznic === 1 ? 'różnica' : 'różnic'}`}</div>
       <div class="dop">${ok ? 'co do grosza we wszystkich arkuszach i miesiącach' : esc(czesci.join(', '))}</div></div>
     <div class="kafel"><div class="tytul">Płatności</div><div class="wartosc">${d.liczba_apka}</div>
-      <div class="dop">w apce; w BS ${d.liczba_bs}${d.liczba_csv != null ? `, w pliku ${d.liczba_csv}` : ''}</div></div>
+      <div class="dop">w apce; w BS ${d.liczba_bs}${d.liczba_csv != null ? `, w pliku ${d.liczba_csv}` : ''}${d.bez_danin ? '; bez VAT i podatku dochodowego (liczy je arkusz systemowy Opłaty urzędowe)' : ''}</div></div>
     <div class="kafel"><div class="tytul">Saldo razem (netto)</div><div class="wartosc">${zl(d.razem.apka.netto, false)}</div>
       <div class="dop">w BS ${zl(d.razem.bs.netto, false)}; VAT ${zl(d.razem.apka.vat, false)}, brutto ${zl(d.razem.apka.brutto, false)}</div></div></div>`;
 }

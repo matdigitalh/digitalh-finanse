@@ -283,8 +283,42 @@ Moduł `finanse/kopia_bs.py`, ekran Budżet, „Zgodność z BS i kopia” (`web
   do Rozjazdów grupy „Plan w BS inny niż w apce” (komórka wiersz × miesiąc, suma netto), „Wiersz jest tylko w BS” i „Wiersz jest tylko
   w apce”. Wiersze łączone po mapie stałych ID (pakiet 1), umowy po scaleniu składowych, wiersz dodany osobno w obu miejscach po
   arkuszu, rodzaju, kontrahencie, komentarzu i przedmiocie.
+- **Daniny po pakiecie 8:** w bazie wiersze VAT i podatku dochodowego z BS zastępuje arkusz systemowy „Opłaty urzędowe”, więc ekran
+  zgodności (baza kontra eksport) i grupy okresu równoległego porównują tylko zwykłe wiersze (bez danin po obu stronach; liczba
+  płatności też bez nich). Zgodność danin z BS pokazuje ekran Podatki. Podgląd i przyjęcie kopii porównują całą kopię, z daninami.
 - **Przełącznik `import_bs`** (wpis `ustawienie`, domyślnie tak): „nie” = apka nie czyta eksportów BS (ani budżetu, ani podpowiedzi
   klientów); z kopią budżet działa dalej, bez kopii jest pusty (APK-FLAG-02).
 - **Wynik na eksporcie z 14.10.2026** (kopia danych, nie prawdziwy folder): 0 różnic, ta sama liczba płatności w pliku, w imporcie i w apce;
   po przyjęciu kopii salda arkuszy, etapy, rozjazdy z bankiem, cash flow 13 tygodni i rentowność arkuszy identyczne jak przy imporcie.
   Testy: `testy/test_pakiet6.py`, `testy_odbioru/test_pakiet6.py` (opcjonalnie klucz `kopia_bs` w `odbior.json`).
+
+## Pakiet 8: VAT, podatki, wynagrodzenia (2026-10-19)
+
+Reguły w `finanse/podatki.py` (rdzeń bez bazy, testowalny wprost), ekran w `web/podatki.js` (Budżet, Podatki: „Podatki i ZUS”
+i „Ustawienia podatków”), API `GET /api/podatki`.
+
+- **Arkusz systemowy „Opłaty urzędowe RRRR”** (folder System, jeden na każdy rok od najwcześniejszego do najdalszego miesiąca
+  arkuszy budżetu) liczony przy każdej odbudowie, po zdarzeniach Mata (`podatki.dolacz` w `budzet.zbuduj`). Wiersze z podstawą
+  Podatek VAT i Podatek dochodowy z eksportu BS wychodzą z modelu: rzeczywiste stają się kwotami od biura, plany prognozą BS
+  (kolumna do porównania), puste arkusze podatkowe BS znikają. Liczby w raporcie odbudowy (`arkuszy`, `wierszy`, `platnosci`)
+  są jak w eksporcie BS, bez arkusza systemowego. Zmiany `bud` na obiektach `sys:` i podstawy podatkowe w zwykłych wierszach serwer odrzuca.
+- **VAT** = VAT wpływów − VAT obciążeń z płatności z podstawą Faktura (plany i rzeczywiste, także nieaktualne, jak w BS),
+  Księgowane = tak, okres wg miesiąca księgowania. Nadpłata przechodzi na kolejne okresy, a po ostatnim okresie budżetu staje się
+  planem zwrotu (wystawienie 30.04, termin z ustawień, BS: 14.06 roku następnego). Termin 25. dnia po okresie. Na eksporcie BS
+  z 14.10.2026 prognozy wrzesień 2026 do grudnia 2027 i zwrot są równe BS co do grosza.
+- **CIT** = max(0, podstawa narastająco w roku × stawka − zaliczki wcześniejszych okresów roku), podstawa = netto księgowanych
+  wpływów − netto księgowanych obciążeń (bez faktury: wartość, umowy: składowe). Po roku zwrot nadpłaty zaliczek (wpływ);
+  niedopłaty system nie planuje, tylko ją pokazuje. Wynik zarządczy bez zmian (daniny mają Księgowane = nie, jak w BS).
+- **Kwota od biura** (wpis `danina`: VAT, CIT, zwrot VAT, CIT roczny; kwota, kierunek: do zapłaty, nadwyżka do przeniesienia,
+  zwrot; termin, dzień realny, komentarz; `usun` = powrót do prognozy) zamraża okres: płatność rzeczywista, bez przeliczeń,
+  kwota zasila saldo nadpłaty. Wpis w apce wygrywa z kwotą z eksportu BS. Dzień realny najwcześniej dzień po końcu okresu.
+- **Ustawienia** (wpis `ustawienie`, klucz `podatki`, część pól wystarczy): okres VAT, termin VAT, przenoszenie nadpłaty,
+  nadwyżka VAT na start, termin zwrotu, okres CIT (domyślnie kwartał), stawka CIT (domyślnie 19, brak = bez prognozy), termin CIT,
+  zaokrąglenie zaliczki, co płacimy z rachunku VAT. Domyślne jak w BS DigitalH, wszystkie do potwierdzenia z biurem.
+- **Przelewy z banku**: urząd skarbowy i ZUS z rachunku głównego i online, okres z tytułu (`/OKR/26M08/`, kwartał `26K01`,
+  `DRA 01/08`); okres VAT równy miesiącowi przelewu albo późniejszy to pomyłka w tytule, wtedy poprzedni miesiąc.
+- **PIT-4 i ZUS**: składowe umów z budżetu (pakiet 2) wg miesiąca wypłaty, obok przelewy; terminy 20. i 15.
+- **Rachunek VAT** (13 tygodni): start z ING, wpływy = VAT z wpłat MPP (należności i plany; wiersz ze Split payment = cały VAT,
+  inaczej udział MPP klienta z historii wpłat połączonych z fakturami), wypływy = VAT z kosztów ze Split payment i daniny płacone
+  najpierw z rachunku VAT (jak w wyciągach ING), resztę dokłada rachunek główny. Gotówka w cash flow dalej bez rachunku VAT.
+- `GET /api/vat` (ekran Podatek VAT) ma dodatkowo `prognoza`, `od_biura`, `roznica_biuro` z arkusza systemowego.

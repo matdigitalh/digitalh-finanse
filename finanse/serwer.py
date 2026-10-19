@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, rentownosc, wynik, zapytania,
+from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, podatki, rentownosc, wynik, zapytania,
                zapytania_budzet, zmiany)
 
 mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
@@ -59,6 +59,7 @@ def _sprawdz_bud(con, d):
     if not zapytania_budzet.planowanie(con):
         raise ValueError('Planowanie w apce jest wyłączone, więc edycja budżetu też. Włączysz je w Budżet, Ustawienia budżetu.')
     dzis = zapytania_budzet._dzien_stanu(con)
+    podatki.sprawdz_bud(d)   # arkusz systemowy „Opłaty urzędowe” zmienia tylko system (pakiet 8)
     for o in (d['operacje'] if d['op'] == 'seria' else [d]):
         if o['op'] == 'decyzja_planu' and o['decyzja'] == 'zaplacone':   # PIT i ZUS umowy dopiero po wypłacie dla osoby
             r = con.execute('SELECT p.spinacz, s.etap FROM bud_platnosc p LEFT JOIN bud_stan s ON s.platnosc = p.spinacz'
@@ -177,6 +178,8 @@ class Obsluga(BaseHTTPRequestHandler):
             elif sciezka == 'cashflow/okresy':
                 dane = cashflow.okresy(con, **{k: q.get(k) for k in ('granulacja', 'od', 'do', 'saldo_start', 'rodzaj', 'arkusz')},
                                        scenariusz=q.get('scenariusz') or 'ostrozny')
+            elif sciezka == 'podatki':
+                dane = podatki.widok(con)
             elif sciezka == 'rentownosc/klienci':
                 dane = rentownosc.klienci(con, _rok(q))
             elif sciezka == 'rentownosc/arkusze':
@@ -253,6 +256,8 @@ class Obsluga(BaseHTTPRequestHandler):
                     raise ValueError('nie ma takiej operacji')
                 if typ == 'bud':
                     _sprawdz_bud(con, dane)
+                if typ == 'danina':
+                    podatki.sprawdz_wpis(dane, zmiany.wczytaj()[0], zapytania_budzet._dzien_stanu(con))
                 for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
                     if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
                         raise ValueError(f'nie ma faktury {n}')

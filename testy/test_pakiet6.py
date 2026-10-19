@@ -18,6 +18,9 @@ from testy.pomoc import Srodowisko
 from testy.test_budzet import KOLUMNY, dane
 
 DZIS = '2026-10-13'
+# Liczby budżetu bez arkusza systemowego Opłaty urzędowe (pakiet 8: liczy go apka, nie kopia z BS)
+BEZ_SYS_W = "SELECT COUNT(*) FROM bud_wiersz WHERE zrodlo != 'system'"
+BEZ_SYS_P = "SELECT COUNT(*) FROM bud_platnosc WHERE wiersz NOT LIKE 'sys:%'"
 A1 = ('Obsługa Alfa', 'Alfa', 'Obsługa stała')
 A2 = ('Pracownicy', 'Firma', 'Zespół')
 A3 = ('Opłaty 2026', 'Firma', 'Podatki')
@@ -200,8 +203,8 @@ class TestKopia(Baza):
         p = kopia_bs.plik_kopii(wpis['dane']['plik'])
         self.assertEqual(oct(p.stat().st_mode)[-3:], '600')
         self.assertEqual(oct(p.with_name(p.stem + '_kontrola.xlsx').stat().st_mode)[-3:], '600')
-        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_wiersz').fetchone()[0], 6)
-        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_platnosc').fetchone()[0], 29)
+        self.assertEqual(self.con.execute(BEZ_SYS_W).fetchone()[0], 5)   # 6 wierszy kopii bez wiersza VAT z BS (zastępuje go arkusz systemowy)
+        self.assertEqual(self.con.execute(BEZ_SYS_P).fetchone()[0], 28)   # 29 płatności kopii bez planu VAT z BS
         self.assertGreater(self.con.execute('SELECT COUNT(*) FROM bud_komorka').fetchone()[0], 5)
         u = self.wiersz('Jan Testowy')
         self.assertEqual((u['podstawa'], u['zrodlo']), ('Umowa o pracę', 'kopia BS'))
@@ -251,6 +254,23 @@ class TestKopia(Baza):
         self.assertTrue(p['z_aktualnoscia'])
         self.assertEqual(p['roznic'], 0)
 
+    def test_arkusz_systemowy_poza_kontrola_zgodnosci(self):
+        """Pakiet 8 po scaleniu: VAT z BS zastępuje w apce arkusz systemowy Opłaty urzędowe, więc zgodność z BS i rozjazdy
+        okresu równoległego porównują tylko zwykłe wiersze; nowa prognoza VAT w BS nie jest różnicą."""
+        self.przyjmij()
+        self.assertGreater(self.con.execute("SELECT COUNT(*) FROM bud_wiersz WHERE zrodlo = 'system'").fetchone()[0], 0)
+        nowy = eksport_bs()
+        next(w for w in nowy if w['ID'] == 'V-11').update({'Netto (wartość)': '-2500,00', 'Brutto (wartość)': '-2500,00'})
+        zapisz_eksport(self.srod, nowy, 'budget_studio_2026-10-20.csv')
+        raport = self.przelicz()
+        self.assertEqual(raport['budzet']['platnosci'], 29)   # liczby raportu jak w kopii z BS, bez arkusza systemowego
+        z = kopia_bs.zgodnosc(self.con, zmiany.wczytaj()[0])
+        self.assertEqual((z['roznic'], z['liczba_bs'], z['liczba_apka'], z['liczba_csv']), (0, 28, 28, 28))
+        self.assertFalse(any(a['folder'] == 'System' for a in z['arkusze']))
+        self.assertEqual(self.rozjazdy('Plan w BS inny niż w apce'), [])
+        self.assertEqual(self.rozjazdy('Wiersz jest tylko w apce'), [])
+        self.assertEqual(self.rozjazdy('Wiersz jest tylko w BS'), [])
+
     def test_zmiana_kwoty_w_apce_widoczna_w_rozjazdach(self):
         """Kryterium odbioru: zmiana jednej kwoty w apce bez zmiany w BS pojawia się w „Plan w BS inny niż w apce”."""
         self.przyjmij()
@@ -294,7 +314,7 @@ class TestKopia(Baza):
         raport = self.przelicz()
         self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bs').fetchone()[0], 0)   # plik BS nie jest czytany
         self.assertNotIn('Budget Studio', [z[0] for z in raport['zrodla']])
-        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_platnosc').fetchone()[0], 29)   # budżet z kopii działa dalej
+        self.assertEqual(self.con.execute(BEZ_SYS_P).fetchone()[0], 28)   # budżet z kopii działa dalej
         self.assertEqual(self.con.execute("SELECT wartosc FROM meta WHERE klucz = 'import_bs_wl'").fetchone()[0], 'nie')
         self.assertIsNone(kopia_bs.zgodnosc(self.con, zmiany.wczytaj()[0])['eksport'])
 
@@ -307,7 +327,7 @@ class TestKopia(Baza):
         wpis = self.przyjmij()
         zmiany.zapisz('cofnij', {'wpis': wpis['id']})
         self.przelicz()
-        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_wiersz').fetchone()[0], 8)   # składowe umowy znowu osobno
+        self.assertEqual(self.con.execute(BEZ_SYS_W).fetchone()[0], 7)   # składowe umowy znowu osobno (bez wiersza VAT z BS)
 
     def test_zmieniony_plik_kopii_widoczny_jako_blad(self):
         wpis = self.przyjmij()
@@ -315,7 +335,7 @@ class TestKopia(Baza):
         p.write_text(p.read_text(encoding='utf-8').replace('Abonament', 'Abonamentx'), encoding='utf-8')
         raport = self.przelicz()
         self.assertTrue(any(b.startswith('Kopia z BS:') for b in raport['bledy']), raport['bledy'])
-        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_wiersz').fetchone()[0], 8)   # import z eksportu
+        self.assertEqual(self.con.execute(BEZ_SYS_W).fetchone()[0], 7)   # import z eksportu (bez wiersza VAT z BS)
 
     def test_przyjecie_odrzucone(self):
         p = kopia_bs.podglad()

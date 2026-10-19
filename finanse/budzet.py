@@ -1153,6 +1153,13 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     z_importu = {w['id'] for w in model['wiersze']}   # model_bazowy daje kopię: plik importu i kopii zostają nietknięte
     historia = zastosuj_zdarzenia(model, wpisy_modelu)
     generuj_cykliczne(model)
+    ile = {'arkuszy': len(model['arkusze']), 'wierszy': len(model['wiersze']), 'platnosci': len(model['platnosci'])}
+    rozjazdy = None
+    if info.get('kopia') and info.get('imp'):   # pakiet 6: okres równoległy, nowy eksport BS kontra plany apki (bez danin)
+        from . import kopia_bs
+        rozjazdy = kopia_bs.porownaj(info['imp'], model, info['wiersze_bs'])
+    from . import podatki   # pakiet 8: arkusz systemowy „Opłaty urzędowe” zamiast wierszy podatkowych z BS
+    podatki.dolacz(model, wpisy, con)
     # Kolejność wierszy w arkuszu: wiersze z importu jak dotąd (wpływy, potem obciążenia, kontrahent, komentarz), wiersze
     # dodane w apce na końcu w kolejności powstania (nowy wiersz zostaje tam, gdzie go wpisano, jak w BS).
     klucz = {w['id']: ((0, -w['rodzaj'], w.get('kontrahent') or '', w.get('komentarz') or '', w['id']) if w['id'] in z_importu
@@ -1195,14 +1202,12 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_osierocone (wpis, czas, mac, op, obiekt, powod) VALUES (?,?,?,?,?,?)',
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))
-    wynik = {'arkuszy': len(model['arkusze']), 'wierszy': len(model['wiersze']), 'platnosci': len(model['platnosci'])}
+    wynik = {**ile}   # liczby budżetu z importu (albo kopii) i zmian, bez arkusza systemowego (podatki w meta „podatki”)
     if info.get('kopia'):   # pakiet 6: budżet z kopii; nowy eksport BS tylko porównujemy (okres równoległy)
         k = info['kopia']
         con.execute("INSERT OR REPLACE INTO meta VALUES ('kopia_bs', ?)", (json.dumps(
             {'wpis': k['id'], 'czas': k['czas'], 'plik': k['dane']['plik'], 'eksport': k['dane'].get('eksport', '')}, ensure_ascii=False),))
-        if info.get('imp'):
-            from . import kopia_bs
-            rozjazdy = kopia_bs.porownaj(info['imp'], model, info['wiersze_bs'])
+        if rozjazdy is not None:
             con.executemany('INSERT INTO bud_rozjazd (rodzaj, ref, kwota, opis) VALUES (?,?,?,?)', rozjazdy)
             wynik['rozjazdy_z_bs'] = len(rozjazdy)
     if info.get('blad'):

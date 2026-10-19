@@ -203,4 +203,13 @@ def vat(con, rok=None) -> dict:
     koniec = (con.execute("SELECT wartosc FROM meta WHERE klucz='koniec_rejestru'").fetchone() or [''])[0]
     lista = [{'miesiac': m, **v, 'do_zaplaty': v['nalezny'] - v['naliczony'], 'rejestr': bool(koniec) and m <= koniec[:7]}
              for m, v in sorted(tab.items())]
+    # pakiet 8 (B-VAT-09): prognoza z budżetu i kwota od biura z arkusza systemowego, różnica = prognoza − kwota od biura
+    r = con.execute("SELECT wartosc FROM meta WHERE klucz='podatki'").fetchone()
+    okresy = {x['okres']: x for x in (json.loads(r[0]).get('vat', []) if r and r[0] else [])}
+    for x in lista:
+        o = okresy.get(x['miesiac'])
+        b = (o or {}).get('od_biura')
+        x['prognoza'] = o['prognoza'] if o else None
+        x['od_biura'] = ({'zaplata': 1, 'zwrot': -1, 'przeniesienie': 0}[b['kierunek']] * b['kwota']) if b else None
+        x['roznica_biuro'] = x['prognoza'] - x['od_biura'] if o and b else None
     return {'rok': rok, 'miesiace': lista, 'koniec_rejestru': koniec}

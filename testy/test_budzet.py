@@ -105,7 +105,8 @@ class TestBudzet(unittest.TestCase):
         self.assertEqual(self.etap('5')[0][0], 'Opłacona')            # wydatek 615 z banku
         self.assertEqual(self.etap('4')[0][0], 'Po terminie')         # plan z lipca bez faktury i zapłaty
         self.assertEqual(self.etap('3')[0][0], 'Planowana')
-        self.assertEqual({r[0] for r in self.etap('6')}, {'Opłacona'})   # VAT: w BS 2 × 500 (to samo ID), w banku 600 + 400
+        # VAT za sierpień: w BS 2 × 500 (to samo ID) jako kwota od biura w arkuszu systemowym (pakiet 8), w banku 600 + 400
+        self.assertEqual(self.con.execute("SELECT etap FROM bud_stan WHERE platnosc = 'sys:vat:2026-08'").fetchone()[0], 'Opłacona')
 
     def test_plan_powiazany_z_faktura_klienta(self):
         r = self.con.execute("SELECT b.ref, b.pewnosc FROM bud_powiazanie b JOIN bud_platnosc p ON p.id = b.platnosc"

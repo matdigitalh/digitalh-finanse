@@ -447,15 +447,23 @@ def _rekord(p: dict, w: dict, bs_pid) -> dict:
             'w_cashflow': bool(p.get('w_cashflow', True)), 'ksiegowane': bool(p.get('ksiegowane', True)), 'aktualna': bool(p.get('aktualna', True))}
 
 
-def rekordy_bs(imp: dict, csv_po_nr: dict[int, dict]) -> list[dict]:
+def _podatkowy_bs(x: dict) -> bool:
+    """Wiersz eksportu BS z podstawą podatkową (VAT, podatek dochodowy): w apce zastępuje go arkusz systemowy (pakiet 8)."""
+    return budzet._podstawa(x.get('Podstawa płatności')) in plan.PODATKI
+
+
+def rekordy_bs(imp: dict, csv_po_nr: dict[int, dict], bez_podatkow: bool = False) -> list[dict]:
     """Strona BS kontroli: kwoty, daty i przełączniki wprost z wierszy pliku eksportu (nie z przetworzonego importu);
-    z importu tylko stałe ID płatności, wiersza i arkusza."""
+    z importu tylko stałe ID płatności, wiersza i arkusza. bez_podatkow: bez wierszy VAT i podatku dochodowego (porównanie
+    z bazą, w której te wiersze zastępuje arkusz systemowy Opłaty urzędowe; zgodność danin pokazuje ekran Podatki)."""
     from .format import grosze
     w = {x['id']: x for x in imp['wiersze']}
     ark = {(a['folder'], a['kategoria'], a['nazwa']): a['id'] for a in imp['arkusze']}
     wynik = []
     for p in imp['platnosci']:
         x = csv_po_nr[p['wiersz_pliku']]
+        if bez_podatkow and _podatkowy_bs(x):
+            continue
         aid = ark.get((x['Folder'].strip(), x['Kategoria'].strip(), x['Arkusz'].strip()), w[p['wiersz']]['arkusz'])
         dok = bool((x.get('Numer wewnętrzny') or '').strip() or (x.get('Numer dokumentu') or '').strip())
         surowa = {'id': p['id'], 'miesiac': (budzet._data(x['Miesiąc budżetowy']) or '')[:7],
@@ -484,10 +492,12 @@ def rekordy_modelu(model: dict, pochodzenie: dict | None = None) -> list[dict]:
 
 
 def rekordy_bazy(con, pochodzenie: dict | None = None) -> list[dict]:
-    """To samo z bazy (to, co apka pokazuje po odbudowie)."""
+    """To samo z bazy (to, co apka pokazuje po odbudowie), bez arkusza systemowego Opłaty urzędowe (pakiet 8: liczy go apka,
+    nie ma odpowiednika wiersz w wiersz w BS)."""
     pochodzenie = pochodzenie or {}
     wynik = []
-    for r in con.execute('SELECT p.*, w.rodzaj AS w_rodzaj, w.arkusz AS w_arkusz FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'):
+    for r in con.execute("SELECT p.*, w.rodzaj AS w_rodzaj, w.arkusz AS w_arkusz FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz"
+                         " WHERE w.zrodlo != 'system' AND w.id NOT LIKE 'sys:%'"):
         p = dict(r)
         bs_pid = p['id'] if p['id'].startswith('bs:') else (pochodzenie.get(p['id'], {}).get('bs_pid') if p.get('bs_id') else None)
         wynik.append(_rekord(p, {'id': p['wiersz'], 'arkusz': p['w_arkusz'], 'rodzaj': p['w_rodzaj']}, bs_pid))
@@ -590,9 +600,9 @@ def kontrola(bs: list[dict], apka: list[dict], arkusze: dict, liczba_csv: int | 
             'razem': razem, 'miesiace': lista_mies, 'platnosci': platnosci, 'platnosci_razem': len(przyczyny), 'z_aktualnoscia': z_aktualnoscia}
 
 
-def liczba_w_csv(p: Path) -> int:
+def liczba_w_csv(p: Path, bez_podatkow: bool = False) -> int:
     """Liczba wierszy eksportu z rodzajem 1 albo -1, liczona wprost z pliku (niezależnie od importu)."""
-    return sum(1 for x in _wiersze_csv(p).values() if x.get('Rodzaj') in ('1', '-1'))
+    return sum(1 for x in _wiersze_csv(p).values() if x.get('Rodzaj') in ('1', '-1') and not (bez_podatkow and _podatkowy_bs(x)))
 
 
 def _nazwy_arkuszy(*zrodla) -> dict:
@@ -684,9 +694,10 @@ def zgodnosc(con, wpisy: list[dict]) -> dict:
         return {**stan, 'eksport': None}
     csv_path = lista[0]
     imp = budzet.generuj_import(csv_path, _arkusze_json(), copy.deepcopy(budzet.wczytaj_mape()))
-    arkusze = [dict(r) for r in con.execute('SELECT id, folder, kategoria, nazwa FROM bud_arkusz')]
-    raport = kontrola(rekordy_bs(imp, _wiersze_csv(csv_path)), rekordy_bazy(con, pochodzenie), _nazwy_arkuszy(arkusze, imp['arkusze']),
-                      liczba_w_csv(csv_path), z_aktualnoscia=not k)
+    arkusze = [dict(r) for r in con.execute("SELECT id, folder, kategoria, nazwa FROM bud_arkusz WHERE zrodlo != 'system'")]
+    raport = kontrola(rekordy_bs(imp, _wiersze_csv(csv_path), bez_podatkow=True), rekordy_bazy(con, pochodzenie),
+                      _nazwy_arkuszy(arkusze, imp['arkusze']), liczba_w_csv(csv_path, bez_podatkow=True), z_aktualnoscia=not k)
+    raport['bez_danin'] = True   # VAT i podatek dochodowy: arkusz systemowy, zgodność z BS na ekranie Podatki
     return {**stan, **raport, 'eksport': csv_path.name, 'eksport_sha256': _sha(csv_path)}
 
 
@@ -701,9 +712,11 @@ def porownaj(imp: dict, model: dict, wiersze_bs: dict) -> list[tuple]:
     (suma netto wszystkich płatności komórki), wiersz tylko w BS, wiersz tylko w apce. Wiersze łączone po mapie stałych ID
     (pakiet 1), umowa po scaleniu składowych; wiersz dodany osobno w obu miejscach: po arkuszu, rodzaju, kontrahencie,
     komentarzu i przedmiocie."""
-    wb = {w['id']: w for w in imp['wiersze']}
-    wa = {w['id']: w for w in model['wiersze']}
-    aliasy = {**aliasy_umow(wb, imp['platnosci']), **wiersze_bs}   # także umowy dodane w BS po kopii
+    # VAT i podatek dochodowy: w apce arkusz systemowy (pakiet 8), BS liczy swoje prognozy; porównujemy tylko zwykłe wiersze
+    wb = {w['id']: w for w in imp['wiersze'] if w.get('podstawa') not in plan.PODATKI}
+    wa = {w['id']: w for w in model['wiersze'] if w.get('podstawa') not in plan.PODATKI and w.get('zrodlo') != 'system'}
+    pla_bs = [p for p in imp['platnosci'] if p['wiersz'] in wb]
+    aliasy = {**aliasy_umow(wb, pla_bs), **wiersze_bs}   # także umowy dodane w BS po kopii
     mapuj = {wid: aliasy.get(wid, wid) for wid in wb}
     wolne_apka = defaultdict(list)
     uzyte = {v for v in mapuj.values() if v in wa}
@@ -721,7 +734,7 @@ def porownaj(imp: dict, model: dict, wiersze_bs: dict) -> list[tuple]:
                         mapuj[x] = nowy
     kom_bs, kom_apka, rz_bs = defaultdict(int), defaultdict(int), defaultdict(set)
     ids_apka = {p['id'] for p in model['platnosci']} | {p.get('bs_id') for p in model['platnosci'] if p.get('bs_id')}
-    for p in imp['platnosci']:
+    for p in pla_bs:
         k = (mapuj[p['wiersz']], p['miesiac'])
         kom_bs[k] += p['netto']
         if p['typ'] != 'plan' and p['id'] not in ids_apka:
@@ -742,7 +755,7 @@ def porownaj(imp: dict, model: dict, wiersze_bs: dict) -> list[tuple]:
             wynik.append(('Plan w BS inny niż w apce', f'komorka:{wid}:{m}', b - a, f'BS {b} gr, apka {a} gr; {przyczyna}'))
     for wid in sorted(set(mapuj.values()) - set(wa)):
         zrodlowe = [x for x, c in mapuj.items() if c == wid]
-        suma = sum(p['netto'] for p in imp['platnosci'] if p['wiersz'] in zrodlowe)
+        suma = sum(p['netto'] for p in pla_bs if p['wiersz'] in zrodlowe)
         w = wb[zrodlowe[0]]
         wynik.append(('Wiersz jest tylko w BS', f'wiersz-bs:{wid}', suma,
                       f"{w.get('kontrahent', '')} · {w.get('przedmiot', '') or w.get('podstawa', '')} · {w.get('komentarz', '')}; dodaj go w apce albo usuń w BS"))
