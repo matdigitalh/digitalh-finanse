@@ -316,6 +316,7 @@ function htmlPlatnosci({ platnosc: p, powiazania, historia }, { plan, wKomorce =
     <h3>Powiązania</h3>${powiazania.length ? `<ul class="lista">${powiazania.map(x => `<li><b>${esc(x.typ)}</b> ${esc((x.opis || '').replace(/(-?\d+) gr/g, (_, v) => zl(+v)))} <span class="szary">${esc(x.metoda)}, ${esc(x.pewnosc)}</span></li>`).join('')}</ul>` : '<p class="szary">Brak: ani faktury, ani przelewu.</p>'}
     ${plan && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
       <button data-d="przesun">Przesuń</button><button data-d="zaplacone">Zapłacone</button><button data-d="anuluj">Anuluj</button></div>` : ''}
+    ${typeof akcjeRzeczywistych === 'function' ? akcjeRzeczywistych(arguments[0], plan) : ''}
     ${plan ? `<h3>${p.typ === 'plan' ? 'Zmień ten plan' : 'Dane dokumentu'}</h3>${formularzPlatnosci(p)}` : ''}
     ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(nazwaOp(h.op))} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
     <div class="zrodlo">Źródło: ${esc(p.zrodlo || '')}${p.bs_id ? `, ID w BS ${esc(p.bs_id)}, wiersz ${p.wiersz_pliku}` : ''}</div></section>`;
@@ -326,6 +327,7 @@ const ODSTEPSTWA_OPIS = { kontrahent: 'kontrahent', komentarz: 'komentarz', meto
 // Zdarzenia w karcie płatności (pojedynczej albo komórki): decyzje, edycja zmienionych pól, usunięcie planu.
 function podepnijPlatnosci(k, dane) {
   const zostaw = { zostawKarte: true };
+  if (typeof podepnijRzeczywiste === 'function') podepnijRzeczywiste(k, dane);   // pakiet 5 (laczenie.js)
   k.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
     const box = b.closest('[data-pid]');
     const termin = $('[data-termin]', box).value;

@@ -673,6 +673,8 @@ def karta(con, ref: str, q: str = '') -> dict:
         if p:
             platnosci.append(dict(p))
     x = {k: v for k, v in x.items() if not k.startswith('_')}
+    if ref.startswith('reczna:'):   # dane z formularza do edycji
+        x['dane'] = json.loads(con.execute('SELECT dane FROM bud_reczne WHERE id = ?', (ref[7:],)).fetchone()[0])
     x['kontrahent_krotko'] = nazwa_krotka(x['kontrahent'])
     x['zrodlo_nazwa'] = NAZWA_ZRODLA.get(x['typ'], x['typ'])
     return {'dokument': x, 'stan': stan['stan'], 'platnosci': platnosci, 'oznaczone': oznaczone[0] if oznaczone else None,

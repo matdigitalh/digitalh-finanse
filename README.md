@@ -253,6 +253,16 @@ budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikat
 - Testy: `testy/test_pakiet3.py` (scal, podziel, duplikuj, usuń, przenieś, limit wierszy, zakres, przesunięcie, duplikat arkusza,
   usunięcie arkusza, odstępstwa, karta komórki, plan na inny miesiąc, ostatnia zmiana do cofnięcia, komunikaty).
 
+## Pakiet 5: rzeczywiste vs planowane i łączenie (2026-10-19)
+
+**Do dokończenia** (stan pośredni, aktualizowane na bieżąco):
+- przeklikanie w przeglądarce na kopii danych (Do połączenia, ekran łączenia, Dodaj płatność, zamiana planu, lista płac),
+- poprawki interfejsu po przeklikaniu,
+- pełny opis w tej sekcji (zasady, API, ostrzeżenia).
+
+Serwer: `finanse/budzet.py` (operacje `polacz`, `odlacz`, `rzeczywista`, `zamien`, `lista_plac`), `finanse/laczenie.py`
+(dokumenty, podpowiedzi, lista Do połączenia, lista płac, ostrzeżenia), interfejs `web/laczenie.js` i `web/laczenie.css`.
+
 ## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)
 
 Moduł `finanse/kopia_bs.py`, ekran Budżet, „Zgodność z BS i kopia” (`web/kopia_bs.js`), karta w Ustawieniach budżetu.

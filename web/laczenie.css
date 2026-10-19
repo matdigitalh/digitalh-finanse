@@ -1,0 +1,45 @@
+/* Pakiet 5: Do połączenia, ekran łączenia, dodawanie płatności, lista płac. Tylko tokeny z styl.css (oba tryby). */
+.pod-miejsce { display: block; }
+.pod-dlaczego { display: block; font-size: 11px; color: var(--tekst-2); margin-top: 2px; }
+.pod-roznica { color: var(--pomarancz); font-size: 11px; }
+.lacz-od { margin: -8px 0 12px; }
+button.link { all: unset; color: var(--fiolet); cursor: pointer; text-decoration: underline; font-size: 12px; }
+
+.lacz-dok { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 20px; max-width: 1160px; padding: 14px 16px;
+  border: 1px solid var(--linia); background: var(--tlo); margin-bottom: 12px; font-size: 12px; }
+.lacz-dok > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lacz-dok b { font-weight: 600; overflow-wrap: anywhere; }
+.lacz-dok .szeroki { grid-column: 1 / -1; }
+
+.lacz-kolumny { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; max-width: 1160px; align-items: start; }
+.lacz-kolumny section { border: 1px solid var(--linia); padding: 14px 16px; background: var(--tlo); min-width: 0; }
+#lacz-szukaj { width: 100%; box-sizing: border-box; height: 32px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo);
+  color: var(--tekst); padding: 0 10px; font: inherit; font-size: 12px; margin: 8px 0 4px; }
+.lacz-lista { display: flex; flex-direction: column; border-top: 1px solid var(--linia); margin-top: 8px; }
+.lacz-poz { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 9px 2px;
+  border-bottom: 1px solid var(--linia); font-size: 12px; line-height: 1.45; }
+.lacz-poz.wybrana { background: var(--fiolet-tlo); }
+.lacz-poz-kw { text-align: right; white-space: nowrap; }
+.lacz-poz button { height: 28px; }
+.lacz-kwota input { width: 120px; text-align: right; }
+.lacz-sumy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 6px; font-size: 12px; }
+.lacz-sumy > div { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; background: var(--tlo-2); }
+.lacz-sumy b { font-size: 15px; font-weight: 600; }
+.lacz-sumy .minus b { color: var(--minus); }
+.lacz-sumy .plus b { color: var(--plus); }
+.lacz-reszta { border: 1px solid var(--linia); padding: 8px 12px 10px; margin: 10px 0; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.lacz-reszta legend { font-weight: 600; padding: 0 4px; }
+.lacz-reszta label { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
+
+.rz-form { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); max-width: 1000px; gap: 12px 18px; }
+.rz-form .pole b { font-size: 14px; color: var(--tekst); padding-top: 6px; }
+
+.lp-tabela .lp-kwota { width: 110px; height: 28px; text-align: right; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo);
+  color: var(--tekst); font: inherit; font-size: 12px; padding: 0 6px; }
+.lp-tabela .lp-kwota::placeholder { color: var(--tekst-3); }
+.lp-tabela tfoot td { font-weight: 600; font-size: 12px; padding-top: 8px; }
+
+@media (max-width: 900px) {
+  .lacz-kolumny { grid-template-columns: 1fr; }
+  .lacz-sumy { grid-template-columns: 1fr; }
+}
