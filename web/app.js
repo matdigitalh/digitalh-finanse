@@ -57,24 +57,13 @@ const PODSTRONY = {
     { nazwa: 'Do połączenia', hash: '#/platnosci/do-polaczenia', licznik: 'do_polaczenia', ik: 'rozlacz' },
     { nazwa: 'Do weryfikacji', hash: '#/platnosci/do-weryfikacji', licznik: 'do_weryfikacji', ik: 'weryfikuj' },
     { grupa: 'Połączone z budżetem', ik: 'link' },
-    { nazwa: 'Wszystkie płatności', hash: '#/platnosci/plan?lista=wszystkie', ik: 'fale' },
-    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/plan?lista=nieoplacone', ik: 'kalendarzX', kafel: 'nieoplacone' },
-    { nazwa: 'Nadal niewystawione', hash: '#/platnosci/plan?lista=niewystawione', ik: 'kalendarzK', kafel: 'niewystawione' },
-    { nazwa: 'Po terminie płatności', hash: '#/platnosci/plan?lista=po_terminie', ik: 'przekreslony', kafel: 'po_terminie' },
-    { nazwa: 'Do wystawienia (najbliższe 2 tyg.)', hash: '#/platnosci/plan?lista=do_wystawienia', ik: 'plusKolko', kafel: 'do_wystawienia' },
-    { nazwa: 'Do zapłacenia (najbliższe 2 tyg.)', hash: '#/platnosci/plan?lista=do_zaplacenia', ik: 'przelew', kafel: 'do_zaplacenia' },
-    { nazwa: 'Zapłacone (ostatnie 2 tyg.)', hash: '#/platnosci/plan?lista=zaplacone', ik: 'ptaszek', kafel: 'zaplacone' },
+    { ekran: 'platnosci', hash: '#/platnosci/plan' },   // widoki listy (startowe i zapisane) z liczbą pozycji, listy.js
     { grupa: 'Bank ING' },
-    { nazwa: 'Wszystkie operacje', hash: '#/platnosci/bank', ik: 'bank' },
-    { nazwa: 'Wpływy', hash: '#/platnosci/bank?kierunek=wplywy&wewnetrzne=bez', ik: 'gora' },
-    { nazwa: 'Obciążenia', hash: '#/platnosci/bank?kierunek=obciazenia&wewnetrzne=bez', ik: 'dol' },
-    { nazwa: 'Ruch wewnętrzny i VAT', hash: '#/platnosci/bank?wewnetrzne=tylko', ik: 'przelew' },
+    { ekran: 'bank', hash: '#/platnosci/bank' },
     { grupa: 'Dokumenty' },
-    { nazwa: 'Faktury sprzedażowe', hash: '#/platnosci/faktury', ik: 'dokument' },
-    { nazwa: 'Należności nieopłacone', hash: '#/platnosci/naleznosci', ik: 'kalendarzX' },
-    { nazwa: 'Należności po terminie', hash: '#/platnosci/naleznosci?po_terminie=1', ik: 'przekreslony' },
-    { nazwa: 'Rejestr zakupów (biuro)', hash: '#/platnosci/zakupy', ik: 'dokument' },
-    { nazwa: 'Dokumenty bez płatności', hash: '#/platnosci/zakupy?stan=bez%20p%C5%82atno%C5%9Bci%20w%20banku', ik: 'dokument' },
+    { ekran: 'faktury', hash: '#/platnosci/faktury' },
+    { ekran: 'naleznosci', hash: '#/platnosci/naleznosci' },
+    { ekran: 'zakupy', hash: '#/platnosci/zakupy' },
     { grupa: 'Dane' },
     { nazwa: 'Historia importów', hash: '#/platnosci/importy', ik: 'historia' },
     { nazwa: 'Wyniki z biura (RZiS)', hash: '#/platnosci/wyniki-biura', ik: 'plik' },
@@ -87,11 +76,8 @@ const PODSTRONY = {
     { nazwa: 'Rozjazdy z Budget Studio', hash: '#/budzet/rozjazdy', ik: 'weryfikuj' },
     { nazwa: 'Historia zmian planów', hash: '#/budzet/historia', ik: 'historia' },
     { grupa: 'Wydatki z banku' },
-    { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki', ik: 'dol' },
-    { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany', ik: 'przekreslony' },
+    { ekran: 'wydatki', hash: '#/budzet/wydatki' },
     { nazwa: 'Nieprzypisane wg kontrahenta', hash: '#/budzet/nieprzypisane', ik: 'osoby' },
-    { nazwa: 'Koszty klientów', hash: '#/budzet/wydatki?rodzaj=przenoszony', ik: 'folder' },
-    { nazwa: 'Bez dokumentu w rejestrze', hash: '#/budzet/wydatki?dokument=bez%20dokumentu', ik: 'plik' },
     { nazwa: 'Konta reklamowe', hash: '#/budzet/konta', ik: 'wykres' },
     { grupa: 'Ustawienia' },
     { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly', ik: 'zebatka' },
@@ -150,6 +136,7 @@ async function odbuduj() {
 
 // Decyzja Mata: dopisanie do pliku zmian tego Maca i przeliczenie. Zwraca true, gdy się udało.
 async function zmiana(typ, dane) {
+  komunikat('Zapisuję i przeliczam dane…');   // odbudowa trwa chwilę; bez tego klik wygląda na niezadziałany
   const r = await fetch('/api/zmiana', { method: 'POST', headers: { 'X-Finanse': '1', 'Content-Type': 'application/json' },
     body: JSON.stringify({ typ, dane }) });
   const w = await r.json().catch(() => ({}));
@@ -220,24 +207,26 @@ function zbudujMenu() {
   $('#przycisk-pomocy').onclick = () => otworzPomoc('dane');
 }
 
-// Pozycja panelu: ikona, nazwa, licznik (Do połączenia) albo liczba płatności z kafli pulpitu.
-function pozycjaWysuwu(p, kafle) {
+// Pozycja panelu: ikona, nazwa, licznik oczekujących (pomarańczowy) albo liczba pozycji widoku listy (szary).
+function pozycjaWysuwu(p) {
   const n = p.licznik && STAN?.naleznosci ? STAN.naleznosci[p.licznik] : 0;
-  const k = p.kafel && kafle?.[p.kafel] ? kafle[p.kafel].wplywy.ile + kafle[p.kafel].obciazenia.ile : 0;
   const aktywna = location.hash === p.hash ? ' aktywna' : '';
-  return `<a class="poz${aktywna}" href="${p.hash}">${p.ik ? ik(p.ik) : ''}<span>${esc(p.nazwa)}</span>${n ? ` <span class="licznik">${n}</span>` : k ? ` <span class="licznik szary">${k}</span>` : ''}</a>`;
+  return `<a class="poz${aktywna}" href="${p.hash}">${p.ik ? ik(p.ik) : ''}<span>${esc(p.nazwa)}</span>${n ? ` <span class="licznik">${n}</span>` : p.ile ? ` <span class="licznik szary">${p.ile}</span>` : ''}</a>`;
 }
 
-function listaWysuwu(pozycje, kafle) {
+// Pozycja {ekran, hash} rozwija się w widoki tej listy z MENU_LISTY (GET /api/listy/menu).
+function listaWysuwu(pozycje) {
   let html = '', otwarta = false;
   for (const p of pozycje) {
     if (p.grupa) { html += `${otwarta ? '</div>' : ''}<h3><span>${esc(p.grupa)}</span>${p.ik ? ik(p.ik, 'szary') : ''}</h3><div class="grupa-wysuw">`; otwarta = true; }
-    else html += pozycjaWysuwu(p, kafle);
+    else if (p.ekran) html += (MENU_LISTY?.ekrany[p.ekran] || []).map(v => pozycjaWysuwu({ nazwa: v.nazwa, ik: v.ik, ile: v.ile, hash: `${p.hash}?widok=${encodeURIComponent(v.id)}` })).join('');
+    else html += pozycjaWysuwu(p);
   }
   return html + (otwarta ? '</div>' : '');
 }
 
-let KAFLE = null;   // liczby płatności list planu (pulpit i menu Płatności), odświeżane przy pulpicie
+let KAFLE = null;   // liczby płatności list planu na kaflach pulpitu, odświeżane przy pulpicie
+let MENU_LISTY = null;   // widoki list z liczbą pozycji (menu Płatności i Budżetu), null = pobrać przy otwarciu menu
 async function otworzWysuw(id) {
   const w = $('#wysuw');
   const nazwa = id === 'budzet' ? 'Arkusze budżetu' : MENU.find(m => m.id === id).nazwa;
@@ -266,15 +255,16 @@ async function otworzWysuw(id) {
       <input class="szukaj-wysuw" id="wysuw-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj arkusz">
       <div id="wysuw-drzewo">${drzewo()}</div>
       <div class="stopka-wysuw"><a href="#/budzet/arkusze">Zobacz wszystkie arkusze →</a></div>
-      ${listaWysuwu(PODSTRONY.budzet)}`;
+      <div id="wysuw-podstrony">${listaWysuwu(PODSTRONY.budzet)}</div>`;
     $('#wysuw-szukaj').oninput = e => { $('#wysuw-drzewo').innerHTML = drzewo(e.target.value); };
+    odswiezMenuList(() => { if (w.dataset.sekcja === 'budzet') { $('#wysuw-podstrony').innerHTML = listaWysuwu(PODSTRONY.budzet); podepnijWysuw(); } });
     const dod = $('#wysuw-dodaj-arkusz');
     if (dod) dod.onclick = e => { e.stopPropagation(); zamknijWysuw(); kartaArkusza(null, d); };
   } else if (id === 'cashflow') {
     w.innerHTML = naglowek() + listaWysuwu([...PODSTRONY.cashflow, ...WIDOKI_CF.map(v => ({ nazwa: v.nazwa, hash: `#/cashflow?widok=${v.id}`, ik: v.ik }))]);
   } else if (id === 'platnosci') {
-    w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci, KAFLE);
-    if (!KAFLE) api('budzet/kafle').then(k => { KAFLE = k.listy; if (w.dataset.sekcja === 'platnosci') w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci, KAFLE); podepnijWysuw(); }).catch(() => {});
+    w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci);
+    odswiezMenuList(() => { if (w.dataset.sekcja === 'platnosci') { w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci); podepnijWysuw(); } });
   } else {
     w.innerHTML = naglowek() + listaWysuwu(PODSTRONY[id] || []);
   }
@@ -282,6 +272,11 @@ async function otworzWysuw(id) {
 }
 
 function podepnijWysuw() { $('#wysuw').querySelectorAll('a[href]').forEach(a => a.addEventListener('click', zamknijWysuw)); }
+
+// Liczniki w menu liczy serwer przy każdym otwarciu menu (widoki z datami względnymi zmieniają się z dniem stanu).
+function odswiezMenuList(poPobraniu) {
+  api('listy/menu').then(m => { MENU_LISTY = m; poPobraniu(); }).catch(() => {});
+}
 
 function zamknijWysuw() {
   $('#wysuw').hidden = true;
@@ -298,11 +293,13 @@ function zaznaczMenu(sekcja) {
 // Fioletowe nagłówki z linią, numer wiersza, liczby do prawej, kolor wg znaku, piguły, strzałka sortowania.
 // Kolumna: {id?, naglowek, wartosc(x) | html(x), liczba?, klasa?(x), sort? (po stronie serwera), sortKlucz?(x) (lokalnie)}.
 // Opcje: wierszKlasa(x) (tło planu, po terminie, wpływ), kropka(x) (kropka statusu przed wierszem),
-// sortLokalny: sortowanie danych tej strony bez serwera (dla list bez stronicowania).
+// sortLokalny: sortowanie danych tej strony bez serwera (dla list bez stronicowania), naSort(klucz, kierunek): własna obsługa
+// sortowania serwera (domyślnie parametry adresu), zaznacz: {czy(x), ustaw(x, tak), poZmianie()}: pole wyboru w miejscu numeru
+// wiersza (po najechaniu, jak w BS), „zaznacz wszystkie na stronie” w nagłówku, Shift + klik zaznacza zakres.
 // Każda tabela dostaje własny identyfikator, a zdarzenia podpinamy tylko w niej (dwie tabele na ekranie się nie mieszają).
 let licznikTabel = 0;
 function tabela(o) {
-  const { kolumny, dane, poczatek = 1, onWiersz, stopkaSum, sortuj, kierunek, wierszKlasa, kropka, sortLokalny } = o;
+  const { kolumny, dane, poczatek = 1, onWiersz, stopkaSum, sortuj, kierunek, wierszKlasa, kropka, sortLokalny, naSort, zaznacz } = o;
   if (!dane.length) return '<div class="pusto">Brak pozycji dla tych filtrów.</div>';
   const id = o.id || `tabela-${++licznikTabel}`;
   const sortowalna = k => k.sort || (sortLokalny && (k.sortKlucz || k.wartosc));
@@ -311,22 +308,56 @@ function tabela(o) {
     const kl = [sortowalna(k) ? 'sort' : '', k.liczba ? 'liczba-kol' : ''].filter(Boolean).join(' ');
     return `<th${kl ? ` class="${kl}"` : ''}${sortowalna(k) ? ` data-sort="${esc(kluczSortu(k))}"${sortuj === kluczSortu(k) ? ` data-kierunek="${kierunek}"` : ''}` : ''}>${k.naglowek}</th>`;
   }).join('');
-  const tr = dane.map((w, i) => `<tr data-i="${i}" class="${wierszKlasa ? wierszKlasa(w) : ''}"${w.plik ? ` title="Źródło: ${esc(w.plik)}, wiersz ${w.wiersz}"` : ''}><td class="lp">${poczatek + i}.</td>${kropka ? `<td class="kr">${kropka(w)}</td>` : ''}${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol ' : ''}${k.klasa ? k.klasa(w) : ''}">${k.html ? k.html(w) : esc(k.wartosc(w))}</td>`).join('')}</tr>`).join('');
+  const lp = (w, i) => zaznacz ? `<td class="lp"><input type="checkbox" class="zazn" data-z="${i}"${zaznacz.czy(w) ? ' checked' : ''} aria-label="Zaznacz wiersz ${poczatek + i}"><span class="nr">${poczatek + i}.</span></td>`
+    : `<td class="lp">${poczatek + i}.</td>`;
+  const tr = dane.map((w, i) => `<tr data-i="${i}" class="${wierszKlasa ? wierszKlasa(w) : ''}${zaznacz?.czy(w) ? ' zaznaczony' : ''}"${w.plik ? ` title="Źródło: ${esc(w.plik)}, wiersz ${w.wiersz}"` : ''}>${lp(w, i)}${kropka ? `<td class="kr">${kropka(w)}</td>` : ''}${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol ' : ''}${k.klasa ? k.klasa(w) : ''}">${k.html ? k.html(w) : esc(k.wartosc(w))}</td>`).join('')}</tr>`).join('');
   const tf = stopkaSum ? `<tfoot><tr><td></td>${kropka ? '<td></td>' : ''}${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol' : ''}">${stopkaSum[k.id] ?? ''}</td>`).join('')}</tr></tfoot>` : '';
   setTimeout(() => {
     const t = document.getElementById(id);
     if (!t) return;
     if (onWiersz) t.querySelectorAll('tbody tr[data-i]').forEach(r => r.addEventListener('click', () => onWiersz(dane[r.dataset.i])));
+    if (zaznacz) {
+      const naglowek = t.querySelector('input.zazn-strona');
+      let ostatni = null;
+      const sync = () => {
+        let ile = 0;
+        t.querySelectorAll('tbody tr[data-i]').forEach(r => {
+          const c = zaznacz.czy(dane[r.dataset.i]);
+          ile += c;
+          r.classList.toggle('zaznaczony', c);
+          r.querySelector('input.zazn').checked = c;
+        });
+        naglowek.checked = ile === dane.length;
+        naglowek.indeterminate = ile > 0 && ile < dane.length;
+        zaznacz.poZmianie?.();
+      };
+      t.odswiezZaznaczenie = sync;
+      const klik = (i, tak, shift) => {
+        const zakres = shift && ostatni != null ? [Math.min(i, ostatni), Math.max(i, ostatni)] : [i, i];
+        for (let j = zakres[0]; j <= zakres[1]; j++) zaznacz.ustaw(dane[j], tak);
+        ostatni = i;
+        sync();
+      };
+      // cała komórka numeru działa jak pole wyboru (łatwiej trafić), nie otwiera karty wiersza
+      t.querySelectorAll('tbody td.lp').forEach(td => td.addEventListener('click', e => {
+        e.stopPropagation();
+        const c = td.querySelector('input.zazn');
+        klik(+c.dataset.z, e.target === c ? c.checked : !zaznacz.czy(dane[c.dataset.z]), e.shiftKey);
+      }));
+      naglowek.addEventListener('click', e => { e.stopPropagation(); dane.forEach(x => zaznacz.ustaw(x, naglowek.checked)); ostatni = null; sync(); });
+      sync();
+    }
     t.querySelectorAll('th.sort').forEach(h => h.addEventListener('click', () => {
       const nowy = sortuj === h.dataset.sort && kierunek === 'malejaco' ? 'rosnaco' : 'malejaco';
-      if (!h.dataset.sort.startsWith('l:')) return ustawParametry({ sortuj: h.dataset.sort, kolejnosc: nowy, strona: 1 });
+      if (!h.dataset.sort.startsWith('l:')) return naSort ? naSort(h.dataset.sort, nowy) : ustawParametry({ sortuj: h.dataset.sort, kolejnosc: nowy, strona: 1 });
       const k = kolumny[+h.dataset.sort.slice(2)], f = k.sortKlucz || k.wartosc;
       const znak = nowy === 'rosnaco' ? 1 : -1;
       const posort = [...dane].sort((a, b) => { const x = f(a), y = f(b); return znak * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'pl')); });
       t.outerHTML = tabela({ ...o, id, dane: posort, sortuj: h.dataset.sort, kierunek: nowy });
     }));
   });
-  return `<div class="tabela-ramka${o.niska ? ' niska' : ''}" id="${id}"><table><thead><tr><th class="lp"></th>${kropka ? '<th></th>' : ''}${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
+  const thLp = zaznacz ? '<th class="lp"><input type="checkbox" class="zazn-strona" aria-label="Zaznacz wszystkie na stronie" title="Zaznacz wszystkie na stronie"></th>' : '<th class="lp"></th>';
+  return `<div class="tabela-ramka${o.niska ? ' niska' : ''}${zaznacz ? ' z-zaznaczaniem' : ''}" id="${id}"><table><thead><tr>${thLp}${kropka ? '<th></th>' : ''}${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
 }
 
 function stopka(wynik, parametry) {
@@ -352,10 +383,6 @@ function stopka(wynik, parametry) {
 
 function filtr(id, etykieta, opcje, wartosc) {
   return `<label>${etykieta}<select data-filtr="${id}">${opcje.map(([v, n]) => `<option value="${v}"${(wartosc || '') === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`;
-}
-
-function filtrData(id, etykieta, wartosc) {
-  return `<label>${etykieta}<input type="date" data-filtr="${id}" value="${esc(wartosc || '')}"></label>`;
 }
 
 function podepnijFiltry() {
@@ -491,101 +518,6 @@ const WIDOKI = {
         Dane: ${s.liczby.operacje} operacji w banku, ${s.liczby.faktury} faktur, ${s.liczby.zakupy} dokumentów kosztowych. <a href="#/platnosci/importy">Historia importów</a></p>`;
   },
 
-  async 'platnosci/bank'(p) {
-    const sortuj = p.sortuj || 'data_ksiegowania', kierunek = p.kolejnosc || 'malejaco';
-    const w = await api('operacje', p);
-    const kol = [
-      { naglowek: 'Rodzaj', html: x => chipKwota(x.kwota) },
-      { naglowek: 'Rachunek', sort: 'rachunek', wartosc: x => x.rachunek, klasa: () => 'szary' },
-      { naglowek: 'Dzień płatności', sort: 'data_ksiegowania', wartosc: x => dataPl(x.data_ksiegowania) },
-      { naglowek: 'Kontrahent', sort: 'kontrahent', wartosc: x => x.kontrahent },
-      { naglowek: 'Tytuł', wartosc: x => x.tytul || x.opis },
-      { id: 'kwota', naglowek: 'Kwota PLN', sort: 'kwota', liczba: true, wartosc: x => zl(x.kwota, false), klasa: x => x.kwota > 0 ? 'plus' : 'minus' },
-      { naglowek: 'Saldo po', liczba: true, wartosc: x => zl(x.saldo_po, false), klasa: () => 'szary' },
-      { naglowek: 'Ruch', html: x => x.wewnetrzna ? '<span class="chip neutral">wewnętrzny</span>' : '' },
-      { naglowek: 'Faktura', html: x => x.faktury ? esc(x.faktury) : x.stan_wplaty === 'nieznana' ? '<span class="chip ostrzezenie">do połączenia</span>' : '', klasa: () => 'szary' },
-    ];
-    const tytul = p.wewnetrzne === 'tylko' ? 'Ruch wewnętrzny i VAT' : p.kierunek === 'wplywy' ? 'Wpływy' : p.kierunek === 'obciazenia' ? 'Obciążenia' : 'Wszystkie operacje';
-    return `<h1>Bank ING</h1><div class="okruszki">Płatności / ${tytul}</div>
-      <div class="filtry">
-        ${filtr('kierunek', 'Rodzaj', [['', 'Wszystko'], ['wplywy', 'Wpływy'], ['obciazenia', 'Obciążenia']], p.kierunek)}
-        ${filtr('rachunek', 'Rachunek', [['', 'Wszystkie'], ['główny', 'Główny 5263'], ['online', 'Online 5271'], ['VAT', 'VAT 5289']], p.rachunek)}
-        ${filtr('wewnetrzne', 'Ruch wewnętrzny', [['', 'Pokaż'], ['bez', 'Ukryj'], ['tylko', 'Tylko wewnętrzny']], p.wewnetrzne)}
-        ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
-      </div>
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, sortuj, kierunek,
-        wierszKlasa: x => x.kwota > 0 ? 'wiersz-plus' : '',
-        stopkaSum: { kwota: `<span class="plus">${zl(w.wplywy, false)}</span><br><span class="minus">${zl(w.obciazenia, false)}</span>` },
-        onWiersz: x => x.stan_wplaty ? kartaWplaty(x.id) : pokazKarte(x.kontrahent || x.opis, [
-          ['Kwota', zl(x.kwota)], ['Rachunek', `${x.rachunek} (${x.nrb.slice(-4)})`], ['Data księgowania', dataPl(x.data_ksiegowania)],
-          ['Data transakcji', dataPl(x.data_transakcji)], ['Kwota oryginalna', x.kwota_oryg != null ? `${zl(x.kwota_oryg, false)} ${x.waluta_oryg}` : ''],
-          ['Kontrahent', x.kontrahent], ['Rachunek kontrahenta', x.rachunek_kontrahenta], ['Opis', x.opis], ['Tytuł', x.tytul],
-          ['Saldo po', zl(x.saldo_po)], ['Ruch wewnętrzny', x.wewnetrzna ? 'tak, nie liczy się do przychodów ani kosztów' : 'nie'],
-          ['Numer referencyjny', x.nr_ref]], `${x.plik}, wiersz ${x.wiersz}`) })}
-      ${stopka(w, p)}`;
-  },
-
-  async 'platnosci/faktury'(p) {
-    const w = await api('faktury', p);
-    const kol = [
-      { naglowek: 'Fakturownia', html: x => x.status === 'Opłacona' ? '<span class="chip plus">opłacona</span>' : `<span class="chip neutral">${esc(x.status.toLowerCase())}</span>` },
-      { naglowek: 'W banku', html: chipBank },
-      { naglowek: 'Numer', wartosc: x => x.numer },
-      { naglowek: 'Klient', wartosc: x => x.klient },
-      { naglowek: 'Nabywca', wartosc: x => x.nabywca, klasa: () => 'szary' },
-      { naglowek: 'Przedmiot', wartosc: x => x.pozycje },
-      { id: 'netto', naglowek: 'Netto PLN', liczba: true, wartosc: x => zl(x.netto, false) },
-      { id: 'brutto', naglowek: 'Brutto PLN', liczba: true, wartosc: x => zl(x.brutto, false) },
-      { naglowek: 'Dzień wystawienia', wartosc: x => dataPl(x.data_wystawienia) },
-      { naglowek: 'Data sprzedaży', wartosc: x => dataPl(x.data_sprzedazy), klasa: () => 'szary' },
-      { naglowek: 'Termin', wartosc: x => dataPl(x.termin) },
-    ];
-    return `<h1>Faktury sprzedażowe</h1><div class="okruszki">Płatności / Faktury z Fakturowni</div>
-      <div class="filtry">
-        ${filtr('status', 'Status w Fakturowni', [['', 'Wszystkie'], ['Wystawiona', 'Wystawiona'], ['Opłacona', 'Opłacona']], p.status)}
-        ${filtr('bank', 'Stan w banku', [['', 'Wszystkie'], ['opłacona', 'Zapłacone'], ['nieopłacona', 'Nieopłacone'], ['częściowo', 'Częściowo'], ['opłacona poza bankiem', 'Poza bankiem']], p.bank)}
-        ${filtrData('od', 'Wystawione od', p.od)}${filtrData('do', 'do', p.do)}
-      </div>
-      <p class="notka">„Fakturownia” to status odhaczony ręcznie. „W banku” liczy aplikacja z wpłat na ING, na dzień ${dataPl(STAN.naleznosci?.dzien_stanu)}.</p>
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1,
-        stopkaSum: { netto: zl(w.netto, false), brutto: zl(w.brutto, false) },
-        onWiersz: x => kartaFaktury(x, [
-          ['Klient', `${x.klient} (${x.klient_zrodlo})`], ['Nabywca', x.nabywca], ['NIP', x.nip], ['Status', x.status], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)], ['Brutto', zl(x.brutto)],
-          ['Opłacono (Fakturownia)', zl(x.oplacono)], ['W banku', x.stan_bank ? `${x.stan_bank}, zapłacono ${zl(x.zaplacono)}, zostało ${zl(x.pozostalo)}` : ''],
-          ['Wpłaty', (x.wplaty || '').split('; ').filter(Boolean).map(s => { const [d, k] = s.split(' '); return `${dataPl(d)}: ${zl(+k)}`; }).join('\n')], ['Wystawiona', dataPl(x.data_wystawienia)], ['Data sprzedaży', dataPl(x.data_sprzedazy)],
-          ['Termin płatności', dataPl(x.termin)], ['Numer KSeF', x.ksef], ['Korekta', x.korekta ? `tak, do ${x.oryginal}` : ''],
-          ['Pozycje', (x.pozycje || '').replaceAll(' | ', '\n')], ['Uwagi', x.uwagi]], `${x.plik}, wiersz ${x.wiersz}`) })}
-      ${stopka(w, p)}`;
-  },
-
-  async 'platnosci/zakupy'(p) {
-    const w = await api('zakupy', p);
-    const kol = [
-      { naglowek: 'Rejestr', wartosc: x => x.rejestr, klasa: () => 'szary' },
-      { naglowek: 'Nr ewid.', wartosc: x => x.nr_ewid, klasa: () => 'szary' },
-      { naglowek: 'Kontrahent', wartosc: x => x.podmiot },
-      { naglowek: 'Numer dokumentu', wartosc: x => x.nr_dok },
-      { naglowek: 'Data', wartosc: x => dataPl(x.data) },
-      { id: 'netto', naglowek: 'Netto PLN', liczba: true, wartosc: x => zl(x.netto, false) },
-      { naglowek: 'VAT PLN', liczba: true, wartosc: x => x.rejestr === 'krajowe' ? zl(x.vat, false) : '' },
-      { naglowek: 'Brutto PLN', liczba: true, wartosc: x => x.brutto != null ? zl(x.brutto, false) : '' },
-      { naglowek: 'W banku', html: x => x.stan === 'opłacony' ? `<span class="chip plus">${dataPl(x.data_platnosci)}</span>` : x.stan ? '<span class="chip ostrzezenie">brak płatności</span>' : '' },
-    ];
-    return `<h1>Rejestr zakupów</h1><div class="okruszki">Płatności / Dokumenty kosztowe z biura</div>
-      <div class="filtry">
-        ${filtr('rejestr', 'Rejestr', [['', 'Wszystkie'], ['krajowe', 'Krajowe'], ['zagraniczne', 'Zagraniczne']], p.rejestr)}
-        ${filtr('stan', 'Płatność w banku', [['', 'Wszystkie'], ['opłacony', 'Znaleziona'], ['bez płatności w banku', 'Brak płatności']], p.stan)}
-        ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
-      </div>
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { netto: zl(w.netto, false) },
-        onWiersz: x => pokazKarte(x.podmiot, [['Numer dokumentu', x.nr_dok], ['Nr ewidencyjny', x.nr_ewid], ['Rejestr', x.rejestr],
-          ['Data', dataPl(x.data)], ['Data zaewidencjonowania', dataPl(x.data_zaewid)], ['Netto', zl(x.netto)], ['VAT', zl(x.vat)],
-          ['Brutto', x.brutto != null ? zl(x.brutto) : 'brak w rejestrze zagranicznym'],
-          ['Płatność w banku', x.data_platnosci ? `${dataPl(x.data_platnosci)}, ${zl(-x.kwota_platnosci)}` : 'nie znaleziono (karta prywatna, kompensata albo jeszcze nieopłacony)']],
-          `${x.plik}, wiersz ${x.wiersz}`) })}
-      ${stopka(w, p)}`;
-  },
-
   async 'platnosci/importy'() {
     const lista = await api('importy');
     const wiersze = lista.map(x => `<tr><td>${esc(x.rodzaj)}</td><td>${esc(x.plik)}</td><td class="liczba-kol">${x.wierszy}</td>
@@ -661,8 +593,8 @@ async function kartaWplaty(id) {
     }
     if (a === 'bez_faktury') return zmiana('bez_faktury', { operacja: o.klucz, powod: $('#powod').value });
     if (a === 'cofnij') return zmiana('cofnij', { wpis: o.wpis });
-    for (const n of prawd) if (!(await zmianaCicha(a, { operacja: o.klucz, faktura: n }))) return;
-    await zmiana(a, { operacja: o.klucz, faktura: prawd[prawd.length - 1] });
+    // kilka faktur jednej wpłaty: jedna seria w pliku zmian (wszystko albo nic, cofnięcie całości)
+    await zmiana('seria', { wpisy: prawd.map(n => ({ typ: a, dane: { operacja: o.klucz, faktura: n } })) });
   });
 }
 
@@ -672,88 +604,6 @@ async function zmianaCicha(typ, dane) {
   if (!r.ok) { komunikat((await r.json().catch(() => ({}))).blad || 'Nie udało się zapisać.', true); return false; }
   return true;
 }
-
-Object.assign(WIDOKI, {
-  async 'platnosci/do-polaczenia'(p) {
-    const stan = p.stan || 'nieznana';
-    const w = await api('wplaty', { ...p, stan });
-    const l = w.liczniki;
-    const kol = [
-      { naglowek: 'Dzień płatności', wartosc: x => dataPl(x.data_ksiegowania) },
-      { naglowek: 'Płatnik', wartosc: x => x.kontrahent },
-      { naglowek: 'Tytuł', wartosc: x => x.tytul || x.opis },
-      { id: 'kwota', naglowek: 'Kwota PLN', liczba: true, wartosc: x => zl(x.kwota, false), klasa: () => 'plus' },
-      { naglowek: stan === 'dopasowana' ? 'Faktury' : 'Podpowiedź', wartosc: x => stan === 'dopasowana' ? x.faktury : [x.uwaga, x.podpowiedz].filter(Boolean).join(' · '), klasa: () => 'szary' },
-    ];
-    return `<h1>Wpłaty do połączenia</h1><div class="okruszki">Płatności / Płatności oczekujące</div>
-      <div class="zakladki" role="tablist">${[['nieznana', 'Do połączenia'], ['sprzed_eksportu', 'Za faktury sprzed eksportu'], ['bez_faktury', 'Nie dotyczą faktury'], ['zwrot_zakupu', 'Zwroty zakupów'], ['dopasowana', 'Połączone']]
-        .map(([v, n]) => `<button role="tab" aria-selected="${stan === v}" data-stan="${v}">${n} <span class="szary">${l[v] || 0}</span></button>`).join('')}</div>
-      <p class="notka">Wpływy z banku bez ruchu wewnętrznego. Kliknij wpłatę, żeby połączyć ją z fakturą albo oznaczyć, że faktury nie dotyczy (zwrot, cashback). Decyzja zapisuje się w pliku zmian i przeżywa każde odświeżenie danych.</p>
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { kwota: zl(w.suma, false) }, onWiersz: x => kartaWplaty(x.id) })}
-      ${stopka(w, p)}`;
-  },
-
-  async 'platnosci/do-weryfikacji'() {
-    const lista = await api('do-weryfikacji');
-    if (!lista.length) return '<h1>Do weryfikacji</h1><div class="okruszki">Płatności / Płatności oczekujące</div><div class="pusto">Nic do sprawdzenia.</div>';
-    const grupy = {};
-    lista.forEach(x => (grupy[x.tytul] ||= []).push(x));
-    const sekcje = Object.entries(grupy).map(([tytul, xs]) => `<h2 class="sekcja">${esc(tytul)} <span class="szary">${xs.length}</span></h2>
-      <div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Faktury</th><th class="liczba-kol">Kwota PLN</th><th>Szczegóły</th><th></th></tr></thead><tbody>
-      ${xs.map((x, i) => `<tr data-g="${esc(tytul)}" data-i="${i}"><td>${dataPl(x.data)}</td><td>${esc(x.kontrahent)}</td><td>${esc(x.faktury || '')}</td>
-        <td class="liczba-kol">${zl(x.kwota, false)}</td><td class="szary">${esc(x.opis.replace(/\d+ gr/g, m => zl(parseInt(m))))}</td>
-        <td class="akcje-wiersz">${x.rodzaj === 'prawdopodobne' ? '<button data-a="zatwierdz">Potwierdź</button><button data-a="odrzuc">Odrzuć</button>'
-          : x.rodzaj === 'fakturownia_oplacona' ? '<button data-a="poza_bankiem">Opłacona poza bankiem</button>'
-          : x.rodzaj === 'korekta_w_tytule' ? `<button data-a="korekta">Dodaj korektę ${esc(x.korekta || '')} na ${zl(x.kwota)}</button>` : ''}</td></tr>`).join('')}
-      </tbody></table></div>`).join('');
-    setTimeout(() => document.querySelectorAll('tr[data-g]').forEach(tr => {
-      const x = grupy[tr.dataset.g][tr.dataset.i];
-      tr.onclick = async e => {
-        const a = e.target.dataset?.a;
-        if (!a) return x.operacja_id ? kartaWplaty(x.operacja_id) : (location.hash = `#/platnosci/faktury?q=${encodeURIComponent(x.numer)}`);
-        e.stopPropagation();
-        if (a === 'korekta') return zmiana('korekta', { numer: x.korekta || `korekta do ${x.numer}`, faktura: x.numer, kwota: String(x.kwota) });
-        if (a === 'poza_bankiem') {
-          return zmiana('poza_bankiem', { faktura: x.numer, powod: 'opłacona poza bankiem (oznaczone na ekranie Do weryfikacji)' });
-        }
-        const numery = x.faktury.split(', ');
-        for (const n of numery.slice(0, -1)) if (!(await zmianaCicha(a, { operacja: x.klucz, faktura: n }))) return;
-        zmiana(a, { operacja: x.klucz, faktura: numery[numery.length - 1] });
-      };
-    }));
-    return `<h1>Do weryfikacji</h1><div class="okruszki">Płatności / Płatności oczekujące</div>
-      <p class="notka">Rzeczy, których aplikacja nie rozstrzyga sama. „Potwierdź” i „Odrzuć” zapisują decyzję; kliknięcie wiersza otwiera wpłatę albo fakturę.</p>${sekcje}`;
-  },
-
-  async 'platnosci/naleznosci'(p) {
-    const [w, n] = [await api('naleznosci', p), STAN.naleznosci];
-    const kol = [
-      { naglowek: 'W banku', html: chipBank },
-      { naglowek: 'Numer', wartosc: x => x.numer },
-      { naglowek: 'Nabywca', wartosc: x => x.nabywca },
-      { naglowek: 'Termin', wartosc: x => dataPl(x.termin) },
-      { naglowek: 'Brutto PLN', liczba: true, wartosc: x => zl(x.naleznosc, false), klasa: () => 'szary' },
-      { id: 'pozostalo', naglowek: 'Do zapłaty PLN', liczba: true, wartosc: x => zl(x.pozostalo, false) },
-      { naglowek: 'Fakturownia', wartosc: x => x.status, klasa: x => x.status === 'Opłacona' ? 'minus' : 'szary' },
-    ];
-    const tytul = p.po_terminie ? 'Po terminie płatności' : p.przedzial ? `Nieopłacone: ${p.przedzial}` : 'Nadal nieopłacone';
-    const nabywcy = p.po_terminie && n ? `<div class="tabela-ramka niska"><table><thead><tr><th>Nabywca</th><th class="liczba-kol">Faktur</th><th class="liczba-kol">Do zapłaty PLN</th><th class="liczba-kol">Najstarsza</th></tr></thead><tbody>
-      ${n.nabywcy_po_terminie.map(x => `<tr data-q="${esc(x.nabywca)}"><td>${esc(x.nabywca)}</td><td class="liczba-kol">${x.faktur}</td><td class="liczba-kol minus">${zl(x.kwota, false)}</td><td class="liczba-kol">${x.najstarsza} dni</td></tr>`).join('')}
-      </tbody></table></div><h2 class="sekcja">Faktury</h2>` : '';
-    setTimeout(() => document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => ustawParametry({ q: tr.dataset.q, strona: 1 })));
-    return `<h1>${tytul}</h1><div class="okruszki">Płatności / Należności, stan na ${dataPl(w.dzien_stanu)} (ostatni dzień w eksporcie z ING)</div>
-      ${kafleNaleznosci(n)}
-      <div class="filtry">${filtr('przedzial', 'Wiekowanie', [['', 'Wszystkie'], ...PRZEDZIALY.map(x => [x, x])], p.przedzial)}
-        ${filtr('po_terminie', 'Termin', [['', 'Wszystkie'], ['1', 'Tylko po terminie']], p.po_terminie)}</div>
-      ${nabywcy}
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { pozostalo: zl(w.pozostalo, false) },
-        onWiersz: x => pokazKarte(x.numer, [['Nabywca', x.nabywca], ['NIP', x.nip], ['Wystawiona', dataPl(x.data_wystawienia)], ['Termin', dataPl(x.termin)],
-          ['Brutto', zl(x.brutto)], ['Korekty', x.korekty ? zl(x.korekty) : ''], ['Zapłacono w banku', zl(x.zaplacono)], ['Do zapłaty', zl(x.pozostalo)],
-          ['Po terminie', x.dni_po_terminie ? `${x.dni_po_terminie} dni` : 'nie'], ['Status w Fakturowni', x.status], ['Numer KSeF', x.ksef]],
-          `${x.plik}, wiersz ${x.wiersz}`) })}
-      ${stopka(w, p)}`;
-  },
-});
 
 // ---------- Etap 3: klienci, wydatki, reguły ----------
 const RODZAJE = { przenoszony: 'koszt klienta', staly: 'koszt stały', praca: 'koszty pracy', podatki: 'podatki', vat: 'VAT',
@@ -855,32 +705,6 @@ Object.assign(WIDOKI, {
       <div class="tabela-ramka niska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>
       <h2 class="sekcja">Koszty klienta <span class="szary">${d.koszty.length}</span></h2>
       ${tk ? `<div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Tytuł</th><th class="liczba-kol">Koszt PLN</th><th>Dokument</th></tr></thead><tbody>${tk}</tbody></table></div>` : '<p class="szary">Brak przypisanych kosztów.</p>'}`;
-  },
-
-  async 'budzet/wydatki'(p) {
-    const w = await api('wydatki', p);
-    const kol = [
-      { naglowek: 'Dzień płatności', wartosc: x => dataPl(x.data_ksiegowania) },
-      { naglowek: 'Kontrahent', wartosc: x => x.kontrahent || x.opis },
-      { naglowek: 'Tytuł', wartosc: x => x.tytul, klasa: () => 'szary' },
-      { id: 'kwota', naglowek: 'Kwota PLN', liczba: true, wartosc: x => zl(x.kwota, false), klasa: () => 'minus' },
-      { naglowek: 'Rodzaj', html: x => chipRodzaj(x.rodzaj) },
-      { naglowek: 'Klient', wartosc: x => x.klient },
-      { naglowek: 'Skąd', wartosc: x => x.zrodlo, klasa: () => 'szary' },
-      { naglowek: 'Dokument', html: x => chipDok(x.dokument) },
-    ];
-    const pods = w.podsumowanie.map(x => `<a class="${p.rodzaj === x.rodzaj ? 'wybrany' : ''}" href="#/budzet/wydatki?rodzaj=${x.rodzaj}"><span>${esc(RODZAJE[x.rodzaj])}</span><b>${zl(-x.kwota, false)}</b><small>${x.ile} płatności</small></a>`).join('');
-    return `<h1>Wydatki</h1><div class="okruszki">Budżet / Wydatki z banku (bez ruchu wewnętrznego)</div>
-      <div class="wiekowanie rodzaje">${pods}</div>
-      <div class="filtry">
-        ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystkie'], ...Object.entries(RODZAJE)], p.rodzaj)}
-        ${filtr('klient', 'Klient', [['', 'Wszyscy'], ['-', 'bez klienta'], ...w.klienci.map(k => [k, k])], p.klient)}
-        ${filtr('zrodlo', 'Skąd przypisanie', [['', 'Wszystkie'], ['mat', 'Twoje reguły'], ['bs', 'Budget Studio'], ['brak', 'Brak']], p.zrodlo)}
-        ${filtr('dokument', 'Dokument w rejestrze', [['', 'Wszystkie'], ['dokument', 'Jest'], ['bez dokumentu', 'Brak'], ['po okresie rejestru', 'Rejestr jeszcze nie obejmuje'], ['nie wymaga', 'Nie wymaga']], p.dokument)}
-        ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
-      </div>
-      ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, stopkaSum: { kwota: zl(w.suma, false) }, onWiersz: x => kartaWydatku(x, w.klienci) })}
-      ${stopka(w, p)}`;
   },
 
   async 'budzet/reguly'() {
@@ -1204,6 +1028,7 @@ async function pokaz() {
   $('#karta').hidden = true;
   // panel „Wygląd i filtry” należy do ekranu cash flow; inny ekran go zamyka
   if (klucz !== ostatniKlucz && typeof cfPanel !== 'undefined') cfPanel = false;
+  if (klucz !== ostatniKlucz && typeof panelListy !== 'undefined') panelListy = false;   // to samo dla list (listy.js)
   ostatniKlucz = klucz;
   zamknijWysuw();
   $('#panel-filtrow').hidden = true;
@@ -1212,7 +1037,6 @@ async function pokaz() {
   try {
     widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : wBudowie(t.sekcja);
     podepnijFiltry();
-    document.querySelectorAll('.zakladki [data-stan]').forEach(b => b.onclick = () => ustawParametry({ stan: b.dataset.stan, strona: 1, q: '' }));
     const o = $('#odswiez');
     if (o) o.onclick = odbuduj;
   } catch (e) {

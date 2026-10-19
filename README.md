@@ -196,3 +196,45 @@ Zrzuty BS (19.10) i pomiar `getComputedStyle` jako wzór; nazwa i znak zostają 
 - **Arkusz:** zakładki Arkusz, Płatności (lista planu z `arkusz=`), Cash flow (okresy z `arkusz=`), Zarządzaj (menu); Grupuj wiersze wg,
   Sekcje, Ustawienia planowanych płatności, wykres nad miesiącami, kolory komórek BS (tło planów, po terminie, kropki), stopka z
   ustawieniami zaznaczonego wiersza i wyszukiwarką. Edycja bez zmian (pakiet 3).
+
+## Pakiet 7: listy płatności, filtry i UX tabel (2026-10-19)
+
+Wszystkie listy menu Płatności (połączone z budżetem, Do połączenia, Do weryfikacji, bank, faktury, należności, rejestr
+zakupów) i wydatki z banku działają na jednym silniku (`web/listy.js`), z jedną drogą danych `GET /api/lista/<ekran>`
+(`finanse/zapytania_listy.py`, zapytania list w `finanse/zapytania.py`). Stan listy (filtry, sortowanie, kolumny) żyje w adresie.
+
+- **Sortowanie po stronie serwera** po każdej kolumnie: biała lista per lista (`KOL_*`: klucz z interfejsu → wyrażenie SQL),
+  tekst po polsku (porządek `PL` rejestrowany na połączeniu, `filtry.klucz_pl`), puste na końcu, stały dalszy porządek.
+- **Filtry podręczne** nad listą (płatności: rodzaj, podstawa z nazwami składowych umów, status aktualności, etap; wielokrotny
+  wybór rozdzielony `|`) i **panel „Wygląd i filtry”** (`web/panel.js`, wspólny z cash flow): widoczne kolumny i ich kolejność,
+  sortowanie, zakres listy, typ (plan, rzeczywista), kontrahent, folder, kategoria, arkusz, sekcja, przedmiot, metoda,
+  Księgowane, W cash flow i daty. Kolumny pamięta przeglądarka per lista (wygoda); zapisany widok ma własne kolumny.
+- **Filtr daty jak w BS** (`finanse/filtry.py`, A-FIL-01 do 07): dzień wystawienia, płatności, realnej płatności, miesiąc
+  księgowania i budżetowy; tryby wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy
+  (jednostka, długość N, przesunięcie K, kotwica dnia tygodnia) i szybki wybór (najbliższe 2 tyg., ten miesiąc, poprzedni
+  miesiąc…). Zapis w adresie, np. `d_realny=ruchomy:dzien:14:0`; „dziś” to dzień stanu, więc daty względne liczą się od nowa
+  przy każdym otwarciu. Podgląd „dziś, jutro, za miesiąc” liczy serwer (`GET /api/zakres`), tą samą funkcją co filtr.
+- **Zapisane widoki** (B-LIS-03): zdarzenie `widok` w pliku zmian (`finanse/widoki.py` → tabela `widoki`): zapisz jako, zapisz
+  zmiany, zmień nazwę, usuń (domyślnego nie), „Przywróć” wraca do filtrów widoku. Startowe (`WIDOKI_STARTOWE`): dawne listy menu
+  (wszystkie, nieopłacone, niewystawione, po terminie, do wystawienia i do zapłacenia w 2 tyg., zapłacone) oraz do wystawienia do
+  końca miesiąca i największe koszty miesiąca; też dla banku, faktur, należności, rejestru i wydatków. Stare linki
+  (`?lista=…&rodzaj=…`, `?od=&do=`) działają.
+- **Menu z licznikami**: widoki każdej listy z liczbą pozycji (`GET /api/listy/menu`, liczone przy każdym otwarciu menu).
+- **Zaznaczanie** (APK-BRAK-08): numer wiersza zamienia się w pole wyboru, Shift + klik zaznacza zakres, w nagłówku „zaznacz
+  wszystkie na stronie”, w pasku „Zaznacz wszystkie wyniki” (do 5000). **Pasek podsumowania zaznaczenia**: liczba, netto, VAT,
+  brutto osobno dla wpływów i obciążeń i razem (podsumowanie wszystkich wyników liczy też serwer: `podsumowanie` w odpowiedzi).
+- **Akcje grupowe**, każda jako jeden wpis w pliku zmian (wszystko albo nic, cofnięcie całości): płatności budżetu: zmień dzień
+  realnej płatności i opłacona poza bankiem z datą (seria `bud`, przy włączonym planowaniu); faktury i należności: opłacona poza
+  bankiem z datą (`poza_bankiem` z polem `data`, data zapłaty trafia do stanu faktury), przypisz klienta; wpłaty: nie dotyczy
+  faktury; wydatki: rodzaj i klient (tylko te płatności albo reguła dla kontrahentów); Do weryfikacji: potwierdź, odrzuć,
+  sprawdzone; wszędzie: przenieś do Do weryfikacji i eksport zaznaczonych do CSV (UTF-8 z BOM, średnik, przecinek dziesiętny,
+  daty ISO, kolumny jak na liście; plik powstaje w przeglądarce). Akcja niepasująca do zaznaczenia jest nieaktywna z powodem.
+- **Seria z listy**: nowy typ wpisu `seria` (`zmiany.TYPY_W_SERII`, do 1000 wpisów); serwer sprawdza odwołania każdego wpisu,
+  zanim cokolwiek zapisze; `zmiany.wczytaj()` rozwija serię w zwykłe wpisy, więc moduły liczące nie wymagały zmian.
+- **Do weryfikacji**: nowy typ `do_weryfikacji` (operacja, faktura, dokument z rejestru, płatność budżetu; `usun` = sprawdzone),
+  pozycje w grupie „Przeniesione do sprawdzenia”; lista ma strony, sortowanie, wyszukiwarkę i filtr daty.
+- **Widoczny typ płatności**: kolumny Podstawa płatności i Typ (plan, rzeczywista), piguła rodzaju, chip etapu, kropka
+  aktualności, tło planu i po terminie.
+
+Poza zakresem: typy dat „data dodania” i „data ostatniej edycji” (A-FIL-01; dane z importu ich nie mają), eksport całej listy
+do Excela (pakiet 10), usuwanie i łączenie rzeczywistych z listy (pakiet 5), skrót Ctrl/Cmd+F (pakiet 11).
