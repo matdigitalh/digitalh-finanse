@@ -196,3 +196,59 @@ Zrzuty BS (19.10) i pomiar `getComputedStyle` jako wzór; nazwa i znak zostają 
 - **Arkusz:** zakładki Arkusz, Płatności (lista planu z `arkusz=`), Cash flow (okresy z `arkusz=`), Zarządzaj (menu); Grupuj wiersze wg,
   Sekcje, Ustawienia planowanych płatności, wykres nad miesiącami, kolory komórek BS (tło planów, po terminie, kropki), stopka z
   ustawieniami zaznaczonego wiersza i wyszukiwarką. Edycja bez zmian (pakiet 3).
+
+## Pakiet 3: edycja arkusza jak w Budget Studio (2026-10-19)
+
+Interfejs w `web/arkusz.js` (tabela arkusza, edycja, akcje, Zarządzaj), reguły i blokady na serwerze w `finanse/budzet.py`
+(zawsze sprawdzane przed zapisem, wpis w całości albo wcale). Edycja działa tylko przy włączonym planowaniu (Budżet, Ustawienia
+budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikatem.
+
+- **Zaznaczanie i klawiatura (A-ARK-14):** klik zaznacza komórkę (nie otwiera karty), strzałki, Tab i Shift+Tab przesuwają,
+  Shift rozszerza zakres, Cmd+strzałka skacze do krawędzi, Cmd+A cały arkusz. Pisanie cyfr na komórce miesiąca nadpisuje kwotę,
+  Enter, F2 albo dwuklik edytuje (zawartość zaznaczona), Enter zapisuje i schodzi niżej, Tab zapisuje i idzie w prawo, Esc anuluje,
+  Backspace i Enter czyści komórkę. Tylko liczby (format polski, spacje tysięcy, „zł” ignorowane, trzecie miejsce po przecinku
+  zaokrąglane połówkami w górę). Cmd+Enter albo Cmd+dwuklik: karta płatności; Cmd+F: wyszukiwarka arkusza.
+- **Kolumny ustawień i opisu w miejscu:** kontrahent, sekcja, przedmiot, metoda: lista z filtrowaniem i „Dodaj …” (słownik = wartości
+  z wierszy i planów całego budżetu do czasu Biblioteki z pakietu 4); podstawa, VAT, dni (0 do 99): lista; dzień wystawienia: panel
+  (ostatni, pierwszy, wybrany dzień, przesunięcie o miesiące, księgowanie wg budżetu przy dniu 1 do 15, przykład dla pierwszej
+  kolumny); Split, Księgowane, W cash flow, Rodzaj: klik albo Enter. Umowa wybrana z listy otwiera kartę wiersza po kwoty od księgowej.
+  Zapis wysyła tylko zmienione pole (reguła nadpisań z pakietu 2).
+- **Kopiuj i wklej:** Cmd+C kopiuje zakres jako tekst z tabulatorami (Excel), Cmd+V wkleja blok od lewego górnego rogu zaznaczenia:
+  kwoty i kolumny ustawień, jedna wartość na cały zaznaczony zakres, nowe wiersze, gdy blok wychodzi poza tabelę. Całe wklejenie to
+  jedna seria (jeden wpis w historii, Cmd+Z cofa całość); zła wartość albo komórka z rzeczywistą: nic nie zapisane, komunikat
+  z numerem wiersza i kolumną. Komórki bez zmiany są pomijane.
+- **Wiersz „Dodaj +” (A-ARK-10):** wpisanie wartości w dowolnej kolumnie tworzy wiersz (obciążenie, faktura jedna, 23 %, ostatni dzień,
+  14 dni, Konto firmowe). Kontrahent wpisany jako pierwsza akcja bierze ustawienia z jego wiersza w budżecie (A-KOL-04, przybliżenie
+  do czasu Biblioteki). Wiersze dodane w apce są na końcu, w kolejności powstania (`bud_wiersz.kolejnosc`).
+- **Zapis i cofanie:** zmiany idą po kolei (szybkie wpisywanie nie wyprzedza zapisu), po zapisie odświeża się sam arkusz z zachowaniem
+  zaznaczenia i przewinięcia. Każdy zapis ma „Cofnij”; Cmd+Z cofa ostatnią obowiązującą zmianę budżetu (`GET /api/budzet/ostatni`,
+  wpis `cofnij`), kolejne Cmd+Z cofa wcześniejsze.
+- **Akcje na wierszach (A-OPS-08 do 13):** checkbox po najechaniu na numer, pasek na dole z liczbą wierszy i sumą wpływów i obciążeń.
+  Operacje na serwerze, każda jednym wpisem: `scal` (ten sam rodzaj i podstawa, faktura z fakturą w worku wolno; wynik = pierwszy
+  zaznaczony wiersz ze wszystkimi płatnościami, bez sumowania; kilka płatności w miesiącu = podstawa w worku; plany z komórek
+  utrwalone jako zwykłe plany), `podziel` (tyle wierszy, ile płatności; umowa nie), `duplikuj` (kwoty komórek, rzeczywiste stają się
+  planami z ustawień), `przenies` (także do nowego arkusza tworzonego w tej samej serii), usuń (tylko bez rzeczywistych). „Podziel
+  procentem” zostaje jako osobna akcja (pytanie M6), tylko dla faktury jednej i bez faktury bez rzeczywistych. Akcja nieaktywna
+  ma podpowiedź, dlaczego.
+- **Karta komórki (A-ARK-13, B-LIS-13, B-MOD-11):** `GET /api/budzet/komorka?wiersz=&miesiac=`: wszystkie płatności komórki (bez limitu),
+  kwota komórki, przeniesienie kwoty na inny miesiąc (komórka z kwotą: kwota; plany z BS: daty przesunięte o tyle samo miesięcy),
+  usunięcie planu, decyzje po terminie, rzeczywista edytowalna dopiero po „Edytuj dane”. Cechy różne od ustawień wiersza
+  (`plan.odstepstwa`: kontrahent, komentarz, metoda, Księgowane, W cash flow, stawka, daty wg reguły) na pomarańczowo w karcie
+  i w panelu podglądu w stopce (A-ARK-11).
+- **Kolory komórek (A-KOM-02):** niebieskie tło = tylko plany, białe = rzeczywiste, ukośny podział = plany i rzeczywiste, różowe =
+  rzeczywiste po terminie, czerwona kropka = płatność nieaktualna, zielony ptaszek = jest opłacona, pomarańczowa kreska = opłacona
+  tylko wg BS.
+- **Zarządzaj (A-OPS-02 do 07, A-ARK-01):** zmiana nazwy (też klik w tytuł; do 80 znaków), zakres miesięcy w kalendarzu (kłódka =
+  miesiąc z rzeczywistą, musi zostać; znak planu = plany znikną po wycięciu; najwyżej 240 miesięcy), przesunięcie startu (tylko bez
+  rzeczywistych, plany od nowa z ustawień), folder i kategoria (też ikona przy tytule; nowa nazwa równa istniejącej, także inną wielkością
+  liter, odrzucona), duplikat (bez zmian, wybrany zakres albo przesunięty start; z wartościami albo sama struktura; rzeczywiste stają się
+  planami), usunięcie arkusza bez rzeczywistych. Przypinania arkuszy jeszcze nie ma (pakiet 4).
+- **Sekcje (A-ARK-05):** kolejność sekcji z sortowania kolumny Sekcja sprzed włączenia przełącznika (`sekcje_kier` w adresie).
+- **Blokady z komunikatem „co zrobić zamiast” (A-INN-05):** podstawa i rodzaj wiersza z rzeczywistą, komórka nie-worek z rzeczywistą,
+  worek poniżej sumy rzeczywistych, usunięcie wiersza, płatności rzeczywistej i arkusza z rzeczywistymi, wycięcie miesiąca
+  z rzeczywistą, przesunięcie startu z rzeczywistymi, przeniesienie wierszy poza zakres arkusza docelowego, rzeczywista do innej
+  komórki, nazwa ponad 80 znaków, komentarz ponad 170, dni ponad 99, zakres ponad 20 lat, ponad 1000 wierszy w arkuszu, duplikat
+  nazwy folderu i kategorii, nieliczbowa kwota. Łączenie rzeczywistych z planami (pusta komórka, inny rodzaj) w pakiecie 5; usuwanie
+  folderów, kontrahentów i przedmiotów z Biblioteki w pakiecie 4.
+- Testy: `testy/test_pakiet3.py` (scal, podziel, duplikuj, usuń, przenieś, limit wierszy, zakres, przesunięcie, duplikat arkusza,
+  usunięcie arkusza, odstępstwa, karta komórki, plan na inny miesiąc, ostatnia zmiana do cofnięcia, komunikaty).
