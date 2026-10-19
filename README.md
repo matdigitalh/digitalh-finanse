@@ -196,3 +196,57 @@ Zrzuty BS (19.10) i pomiar `getComputedStyle` jako wzór; nazwa i znak zostają 
 - **Arkusz:** zakładki Arkusz, Płatności (lista planu z `arkusz=`), Cash flow (okresy z `arkusz=`), Zarządzaj (menu); Grupuj wiersze wg,
   Sekcje, Ustawienia planowanych płatności, wykres nad miesiącami, kolory komórek BS (tło planów, po terminie, kropki), stopka z
   ustawieniami zaznaczonego wiersza i wyszukiwarką. Edycja bez zmian (pakiet 3).
+
+## Pakiet 10: eksport i import (2026-10-19)
+
+**Eksport** (`finanse/eksport.py`, adres `GET /api/eksport/<ścieżka zapytania>?format=xlsx|csv&<parametry>`). Plik powstaje
+w pamięci i idzie do przeglądarki jako pobranie (`Content-Disposition`); apka nic nie zapisuje na dysku, więc plik ma
+takie uprawnienia, jakie nada mu przeglądarka w Pobranych.
+- **Płatności budżetu w układzie Budget Studio:** zapytanie `budzet/lista` z bieżącymi filtrami, kolumny 1:1 jak w
+  `budget_studio_*.csv` (ID, rodzaj, status, etap, podstawa w zapisie BS, kwoty ze znakiem, daty, przesunięcie, księgowanie,
+  arkusz, folder, kategoria, sekcja, przedmiot, data utworzenia i modyfikacji). CSV w formacie pliku BS (tabulator, UTF-8
+  bez BOM, kwoty jak w BS: `-10,31`, `0`, `9999,9`). Dla płatności z importu BS pełny „Miesiąc budżetowy” i daty utworzenia
+  i modyfikacji idą z pliku eksportu, dla zmienionych w apce z historii zmian. Odbiór: na eksporcie BS z 14.10 wszystkie
+  wiersze zgodne z plikiem BS w 26 kolumnach (status i etap liczymy sami, z banku, więc mogą się różnić).
+- **Każda lista z bieżącymi filtrami:** przyciski „Pobierz: Excel, CSV” w nagłówku ekranu. `api()` w `app.js` zapamiętuje
+  zapytanie ekranu (hook `zapamietajZapytanie`), a `pokaz()` po narysowaniu woła `poWidoku`, więc eksport dostaje dokładnie
+  te parametry, z którymi ekran pytał serwer. Serwer woła tę samą funkcję zapytań (`eksport.wolaj`: parametry po nazwie,
+  aliasy jak w `serwer.py`, wszystkie strony po 500), więc suma eksportu = stopka listy.
+- **Zestawienia:** faktury, należności z wiekowaniem (arkusz z sumami przedziałów), bank, rejestr zakupów, wydatki, wpłaty do
+  połączenia, do weryfikacji, wyniki biura, rozjazdy, klienci, wynik zarządczy, obroty, koszty, VAT, rentowność klientów
+  i arkuszy, cash flow wg granulacji (okres w wierszu, pozycje, podsumowanie z SUM, MAX, MIN), arkusz budżetu (wiersze ×
+  miesiące, saldo okresu, wpływy, obciążenia, narastająco). Stare adresy (`arkusz`, `cashflow` 13 tygodni, `rentownosc`) działają.
+- Excel: kwoty jako liczby (format „zł”), daty jako daty, arkusz „Podsumowanie” z filtrami i sumami. CSV list: UTF-8 z BOM,
+  średnik, przecinek dziesiętny. Tekst zaczynający się od `=`, `+`, `@` albo minusa przed literą dostaje apostrof (nie formuła).
+- Ekran **Eksport** (`web/eksport.js`) jak w BS: zakładki Excel i CSV, kafle zakresów z polami (lista, rodzaj, daty, rok,
+  granulacja, arkusz).
+
+**Import** (`finanse/importy/`).
+- **Historia importów** (`podsumowanie.py`, `GET /api/importy/historia`): każdy plik w `Dane/` to import z licznikami jak w BS:
+  Dodane, Zaktualizowane (ta sama pozycja, inne dane, np. faktura opłacona), Bez zmian, Pominięte (z powodem). Liczone przy
+  otwarciu ekranu z samych plików (odbudowa bazy się nie wydłuża): pliki źródła w kolejności trafienia do folderu (data pliku),
+  każdy porównany ze stanem sprzed niego; ING, rejestr i wyniki ze wszystkimi wcześniejszymi, Fakturownia i BS z poprzednim
+  (liczy się tylko najnowszy). Klucze jak w bazie. Pominięte: drugi raz ten sam klucz w pliku (np. dwie operacje ING bez
+  numeru, ten sam dzień, kwota i tytuł), wiersz rejestru bez numeru ewidencyjnego z danymi (sumy arkusza nie), wiersz BS bez
+  rodzaju 1 albo -1, cały plik, którego nie da się wczytać.
+- **Podsumowanie importu** (`GET /api/importy/podsumowanie?id=&kategoria=&q=&strona=&ile=`, ekran `#/platnosci/import`):
+  zakładki z licznikami, domyślnie Pominięte, gdy są; przy Zaktualizowanych lista zmian „pole: było → jest”.
+- **Plik przeciągnięty do okna** (`reczny.py`, `POST /api/import?tryb=podglad|zapisz`, nagłówek `X-Finanse`, nazwa w
+  `X-Nazwa-Pliku`, limit 20 MB): rozpoznanie źródła po zawartości (`rozpoznanie.py`: nagłówki CSV i separator, arkusze
+  Excela; ING, Fakturownia, Budget Studio, rejestr xlsx, wyniki xls z okresem z nagłówka „Za okres”), podgląd z licznikami
+  i przykładami, dopiero „Importuj” zapisuje surowy plik bez zmian do właściwego podfolderu `Dane/` pod nazwą wg konwencji
+  (`ing_historia_<od>_<do>.csv`, `fakturownia_sprzedaz_<dziś>.csv`, `budget_studio_<dziś>.csv`,
+  `biuro_rejestr_zakupow_<od>_<do>.xlsx`, `biuro_wyniki_<okres>.xls`; przy kolizji nazwy `_2`), plik 600, i przelicza bazę.
+  Kopia robocza do odczytu leży w lokalnym katalogu bazy (`import-roboczy`, 700) i znika od razu. Ten sam plik drugi raz
+  (ta sama treść): pliku nie zapisujemy, podgląd i historia pokazują „Bez zmian” = liczba wierszy. Nieznany format, PDF,
+  XML z KSeF, własny eksport apki: ostrzeżenie z powodem, nic nie jest zapisywane.
+- **Dziennik importów** (`dziennik.py`): `Finanse/Aplikacja/importy/<Mac>.jsonl` (600, jak plik zmian: każdy Mac swój plik),
+  wpis na każdy import z okna: nazwa oryginalna, gdzie zapisany, liczniki; z niego Historia pokazuje sposób dodania
+  i ponowne importy tego samego pliku.
+- **KSeF z pliku: nie zrobione.** Eksport z KSeF to XML FA(2)/FA(3) (struktura z wieloma wariantami pozycji, stawek
+  i korekt), apka nie ma przykładowego pliku, a decyzja M9 jest otwarta; koszty idą z rejestru biura. Plik KSeF jest
+  rozpoznawany i dostaje ostrzeżenie.
+
+Testy: `testy/test_pakiet10.py` (układ i zapis kwot jak w BS, sumy jak w stopce listy, CSV i Excel, zabezpieczenie formuł,
+rozpoznanie źródła, liczniki importu, przeciągnięcie, serwer), `testy_odbioru/test_pakiet10.py` (prawdziwe pliki: eksport
+1:1 z plikiem BS, rozpoznanie każdego pliku z `Dane/`, ponowny import pliku ING = same „Bez zmian”, bez zapisu).
