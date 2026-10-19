@@ -303,10 +303,13 @@ def przelicz_jawny(p: dict, w: dict, pola: set) -> dict:
 # ---------- Odstępstwa płatności od ustawień wiersza (A-ARK-11, A-KOL-20) ----------
 
 def odstepstwa(p: dict, w: dict) -> list[str]:
-    """Cechy płatności różne od tego, co wynika z ustawień wiersza (ręczny wyjątek na planie albo dane dokumentu
-    rzeczywistej). Interfejs podświetla je na pomarańczowo w karcie i w panelu podglądu. Daty sprawdzamy wg reguły dnia
-    wystawienia i dni na płatność; przy regule „(auto)” (wiersz z importu bez jednej reguły) dat nie oceniamy."""
+    """Cechy planu różne od tego, co wynika z ustawień wiersza, czyli ręczne wyjątki (A-ARK-11). Interfejs podświetla je
+    na pomarańczowo w karcie i w panelu podglądu. Rzeczywista ma dane z dokumentu (kontrahent, komentarz, daty z faktury
+    zawsze wygrywają), więc nie jest wyjątkiem: dla niej lista pusta. Daty sprawdzamy wg reguły dnia wystawienia i dni
+    na płatność; przy regule „(auto)” (wiersz z importu bez jednej reguły) dat nie oceniamy."""
     from .budzet import stawka_proc
+    if p.get('typ', 'plan') != 'plan':
+        return []
     pod = w.get('podstawa', '')
     umowa = jest_umowa(pod)
     wynik = []

@@ -255,6 +255,7 @@ class TestKartaIOdstepstwa(Pakiet3):
         self.assertEqual(plan.odstepstwa({**p, 'wystawienie': '2026-11-12', 'termin': '2026-11-26', 'realny': '2026-11-26',
                                           'ksiegowanie': '2026-11-01'}, w), ['wystawienie'])
         self.assertEqual(plan.odstepstwa(p, {**w, 'dzien_wystawienia': '(auto)', 'metoda': ''}), ['metoda'])
+        self.assertEqual(plan.odstepstwa({**p, 'typ': 'rzeczywista', 'kontrahent': 'B'}, w), [])   # dane dokumentu to nie wyjątek
 
     def test_plan_na_inny_miesiac_przesuwa_daty(self):
         self.bud({'op': 'platnosc', 'obiekt': {'id': 'bs:3', 'miesiac': '2026-12'}})

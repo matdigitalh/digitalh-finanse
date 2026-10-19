@@ -232,9 +232,9 @@ budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikat
   ma podpowiedź, dlaczego.
 - **Karta komórki (A-ARK-13, B-LIS-13, B-MOD-11):** `GET /api/budzet/komorka?wiersz=&miesiac=`: wszystkie płatności komórki (bez limitu),
   kwota komórki, przeniesienie kwoty na inny miesiąc (komórka z kwotą: kwota; plany z BS: daty przesunięte o tyle samo miesięcy),
-  usunięcie planu, decyzje po terminie, rzeczywista edytowalna dopiero po „Edytuj dane”. Cechy różne od ustawień wiersza
-  (`plan.odstepstwa`: kontrahent, komentarz, metoda, Księgowane, W cash flow, stawka, daty wg reguły) na pomarańczowo w karcie
-  i w panelu podglądu w stopce (A-ARK-11).
+  usunięcie planu, decyzje po terminie, rzeczywista edytowalna dopiero po „Edytuj dane”. Cechy planu różne od ustawień wiersza,
+  czyli ręczne wyjątki (`plan.odstepstwa`: kontrahent, komentarz, metoda, Księgowane, W cash flow, stawka, daty wg reguły), na
+  pomarańczowo w karcie i w panelu podglądu w stopce (A-ARK-11); rzeczywista ma dane z dokumentu, więc jej nie podświetlamy.
 - **Kolory komórek (A-KOM-02):** niebieskie tło = tylko plany, białe = rzeczywiste, ukośny podział = plany i rzeczywiste, różowe =
   rzeczywiste po terminie, czerwona kropka = płatność nieaktualna, zielony ptaszek = jest opłacona, pomarańczowa kreska = opłacona
   tylko wg BS.
