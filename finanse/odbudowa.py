@@ -4,7 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import baza, budzet, dopasowanie, klienci, konfig, laczenie, zmiany
+from . import baza, budzet, dopasowanie, klienci, konfig, laczenie, widoki, zmiany
 from .importy import budget_studio, fakturownia, faktury_dysk, ing, rejestr_biura, wyniki_biura
 from .importy.wspolne import pliki, sha256, teraz
 
@@ -31,6 +31,7 @@ def odcisk_kodu() -> str:
     h.update((Path(budzet.__file__).parent / 'umowy.py').read_bytes())
     h.update((Path(budzet.__file__).parent / 'kopia_bs.py').read_bytes())
     h.update((Path(budzet.__file__).parent / 'podatki.py').read_bytes())
+    h.update(Path(widoki.__file__).read_bytes())
     return h.hexdigest()[:16]
 
 
@@ -108,7 +109,9 @@ def odbuduj(cel: Path | None = None) -> dict:
             con.execute('ROLLBACK TO klienci')
             con.execute('RELEASE klienci')
             raport['bledy'].append(f'Klienci i koszty: {e}')
-        for nazwa, krok in (('budzet', lambda: budzet.zbuduj(con, wpisy)), ('laczenie', lambda: laczenie.policz(con))):
+        kroki = (('budzet', 'Budżet', lambda: budzet.zbuduj(con, wpisy)), ('laczenie', 'Łączenie planów', lambda: laczenie.policz(con)),
+                 ('widoki', 'Widoki list i Do weryfikacji', lambda: widoki.zbuduj(con, wpisy)))
+        for nazwa, opis, krok in kroki:
             con.execute(f'SAVEPOINT {nazwa}')
             try:
                 raport[nazwa] = krok()
@@ -116,7 +119,7 @@ def odbuduj(cel: Path | None = None) -> dict:
             except Exception as e:
                 con.execute(f'ROLLBACK TO {nazwa}')
                 con.execute(f'RELEASE {nazwa}')
-                raport['bledy'].append(f'{"Budżet" if nazwa == "budzet" else "Łączenie planów"}: {e}')
+                raport['bledy'].append(f'{opis}: {e}')
         if (raport.get('budzet') or {}).get('blad'):
             raport['bledy'].append(f"Kopia z BS: {raport['budzet']['blad']}")
         for k, v in (('odbudowa', teraz()), ('odcisk', odcisk_zrodel()), ('mac', konfig.nazwa_maca()),

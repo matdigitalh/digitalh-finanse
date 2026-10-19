@@ -102,14 +102,8 @@ Object.assign(WIDOKI, {
         <button role="tab" data-zakl="zarzadzaj" aria-selected="false" data-karta>${ik('zebatka')}Zarządzaj</button></div>
       ${banerOsieroconych(0)}`;
     if (zakl === 'cashflow') return naglowek + await widokCashflow(p, { arkusz: a.id, ark: a });
-    if (zakl === 'platnosci') return naglowek + await listaPlanu({ ...p, lista: p.lista || 'wszystkie' }, { arkusz: a.id });
+    if (zakl === 'platnosci') return naglowek + await listaPlatnosci(p, { arkusz: a.id });   // lista z pakietu 7 (listy.js)
     return `${naglowek}<div id="ark-widok">${arkuszTabela(d, p)}</div>`;
-  },
-
-  // ---------- Listy płatności planu (jak w BS) ----------
-  async 'platnosci/plan'(p) {
-    const d = await api('budzet/lista', p);
-    return `<h1>${esc(d.nazwa)}</h1><div class="okruszki">Połączone z budżetem / ${esc(d.nazwa)}</div>${await listaPlanu(p, { dane: d })}`;
   },
 
   async 'budzet/rozjazdy'() {
@@ -742,52 +736,42 @@ async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
     if (cfPanel) otworzPanelCf();
   });
 
-  function otworzPanelCf() {
-    const panel = $('#panel-filtrow');
+  function otworzPanelCf() {   // wspólny panel „Wygląd i filtry” (panel.js)
     const szkic = { granulacja: ef.granulacja, saldo: p.saldo ?? '', scenariusz: ef.scenariusz, rodzaj: ef.rodzaj, od: ef.od, do: ef.do,
       typ: typy.length ? typy : Object.keys(TYPY_CF), serie: Object.keys(SERIE_CF).filter(k => serie[k] !== false), kolumny: kolumnyCf() };
-    const sekcja = (klucz, etykieta, wartosc, html, zm) => `<details${zm ? ' class="zmienione"' : ''}><summary>${etykieta}: <b>${esc(wartosc)}</b></summary><div class="zawartosc">${html}</div></details>`;
-    const radio = (nazwa, opcje, wart) => Object.entries(opcje).map(([v, t]) => `<label><input type="radio" name="pf-${nazwa}" value="${v}"${String(wart) === v ? ' checked' : ''}>${esc(t)}</label>`).join('');
-    const pola = (nazwa, opcje, wybrane) => Object.entries(opcje).map(([v, t]) => `<label><input type="checkbox" name="pf-${nazwa}" value="${v}"${wybrane.includes(v) ? ' checked' : ''}>${t.replace('<br>', ' ')}</label>`).join('');
-    panel.innerHTML = `<div class="gora"><button class="zamknij" aria-label="Zamknij filtry">×</button><h2>Wygląd i filtry</h2>
-        ${arkusz ? '' : `<label class="etyk">Zapisane widoki</label><select id="pf-widok">${WIDOKI_CF.map(v => `<option value="${v.id}"${v.id === widok.id ? ' selected' : ''}>${esc(v.nazwa)}</option>`).join('')}</select>`}</div>
-      <div class="srodek">
-        <div class="grupa">Wygląd</div>
-        ${sekcja('granulacja', 'Granulacja', GRANULACJE[szkic.granulacja], radio('granulacja', GRANULACJE, szkic.granulacja), p.granulacja)}
-        ${sekcja('saldo', 'Saldo startowe', szkic.saldo !== '' ? zl(+szkic.saldo) : 'z banku', `<input type="text" id="pf-saldo" inputmode="decimal" placeholder="z banku: ${esc(zl(d.saldo_start, false))}" value="${szkic.saldo !== '' ? esc(zlWpis(+szkic.saldo)) : ''}"><span class="szary">Puste: gotówka z banku na koniec dnia przed zakresem.</span>`, p.saldo)}
-        ${sekcja('scenariusz', 'Scenariusz', szkic.scenariusz === 'pelny' ? 'pełny' : 'ostrożny', radio('scenariusz', { ostrozny: 'ostrożny: bez zaległości', pelny: 'pełny: zaległości za 7 dni' }, szkic.scenariusz), p.scenariusz)}
-        ${sekcja('serie', 'Serie wykresu', szkic.serie.length === 4 ? 'Wszystkie' : `${szkic.serie.length} z 4`, pola('serie', SERIE_CF, szkic.serie), p.serie)}
-        ${sekcja('kolumny', 'Widoczne kolumny', `${szkic.kolumny.length} z ${KOLUMNY_CF.length}`, pola('kolumny', Object.fromEntries(KOLUMNY_CF), szkic.kolumny), false)}
-        <div class="grupa">Cechy</div>
-        ${sekcja('rodzaj', 'Rodzaj', { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }[szkic.rodzaj], radio('rodzaj', { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }, szkic.rodzaj), p.rodzaj)}
-        ${sekcja('typ', 'Pochodzenie', szkic.typ.length === 4 ? 'Wszystko' : `${szkic.typ.length} z 4`, pola('typ', TYPY_CF, szkic.typ), p.typ)}
-        <div class="grupa">Daty</div>
-        ${sekcja('daty', 'Dzień realnej płatności', `${dataPl(szkic.od)} - ${dataPl(szkic.do)}`, `<label>od <input type="date" id="pf-od" value="${esc(szkic.od)}"></label><label>do <input type="date" id="pf-do" value="${esc(szkic.do)}"></label>`, p.od || p.do)}
-      </div>
-      <div class="dol"><button class="przycisk" id="pf-zastosuj">Zastosuj</button><button class="anuluj" id="pf-anuluj">Anuluj</button></div>`;
-    panel.hidden = false;
-    document.body.classList.add('filtry-otwarte');
+    panelFiltrow({
+      widoki: arkusz ? null : { opcje: WIDOKI_CF.map(v => [v.id, v.nazwa]), wybrany: widok.id, naZmiane: id => { location.hash = `#/cashflow?widok=${id}`; } },
+      sekcje: [
+        { grupa: 'Wygląd' },
+        { klucz: 'granulacja', etykieta: 'Granulacja', typ: 'radio', opcje: GRANULACJE, wartosc: szkic.granulacja, zmieniona: !!p.granulacja },
+        { klucz: 'saldo', etykieta: 'Saldo startowe', typ: 'tekst', inputmode: 'decimal', placeholder: `z banku: ${zl(d.saldo_start, false)}`, puste: 'z banku',
+          wartosc: szkic.saldo !== '' ? zlWpis(+szkic.saldo) : '', opis: 'Puste: gotówka z banku na koniec dnia przed zakresem.', zmieniona: !!p.saldo },
+        { klucz: 'scenariusz', etykieta: 'Scenariusz', typ: 'radio', opcje: { ostrozny: 'ostrożny: bez zaległości', pelny: 'pełny: zaległości za 7 dni' },
+          wartosc: szkic.scenariusz, zmieniona: !!p.scenariusz },
+        { klucz: 'serie', etykieta: 'Serie wykresu', typ: 'multi', opcje: Object.entries(SERIE_CF), wartosc: szkic.serie, zmieniona: !!p.serie },
+        { klucz: 'kolumny', etykieta: 'Widoczne kolumny', typ: 'kolumny', opcje: KOLUMNY_CF, wartosc: szkic.kolumny, domyslne: KOLUMNY_CF_DOMYSLNE },
+        { grupa: 'Cechy' },
+        { klucz: 'rodzaj', etykieta: 'Rodzaj', typ: 'radio', opcje: { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }, wartosc: szkic.rodzaj, zmieniona: !!p.rodzaj },
+        { klucz: 'typ', etykieta: 'Pochodzenie', typ: 'multi', opcje: Object.entries(TYPY_CF), wartosc: szkic.typ, zmieniona: !!p.typ },
+        { grupa: 'Daty' },
+        { klucz: 'daty', etykieta: 'Dzień realnej płatności', typ: 'zakres', wartosc: { od: szkic.od, do: szkic.do }, zmieniona: !!(p.od || p.do) },
+      ],
+      naZamknij: () => { cfPanel = false; zamknijPanelCf(); },
+      naZastosuj: w => {
+        const przed = kolumnyCf();
+        try { localStorage.setItem('finanse-cf-kolumny', JSON.stringify(w.kolumny.length ? w.kolumny : KOLUMNY_CF_DOMYSLNE)); } catch (e) { /* wygoda */ }
+        const g = w.saldo ? zlSaldo(w.saldo) : '';
+        if (w.saldo && isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
+        const { od, do: doo } = w.daty;
+        if (!od || !doo || od > doo) return komunikat('Zakres dat: początek nie może być po końcu.', true);
+        ustawParametry({ granulacja: w.granulacja === bazowy.granulacja ? '' : w.granulacja, saldo: w.saldo ? String(g) : '',
+          scenariusz: w.scenariusz === 'ostrozny' ? '' : w.scenariusz, rodzaj: w.rodzaj,
+          typ: w.typ.length === 4 ? '' : w.typ.join(','), serie: w.serie.length === 4 ? '' : w.serie.join(','),
+          od: od === bazowy.od ? '' : od, do: doo === bazowy.do ? '' : doo });
+        if (JSON.stringify(przed) !== JSON.stringify(kolumnyCf())) rysujListe();   // same kolumny: adres bez zmian, lista od nowa
+      },
+    });
     const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('zamknij')}Zamknij filtry <span class="kropka-fil"></span>`;
-    $('.zamknij', panel).onclick = () => { cfPanel = false; zamknijPanelCf(); };
-    $('#pf-anuluj').onclick = () => { cfPanel = false; zamknijPanelCf(); };
-    const pw = $('#pf-widok');
-    if (pw) pw.onchange = () => { location.hash = `#/cashflow?widok=${pw.value}`; };
-    $('#pf-zastosuj').onclick = () => {
-      const wart = n2 => panel.querySelector(`input[name="pf-${n2}"]:checked`)?.value ?? '';
-      const zazn = n2 => [...panel.querySelectorAll(`input[name="pf-${n2}"]:checked`)].map(x => x.value);
-      const kol = zazn('kolumny');
-      try { localStorage.setItem('finanse-cf-kolumny', JSON.stringify(kol.length ? kol : KOLUMNY_CF_DOMYSLNE)); } catch (e) { /* wygoda */ }
-      const s = $('#pf-saldo').value.trim(), g = s ? zlSaldo(s) : '';
-      if (s && isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
-      const od = $('#pf-od').value, doo = $('#pf-do').value;
-      if (!od || !doo || od > doo) return komunikat('Zakres dat: początek nie może być po końcu.', true);
-      const t = zazn('typ'), se = zazn('serie');
-      ustawParametry({ granulacja: wart('granulacja') === bazowy.granulacja ? '' : wart('granulacja'), saldo: s ? String(g) : '',
-        scenariusz: wart('scenariusz') === 'ostrozny' ? '' : wart('scenariusz'), rodzaj: wart('rodzaj'),
-        typ: t.length === 4 ? '' : t.join(','), serie: se.length === 4 ? '' : se.join(','),
-        od: od === bazowy.od ? '' : od, do: doo === bazowy.do ? '' : doo });
-      if (JSON.stringify(kol) !== JSON.stringify(kolumnyCf())) rysujListe();
-    };
   }
 
   const opcjeZakresu = [...(arkusz ? [] : WIDOKI_CF.map(v => [v.id, v.nazwa])), ['wlasny', pasujacyZakres && !arkusz ? 'Własny zakres…' : `${dataPl(ef.od)} - ${dataPl(ef.do)}`]];
@@ -823,39 +807,6 @@ async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
 }
 
 function zamknijPanelCf() {
-  $('#panel-filtrow').hidden = true;
-  document.body.classList.remove('filtry-otwarte');
+  zamknijPanelFiltrow();
   const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('filtr')}Wygląd i filtry`;
-}
-
-// ---------- Lista płatności planu w stylu BS (menu Płatności i zakładka Płatności arkusza) ----------
-const KROPKA_ETAPU = { 'Po terminie': 'czerwona', 'Opłacona': 'zielona', 'Planowana': 'niebieska', 'Wystawiona': 'zolta', 'Częściowo opłacona': 'zolta' };
-async function listaPlanu(p, { arkusz = null, dane = null } = {}) {
-  const d = dane || await api('budzet/lista', { ...p, arkusz: arkusz || '' });
-  const z = v => v == null ? '' : zl(v, false);
-  const kol = [
-    { id: 'rodzaj', naglowek: 'Rodzaj', html: x => chipZnak(x.rodzaj) },
-    { naglowek: 'Etap<br>płatności', html: x => chipEtap(x.etap) },
-    { naglowek: 'Podstawa<br>płatności', wartosc: x => x.podstawa_platnosci, klasa: x => x.skladowa === 'us' || x.skladowa === 'zus' ? 'szary' : '' },
-    { naglowek: 'Kontrahent', wartosc: x => x.w_kontrahent },
-    { naglowek: 'Tytuł', wartosc: x => x.tytul || (x.typ === 'plan' ? 'Przedmiot transakcji' : '') },
-    { naglowek: 'Numer<br>dokumentu', wartosc: x => x.nr_dok || '-' },
-    { naglowek: 'Netto PLN<br>(wartość)', liczba: true, wartosc: x => z(x.netto * x.rodzaj) },
-    { id: 'kwota', naglowek: 'Brutto PLN<br>(wartość)', liczba: true, wartosc: x => z(x.brutto * x.rodzaj) },
-    { naglowek: 'VAT PLN<br>(wartość)', liczba: true, wartosc: x => z((x.vat || 0) * x.rodzaj) },
-    { naglowek: 'Stawka<br>VAT', liczba: true, wartosc: x => x.stawka != null ? `${x.stawka}%` : '-' },
-    { naglowek: 'Dzień<br>wystawienia', wartosc: x => dataPl(x.wystawienie) },
-    { naglowek: 'Dzień<br>płatności', wartosc: x => dataPl(x.termin_efektywny) },
-    { naglowek: 'Miesiąc<br>budżetowy', wartosc: x => mies(x.miesiac) },
-    ...(arkusz ? [] : [{ naglowek: 'Arkusz budżetu', wartosc: x => x.arkusz }]),
-    { naglowek: 'Uwagi', wartosc: x => x.uwaga_stanu || x.decyzja, klasa: () => 'szary' },
-  ];
-  return `<div class="filtry">${arkusz ? '' : filtr('lista', 'Lista', Object.entries(d.listy), d.lista)}
-      ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystko'], ['1', 'Wpływy'], ['-1', 'Obciążenia']], p.rodzaj)}</div>
-    <p class="notka">Etap wynika z banku i Fakturowni, nie z kliknięcia: „Opłacona” dopiero, gdy jest wpłata albo przelew. ${d.razem} pozycji, saldo brutto ${zl(d.suma)}, stan na ${dataPl(d.dzien_stanu)}.</p>
-    ${tabela({ kolumny: kol, dane: d.wiersze, poczatek: (d.strona - 1) * d.ile + 1, onWiersz: x => kartaPlatnosci([x.id], null),
-      kropka: x => `<span class="kropka ${x.aktualnosc === 'Nieaktualna' ? 'czerwona' : KROPKA_ETAPU[x.etap] || 'szara'}" title="${esc(x.etap || '')}${x.aktualnosc === 'Nieaktualna' ? ', nieaktualna' : ''}"></span>`,
-      wierszKlasa: x => `${x.typ === 'plan' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.rodzaj === 1 ? ' wiersz-plus' : ''}`,
-      stopkaSum: { rodzaj: `suma ${d.razem} pozycji`, kwota: zl(d.suma, false) } })}
-    ${stopka(d, p)}`;
 }

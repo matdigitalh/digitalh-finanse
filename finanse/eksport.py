@@ -310,7 +310,11 @@ def wiersz_bs(x: dict, d: dict, z_pliku: dict, historia: dict) -> list:
 
 
 def platnosci_bs(con, q: dict) -> tuple[str, list[Tabela], bool]:
-    d = wolaj(zapytania_budzet.lista, con, q, aliasy={'lista': 'nazwa'})
+    return _platnosci_bs(con, q, wolaj(zapytania_budzet.lista, con, q, aliasy={'lista': 'nazwa'}))
+
+
+def _platnosci_bs(con, q: dict, d: dict) -> tuple[str, list[Tabela], bool]:
+    """Płatności budżetu w układzie eksportu BS z gotowej listy (stara lista planu albo lista z pakietu 7)."""
     cechy = {r['id']: dict(r) for r in con.execute(
         'SELECT p.id, w.komentarz AS w_komentarz, w.sekcja, w.przedmiot, w.metoda AS w_metoda, a.kategoria FROM bud_platnosc p'
         ' JOIN bud_wiersz w ON w.id = p.wiersz JOIN bud_arkusz a ON a.id = w.arkusz')}
@@ -573,6 +577,43 @@ def _cashflow_13(con, q):
     return _nazwa('cash flow 13 tygodni', d['dzien_stanu']), [t, poz, dni], False
 
 
+# ---------- listy z pakietu 7 (GET /api/lista/<ekran>: filtry dat, wielokrotny wybór, sortowanie, widoki) ----------
+
+def lista_wszystkie(con, ekran: str, q: dict) -> dict:
+    """Lista z pakietu 7 z tymi samymi parametrami co ekran, wszystkie strony po 500 (eksport bierze całość, nie stronę)."""
+    from . import zapytania_listy
+    q = {k: v for k, v in q.items() if k not in POMIJANE and k not in ('wszystkie', 'kol', 'opcje') and v not in ('', None)}
+    wynik_, wiersze = None, []
+    for strona in range(1, MAKS_STRON + 1):
+        wynik_ = zapytania_listy.lista(con, ekran, {**q, 'strona': str(strona), 'ile': '500'})
+        wiersze += wynik_['wiersze']
+        if not wynik_['wiersze'] or len(wiersze) >= wynik_['razem']:
+            break
+    wynik_['wiersze'] = wiersze
+    return wynik_
+
+
+def _suma_stopki(d: dict) -> list[tuple]:
+    """Sumy wszystkich wyników z podsumowania listy (te same co w stopce i pasku zaznaczenia)."""
+    p = (d.get('podsumowanie') or {}).get('razem') or {}
+    return [(n, '', p.get(k)) for n, k in (('Suma netto', 'netto'), ('Suma VAT', 'vat'), ('Suma brutto (jak w stopce listy)', 'brutto'))
+            if p.get(k) is not None]
+
+
+def _lista7(ekran, tytul, spec, nazwa_pliku=None):
+    def eksport(con, q):
+        d = lista_wszystkie(con, ekran, q)
+        pods = [('Lista', tytul, None), ('Filtry', _filtry(q), None), ('Stan na dzień', d.get('dzien_stanu', ''), None),
+                ('Pozycji', str(len(d['wiersze'])), None), *_suma_stopki(d)]
+        return _nazwa(nazwa_pliku or tytul.lower(), d.get('dzien_stanu', '')), [_tab(tytul, spec, d['wiersze']), _podsumowanie(pods)], False
+    return eksport
+
+
+def _platnosci7(con, q):
+    """Płatności połączone z budżetem z listy pakietu 7 (widoki, filtry dat i cech) w układzie eksportu BS."""
+    return _platnosci_bs(con, q, lista_wszystkie(con, 'platnosci', q))
+
+
 # Ścieżka zapytania ekranu → eksport. Funkcja zwraca (nazwa pliku bez rozszerzenia, tabele, czy CSV w formacie BS).
 EKSPORTY = {
     'budzet/lista': platnosci_bs,
@@ -599,6 +640,15 @@ EKSPORTY = {
     'rentownosc/arkusze': _rent_arkusze,
     'cashflow/okresy': _cashflow,
     'budzet/arkusz': _arkusz,
+    # listy z pakietu 7 (te same parametry co GET /api/lista/<ekran>)
+    'lista/platnosci': _platnosci7,
+    'lista/bank': _lista7('bank', 'Bank ING', BANK, nazwa_pliku='bank ING'),
+    'lista/faktury': _lista7('faktury', 'Faktury sprzedażowe', FAKTURY),
+    'lista/naleznosci': _lista7('naleznosci', 'Należności', NALEZNOSCI),
+    'lista/zakupy': _lista7('zakupy', 'Rejestr zakupów', ZAKUPY),
+    'lista/wplaty': _lista7('wplaty', 'Wpłaty do połączenia', WPLATY, nazwa_pliku='wpłaty'),
+    'lista/do-weryfikacji': _lista7('do_weryfikacji', 'Do weryfikacji', WERYFIKACJA),
+    'lista/wydatki': _lista7('wydatki', 'Wydatki z banku', WYDATKI),
     # adresy sprzed pakietu 10 (przyciski w arkuszu, cash flow i rentowności)
     'arkusz': _arkusz,
     'cashflow': _cashflow_13,

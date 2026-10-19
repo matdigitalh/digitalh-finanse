@@ -13,22 +13,23 @@ function zapamietajZapytanie(sciezka, parametry) {
 }
 
 // Ekran → zapytanie, które eksportujemy (pierwsze z listy, o które ekran zapytał przy tym adresie).
+// Listy z pakietu 7 pytają GET /api/lista/<ekran> (widoki, filtry dat i cech, sortowanie); stare ścieżki zostają jako zapas.
 const EKSPORT_EKRANU = {
-  'platnosci/plan': ['budzet/lista'],
-  'platnosci/bank': ['operacje'],
-  'platnosci/faktury': ['faktury'],
-  'platnosci/naleznosci': ['naleznosci'],
-  'platnosci/zakupy': ['zakupy'],
-  'platnosci/do-polaczenia': ['wplaty'],
-  'platnosci/do-weryfikacji': ['do-weryfikacji'],
+  'platnosci/plan': ['lista/platnosci', 'budzet/lista'],
+  'platnosci/bank': ['lista/bank', 'operacje'],
+  'platnosci/faktury': ['lista/faktury', 'faktury'],
+  'platnosci/naleznosci': ['lista/naleznosci', 'naleznosci'],
+  'platnosci/zakupy': ['lista/zakupy', 'zakupy'],
+  'platnosci/do-polaczenia': ['lista/wplaty', 'wplaty'],
+  'platnosci/do-weryfikacji': ['lista/do-weryfikacji', 'do-weryfikacji'],
   'platnosci/wyniki-biura': ['wyniki-biura'],
   budzet: ['klienci'],
   'budzet/klient': ['klient'],
-  'budzet/wydatki': ['wydatki'],
+  'budzet/wydatki': ['lista/wydatki', 'wydatki'],
   'budzet/nieprzypisane': ['nieprzypisane-grupy'],
   'budzet/konta': ['konta-reklamowe'],
   'budzet/rozjazdy': ['budzet/rozjazdy'],
-  'budzet/arkusz': ['budzet/lista', 'cashflow/okresy', 'budzet/arkusz'],
+  'budzet/arkusz': ['lista/platnosci', 'budzet/lista', 'cashflow/okresy', 'budzet/arkusz'],
   cashflow: ['cashflow/okresy'],
   rentownosc: ['wynik'],
   'rentownosc/klienci': ['obroty-klientow'],
@@ -57,7 +58,7 @@ function poWidoku(klucz) {
   if (!z || widok.querySelector('.eksport-pasek')) return;
   const pasek = document.createElement('div');
   pasek.className = 'eksport-pasek';
-  pasek.innerHTML = przyciskiEksportu(z.sciezka, z.parametry, z.sciezka === 'budzet/lista' ? 'Pobierz (układ Budget Studio)' : 'Pobierz');
+  pasek.innerHTML = przyciskiEksportu(z.sciezka, z.parametry, ['budzet/lista', 'lista/platnosci'].includes(z.sciezka) ? 'Pobierz (układ Budget Studio)' : 'Pobierz');
   const naglowek = widok.querySelector('.naglowek-strony');
   if (naglowek) naglowek.appendChild(pasek);
   else widok.prepend(pasek);
@@ -191,8 +192,10 @@ Object.assign(WIDOKI, {
     const drzewo = await api('budzet/drzewo').catch(() => null);
     const arkusze = (drzewo?.foldery || []).flatMap(f => Object.values(f.kategorie).flat().map(a => [a.id, `${f.folder} / ${a.nazwa}`]));
     const rok = (STAN?.bank_do || '').slice(0, 4) || String(new Date().getFullYear());
-    const listy = PODSTRONY.platnosci.filter(x => x.hash?.startsWith('#/platnosci/plan?lista='))
-      .map(x => [new URLSearchParams(x.hash.split('?')[1]).get('lista'), x.nazwa]);
+    // listy planu: widoki listy płatności z pakietu 7, które są samym zakresem listy (wszystkie, po terminie, do zapłacenia...)
+    const widokiPl = await api('widoki', { ekran: 'platnosci' }).catch(() => []);
+    const listy = widokiPl.filter(v => Object.keys(v.parametry || {}).every(k => k === 'lista'))
+      .map(v => [v.parametry?.lista || 'wszystkie', v.nazwa]);
     const rachunki = [['', 'Wszystkie'], ['główny', 'Główny'], ['online', 'Online'], ['VAT', 'VAT']];
     const zakresy = [
       { tytul: 'Płatności budżetu', ik: 'link', sciezka: 'budzet/lista', glowny: true,

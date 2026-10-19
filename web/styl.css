@@ -749,3 +749,74 @@ fieldset.radio label { display: flex; gap: 6px; align-items: center; }
 /* komunikat (zapisane, blokada, cofnij) zawsze w polu widzenia, także po przewinięciu długiego arkusza */
 #komunikaty { position: sticky; top: 8px; z-index: 35; }
 #komunikaty .komunikat { box-shadow: var(--cien-maly); }
+
+/* ---------- Pakiet 7: listy płatności (zaznaczanie, pasek podsumowania, filtr wielokrotny, panel filtrów i dat) ---------- */
+/* numer wiersza zamienia się w pole wyboru po najechaniu, jak w BS; zaznaczone zostają widoczne */
+.z-zaznaczaniem td.lp, .z-zaznaczaniem th.lp { min-width: 24px; user-select: none; }
+.z-zaznaczaniem input.zazn, .z-zaznaczaniem input.zazn-strona { margin: 0; accent-color: var(--fiolet); cursor: pointer; vertical-align: middle; }
+.z-zaznaczaniem td.lp input.zazn { display: none; }
+.z-zaznaczaniem tr:hover td.lp input.zazn, .z-zaznaczaniem tr.zaznaczony td.lp input.zazn, body.jest-zaznaczenie .z-zaznaczaniem td.lp input.zazn { display: inline-block; }
+.z-zaznaczaniem tr:hover td.lp .nr, .z-zaznaczaniem tr.zaznaczony td.lp .nr, body.jest-zaznaczenie .z-zaznaczaniem td.lp .nr { display: none; }
+.z-zaznaczaniem tr.zaznaczony td:not(.lp) { background-color: var(--fiolet-tlo); }
+.z-zaznaczaniem tr.zaznaczony td.kr { background-color: var(--fiolet-tlo); }
+
+/* pasek podsumowania zaznaczenia nad stopką: liczba, netto, VAT, brutto osobno dla wpływów i obciążeń, akcje grupowe */
+.pasek-zazn { position: fixed; left: var(--pasek); right: 0; bottom: 46px; z-index: 6; display: grid; gap: 7px; padding: 9px 40px 10px;
+  background: var(--fiolet-tlo); border-top: 1px solid var(--fiolet-tlo-2); box-shadow: var(--cien-maly); font-size: 12px; color: var(--tekst); }
+.pasek-zazn[hidden] { display: none; }
+.pz-gora, .pz-akcje { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.pz-akcje { gap: 6px 8px; }
+.pz-ile { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--fiolet); }
+.pz-ile .ik { width: 14px; height: 14px; }
+.pz-grupa { display: inline-flex; align-items: baseline; gap: 10px; font-variant-numeric: tabular-nums; }
+.pz-grupa b { font-weight: 600; }
+.pz-grupa span { color: var(--tekst-2); }
+.pz-grupa i { font-style: normal; color: var(--tekst); }
+.pz-grupa.plus b, .pz-grupa.plus i { color: var(--plus); }
+.pz-grupa.minus b, .pz-grupa.minus i { color: var(--minus); }
+.pz-akcje .przycisk { height: 28px; padding: 0 10px; background: var(--tlo); }
+.pz-akcje .przycisk .ik { width: 13px; height: 13px; }
+.pz-akcje .anuluj { all: unset; margin-left: auto; color: var(--fiolet); cursor: pointer; }
+.pz-akcje .anuluj:hover, button.link:hover { text-decoration: underline; }
+.pz-powod { font-size: 11px; max-width: 420px; }
+button.link { all: unset; color: var(--fiolet); cursor: pointer; }
+body.jest-zaznaczenie .tresc { padding-bottom: 170px; }
+body.jest-zaznaczenie .tabela-ramka:not(.niska) { max-height: calc(100vh - 320px); }
+body.filtry-otwarte .pasek-zazn { right: 210px; }
+
+/* filtr podręczny wielokrotnego wyboru (podstawa, etap): przycisk jak lista rozwijana i lista pól pod nim */
+.filtry .wybor { height: 30px; min-width: 126px; max-width: 220px; border: 1px solid var(--linia); border-radius: 4px; padding: 0 26px 0 8px; text-align: left;
+  color: var(--fiolet); font: inherit; font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--tlo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a94ad9' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E") right 7px center / 14px no-repeat; }
+.wybor-lista { position: absolute; z-index: 30; min-width: 220px; max-height: 340px; overflow-y: auto; padding: 8px 12px; display: grid; gap: 6px;
+  background: var(--tlo); border: 1px solid var(--linia); border-radius: 4px; box-shadow: var(--cien); font-size: 12px; }
+.wybor-lista label { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
+.wybor-lista input { accent-color: var(--fiolet); margin: 0; }
+.wybor-lista .akcje { margin: 6px 0 0; }
+.wybor-lista .akcje button { height: 26px; padding: 0 10px; }
+
+/* panel „Wygląd i filtry”: listy wyboru, kolejność kolumn, filtr daty z podglądem */
+.panel-filtrow .pf-akcje { display: flex; gap: 10px; }
+.panel-filtrow .pf-akcje button, .panel-filtrow .pf-kol button { all: unset; color: var(--fiolet); cursor: pointer; font-size: 11px; }
+.panel-filtrow .pf-akcje button:hover { text-decoration: underline; }
+.panel-filtrow .pf-lista { display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+.panel-filtrow .pf-lista label[hidden] { display: none; }
+.panel-filtrow .pf-szukaj { height: 26px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); padding: 0 6px; width: 100%; box-sizing: border-box; color: var(--tekst); }
+.panel-filtrow .pf-kolumny { display: grid; gap: 4px; }
+.panel-filtrow .pf-kol { display: flex; align-items: center; gap: 4px; }
+.panel-filtrow .pf-kol label { flex: 1; min-width: 0; }
+.panel-filtrow .pf-kol button { width: 16px; text-align: center; color: var(--tekst-2); }
+.panel-filtrow .pf-kol button:hover { color: var(--fiolet); }
+.panel-filtrow .pf-data { display: grid; gap: 7px; }
+.panel-filtrow .pf-data [hidden] { display: none; }
+.panel-filtrow .pf-data > div { display: grid; gap: 6px; }
+.panel-filtrow .pf-data label { display: grid; gap: 3px; cursor: default; }
+.panel-filtrow .pf-data input[type="number"], .panel-filtrow .pf-data input[type="month"] { height: 28px; border: 1px solid var(--linia); border-radius: 4px;
+  background: var(--tlo); padding: 0 6px; width: 100%; box-sizing: border-box; color: var(--tekst); }
+.panel-filtrow .pf-podglad { font-size: 11px; line-height: 1.45; }
+.panel-filtrow .zawartosc .szary { font-size: 11px; }
+.zarzadzaj-menu button:disabled { color: var(--tekst-3); cursor: default; background: none; }
+.zarzadzaj-menu.menu-widokow { max-width: 340px; }
+.panel-filtrow summary > span { flex: 1; min-width: 0; }
+.panel-filtrow summary > span b { white-space: normal; }
+.z-zaznaczaniem tbody td.lp { cursor: pointer; }

@@ -117,6 +117,44 @@ class TestEksportPlatnosciJakBS(Baza):
         self.assertEqual(int(suma[2] * 100), zapytania_budzet.lista(self.con)['suma'])
 
 
+class TestEksportListPakietu7(Baza):
+    """Po scaleniu z pakietem 7: listy pytają GET /api/lista/<ekran> (widoki, filtry dat i cech, sortowanie), a eksport tej
+    samej ścieżki z tymi samymi parametrami daje wszystkie pozycje i sumę równą stopce listy."""
+
+    def test_platnosci_z_filtrami_pakietu_7_jak_stopka(self):
+        from finanse import zapytania_listy
+        for filtry in ({}, {'rodzaj': '-1'}, {'podstawa': 'Faktura (jedna)|Podatek VAT', 'sortuj': 'netto', 'kolejnosc': 'rosnaco'},
+                       {'d_realny': 'zakres:2026-08-01:2026-12-31', 'typ': 'plan'}, {'lista': 'po_terminie'}, {'etap': 'Opłacona|Planowana'}):
+            lista = zapytania_listy.lista(self.con, 'platnosci', {**filtry, 'ile': '2'})
+            _, tresc, _ = eksport.plik(self.con, 'lista/platnosci', {**filtry, 'format': 'xlsx', 'strona': '2', 'ile': '2', 'kol': 'netto'})
+            naglowek, wiersze, _ = _xlsx_tabela(tresc, 'Płatności')
+            self.assertEqual(naglowek, KOLUMNY)   # układ eksportu BS
+            i = naglowek.index('Brutto (wartość)')
+            self.assertEqual(len(wiersze), lista['razem'], filtry)
+            self.assertEqual(int(sum(Decimal(str(w[i])) for w in wiersze) * 100), lista['podsumowanie']['razem']['brutto'], filtry)
+            _, wiersze_p, _ = _xlsx_tabela(tresc, 'Podsumowanie')
+            suma = next(w for w in wiersze_p if w[0].startswith('Suma brutto'))
+            self.assertEqual(round(Decimal(str(suma[2])) * 100), lista['podsumowanie']['razem']['brutto'], filtry)
+
+    def test_pozostale_listy_pakietu_7(self):
+        from finanse import zapytania_listy
+        for sciezka, ekran, filtry in (('lista/bank', 'bank', {'kierunek': 'wplywy', 'sortuj': 'kwota', 'kolejnosc': 'rosnaco'}),
+                                       ('lista/bank', 'bank', {'d_ksiegowania': 'zakres:2026-09-01:2026-09-30'}),
+                                       ('lista/faktury', 'faktury', {}), ('lista/naleznosci', 'naleznosci', {}),
+                                       ('lista/zakupy', 'zakupy', {}), ('lista/wplaty', 'wplaty', {}),
+                                       ('lista/do-weryfikacji', 'do_weryfikacji', {}), ('lista/wydatki', 'wydatki', {})):
+            lista = zapytania_listy.lista(self.con, ekran, {**filtry, 'ile': '1'})
+            _, tresc, _ = eksport.plik(self.con, sciezka, {**filtry, 'format': 'csv'})
+            wiersze = list(csv.reader(io.StringIO(tresc.decode('utf-8-sig')), delimiter=';'))
+            self.assertEqual(len(wiersze) - 1, lista['razem'], sciezka)
+            _, tresc_x, _ = eksport.plik(self.con, sciezka, {**filtry, 'format': 'xlsx'})
+            _, pods, _ = _xlsx_tabela(tresc_x, 'Podsumowanie')
+            brutto = (lista.get('podsumowanie') or {}).get('razem', {}).get('brutto')
+            if brutto is not None:
+                suma = next(w for w in pods if w[0].startswith('Suma brutto'))
+                self.assertEqual(round(Decimal(str(suma[2])) * 100), brutto, sciezka)
+
+
 class TestWolanieZapytan(unittest.TestCase):
     def test_wszystkie_strony_i_tylko_znane_parametry(self):
         dane_ = list(range(1234))

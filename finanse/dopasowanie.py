@@ -109,7 +109,7 @@ def wczytaj_reczne(wpisy: list[dict]) -> dict:
     """Składa wpisy Mata w stan. 'cofnij' unieważnia wskazany wpis. Późniejszy wpis o tej samej wpłacie wygrywa."""
     cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
     r = {'polacz': {}, 'bez_faktury': {}, 'zatwierdz': set(), 'odrzuc': set(), 'poza_bankiem': {}, 'wpis_op': {}, 'wpis_fv': {},
-         'korekty': {}}
+         'korekty': {}, 'data_poza': {}}
     for w in wpisy:
         if w.get('id') in cofniete:
             continue
@@ -133,6 +133,10 @@ def wczytaj_reczne(wpisy: list[dict]) -> dict:
         elif typ == 'poza_bankiem':
             r['poza_bankiem'][d['faktura']] = d.get('powod', '')
             r['wpis_fv'][d['faktura']] = w.get('id')
+            if d.get('data'):   # data przelewu poza bankiem (pakiet 7): dzień zapłaty faktury i planu z nią połączonego
+                r['data_poza'][d['faktura']] = d['data']
+            else:
+                r['data_poza'].pop(d['faktura'], None)
     return r
 
 
@@ -376,6 +380,8 @@ def policz(con, wpisy: list[dict]) -> dict:
         uwaga = reczne['poza_bankiem'].get(n, '')
         if n in reczne['poza_bankiem'] and s.pozostalo[n] > 0:
             stan, pozostalo = 'opłacona poza bankiem', 0
+            if reczne['data_poza'].get(n):
+                ostatnia[n] = reczne['data_poza'][n]
         elif 0 < s.pozostalo[n] <= TOLERANCJA_GROSZOWA and zaplacono > 0:
             stan, pozostalo, uwaga = 'opłacona', 0, f'niedopłata {zl(s.pozostalo[n])} pominięta (do 1 zł)'
         elif f['naleznosc'] <= 0 or s.pozostalo[n] <= 0:
