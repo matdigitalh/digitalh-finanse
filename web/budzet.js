@@ -39,14 +39,14 @@ const banerOsieroconych = n => n ? `<div class="komunikat blad"><span>${n} ${n =
 Object.assign(POMOC, {
   budzet: { tytul: 'Budżet: arkusze', krotko: 'Foldery klientów, kategorie i arkusze jak w Budget Studio, z planem i wykonaniem.',
     co: 'Każdy arkusz ma wiersze (powtarzalne pozycje) i kolumny miesięcy. Komórka to płatność: plan albo rzeczywista.',
-    skad: 'Do końca 2026: eksport Budget Studio (plik importu w Finanse/Aplikacja, odtwarzany przy każdym eksporcie). Od 2027: plany wpisane w apce (plik zmian).',
+    skad: 'Eksport Budget Studio (plik importu w Finanse/Aplikacja, odtwarzany przy każdym eksporcie), a po włączeniu planowania w Ustawieniach budżetu także plany wpisane w apce (plik zmian).',
     jak: 'Kolor komórki: zielony opłacone (z banku), szary plan, czerwony plan po terminie, żółty „opłacone według BS”, ale bez śladu w banku lub Fakturowni.',
-    zrob: 'Kliknij komórkę, żeby zobaczyć płatność, jej fakturę i przelew. Czerwone komórki czekają na decyzję: przesuń, zapłacone, anuluj.' },
+    zrob: 'Klik zaznacza komórkę, Enter albo wpisanie liczby edytuje kwotę, Cmd+Enter otwiera kartę płatności z fakturą i przelewem. Czerwona kropka: plan nieaktualny, do naprawy (przesuń, przenieś kwotę, usuń).' },
   rozjazdy: { tytul: 'Rozjazdy z Budget Studio', krotko: 'Gdzie Budget Studio mówi co innego niż bank i Fakturownia.',
     co: 'Pozycje opłacone w BS bez śladu w danych, zapłacone w banku a w BS nadal planowane, różne kwoty, faktury i wydatki bez pozycji w BS.',
     skad: 'Import z eksportu BS kontra wpłaty, wydatki i faktury w apce.',
     jak: 'Koszty pracy, VAT i podatek dochodowy porównujemy sumą w miesiącu płatności, bo BS trzyma koszt pracodawcy w jednej kwocie.',
-    zrob: 'Przejrzyj największe kwoty. Do końca 2026 poprawki robisz w BS; od 2027 plany są w apce.' },
+    zrob: 'Przejrzyj największe kwoty. Dopóki Budget Studio jest źródłem planów, poprawki robisz w BS.' },
   cashflow: { tytul: 'Cash flow', krotko: 'Saldo gotówki w okresach (dzień, tydzień, miesiąc): co wpłynie, co wypłynie i ile zostanie.',
     co: 'Tabela okresów: saldo narastająco, saldo okresu, wpływy, obciążenia; zielona ramka to najwyższe saldo, czerwona najniższe. Pod nią miniatura całego zakresu z ramką do wyboru wycinka, wykres i lista płatności wycinka.',
     skad: 'Przed dniem stanu: przepływy z banku ING (rachunek główny i online). Po nim prognoza: należności z Fakturowni w terminie przesuniętym o średnie spóźnienie nabywcy, plany przychodów i kosztów z budżetu, a gdy w miesiącu brak planu kosztów, szacunek kosztów pracy i stałych ze średniej 6 miesięcy.',
@@ -66,7 +66,7 @@ Object.assign(WIDOKI, {
           <b class="${a.saldo < 0 ? 'minus' : ''}">${zl(a.saldo, false)}</b></a>`).join('')}</div>`).join('')}</section>`).join('');
     setTimeout(() => { const b = $('#dodaj-arkusz'); if (b) b.onclick = () => kartaArkusza(null, d); });
     return `<div class="naglowek-strony"><div><h1>Arkusze budżetu ${pytajnik('budzet')}</h1>
-        <div class="okruszki">Budżet / ${d.planowanie ? 'planowanie w apce włączone' : 'tryb podglądu: plany z Budget Studio, tylko do odczytu'}</div></div>
+        <div class="okruszki">Budżet / ${d.planowanie ? 'planowanie w apce włączone' : 'planowanie wyłączone (Ustawienia budżetu): plany z Budget Studio, tylko do odczytu'}</div></div>
         ${d.planowanie ? '<button class="przycisk" id="dodaj-arkusz">Dodaj arkusz</button>' : ''}</div>
       ${banerOsieroconych(d.osierocone)}
       ${imp ? `<p class="notka">Import z ${esc(imp.plik)} (${imp.wierszy} płatności, ostatnia zmiana w BS ${esc(imp.najnowsza_modyfikacja)}). Saldo arkusza jak w Budget Studio: netto wpływów minus obciążeń, razem z pozycjami nieaktualnymi.</p>` : '<p class="notka">Brak eksportu Budget Studio w folderze Dane.</p>'}
@@ -80,12 +80,19 @@ Object.assign(WIDOKI, {
     const zakl = ['arkusz', 'platnosci', 'cashflow'].includes(p.zakladka) ? p.zakladka : 'arkusz';
     const nazwyZakl = { arkusz: 'Arkusz', platnosci: 'Płatności', cashflow: 'Cash flow' };
     setTimeout(() => {
-      document.querySelectorAll('[data-zakl]').forEach(b => b.onclick = () => {
-        if (b.dataset.zakl === 'zarzadzaj') return menuZarzadzaj(b, d);
+      document.querySelectorAll('[data-zakl]').forEach(b => b.onclick = e => {
+        if (b.dataset.zakl === 'zarzadzaj') { e.stopPropagation(); return menuZarzadzaj(b, d); }
         location.hash = `#/budzet/arkusz?id=${encodeURIComponent(a.id)}${b.dataset.zakl === 'arkusz' ? '' : '&zakladka=' + b.dataset.zakl}`;
       });
+      // A-ARK-01: klik w nazwę = zmiana nazwy, ikona folderu = zmiana folderu i kategorii
+      const n = $('#ark-nazwa'), f = $('#ark-miejsce');
+      if (n) n.onclick = e => { e.stopPropagation(); kartaNazwy(d); };
+      if (f) f.onclick = e => { e.stopPropagation(); kartaMiejsca(d); };
     });
-    const naglowek = `<h1>${ik('pinezka', 'ik-tytul')}${esc(a.nazwa)}<span title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}">${ik('folderOko', 'ik-tytul szary')}</span></h1>
+    const tytul = d.planowanie ? `<button class="tytul-ark" id="ark-nazwa" data-karta title="Zmień nazwę">${esc(a.nazwa)}</button>` : esc(a.nazwa);
+    const miejsce = d.planowanie ? `<button class="ikona-ark" id="ark-miejsce" data-karta title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}. Kliknij, żeby zmienić.">${ik('folderOko', 'ik-tytul szary')}</button>`
+      : `<span title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}">${ik('folderOko', 'ik-tytul szary')}</span>`;
+    const naglowek = `<h1>${ik('pinezka', 'ik-tytul')}${tytul}${miejsce}</h1>
       <div class="pigulki"><span class="pigulka">${ik('warstwy')}${nazwyZakl[zakl]} / Widok główny</span>
         <span class="szary">${esc(a.folder)} / ${esc(a.kategoria)} · ${mies(a.od)} - ${mies(a.do)} · źródło: ${esc(a.zrodlo)}</span></div>
       <div class="zakladki" role="tablist">
@@ -96,7 +103,7 @@ Object.assign(WIDOKI, {
       ${banerOsieroconych(0)}`;
     if (zakl === 'cashflow') return naglowek + await widokCashflow(p, { arkusz: a.id, ark: a });
     if (zakl === 'platnosci') return naglowek + await listaPlanu({ ...p, lista: p.lista || 'wszystkie' }, { arkusz: a.id });
-    return naglowek + arkuszTabela(d, p);
+    return `${naglowek}<div id="ark-widok">${arkuszTabela(d, p)}</div>`;
   },
 
   // ---------- Listy płatności planu (jak w BS) ----------
@@ -137,7 +144,7 @@ Object.assign(WIDOKI, {
     return `<h1>Historia zmian planów</h1><div class="okruszki">Budżet / kto, kiedy, było i jest</div>
       ${banerOsieroconych(sieroty.length)}${sierotyHtml}
       ${lista.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Kiedy</th><th>Komputer</th><th>Zmiana</th><th>Czego dotyczy</th><th>Było → jest</th><th></th></tr></thead><tbody>${wiersze}</tbody></table></div>`
-        : '<div class="pusto">Brak zmian. Do końca 2026 plany są w Budget Studio.</div>'}`;
+        : '<div class="pusto">Brak zmian planów wpisanych w apce.</div>'}`;
   },
 
   async 'budzet/ustawienia'() {
@@ -147,8 +154,8 @@ Object.assign(WIDOKI, {
     });
     return `<h1>Ustawienia budżetu</h1><div class="okruszki">Budżet / Ustawienia</div>
       <div class="karta-wyk"><h3>Planowanie w apce</h3>
-        <p class="notka">Teraz: <b>${d.planowanie ? 'włączone' : 'wyłączone (tryb podglądu)'}</b>. Do 31.12.2026 źródłem planów jest Budget Studio, a apka tylko je czyta i porównuje z bankiem.
-        Po włączeniu możesz dodawać i zmieniać arkusze, wiersze i płatności; każda zmiana trafia do historii i da się ją cofnąć. Wyłączenie nie kasuje zmian.</p>
+        <p class="notka">Teraz: <b>${d.planowanie ? 'włączone' : 'wyłączone'}</b>. Dopóki planowanie jest wyłączone, edycja budżetu w apce jest zablokowana: plany pochodzą z Budget Studio, a apka tylko je czyta i porównuje z bankiem.
+        Po włączeniu dodajesz i zmieniasz arkusze, wiersze i płatności jak w Budget Studio; każda zmiana trafia do historii i da się ją cofnąć (Cmd+Z na arkuszu). Wyłączenie nie kasuje zmian.</p>
         <div class="akcje"><button class="${d.planowanie ? '' : 'glowny'}" id="przelacz-planowanie">${d.planowanie ? 'Wyłącz planowanie w apce' : 'Włącz planowanie w apce'}</button></div></div>
       <div class="karta-wyk"><h3>Udział czasu zespołu na klientów</h3>
         <p class="notka">Do rentowności klientów: jaki procent czasu zespołu idzie na klienta. Ustawisz go na ekranie Rentowność, Rentowność klientów.</p>
@@ -202,9 +209,20 @@ Object.assign(WIDOKI, {
   },
 });
 
+const NAZWY_OP = { komorka: 'kwota w komórce', wiersz: 'wiersz', platnosc: 'płatność', arkusz: 'arkusz', przenies: 'przeniesienie wierszy',
+  decyzja_planu: 'decyzja o planie', scal: 'scalenie wierszy', podziel: 'podział wiersza', duplikuj: 'duplikat wierszy',
+  przesun_arkusz: 'przesunięcie startu arkusza', duplikuj_arkusz: 'duplikat arkusza' };
+const nazwaOp = op => String(op || '').split(': ').map(x => NAZWY_OP[x] || x).join(': ');
+
 function opisZmiany(h) {
   try {
     const b = JSON.parse(h.bylo || 'null'), j = JSON.parse(h.jest || 'null');
+    const op = String(h.op || '').replace(/^seria: /, '');
+    if (op === 'scal') return `scalono ${b?.wiersze?.length || ''} wierszy w jeden`;
+    if (op === 'podziel') return 'wiersz rozdzielony na osobne wiersze, po jednej płatności';
+    if (op === 'duplikuj') return 'kopia wiersza z kwotami';
+    if (op === 'duplikuj_arkusz') return `kopia arkusza${j?.nazwa ? ` „${j.nazwa}”` : ''}`;
+    if (op === 'przesun_arkusz') return `${b?.od ? `${mies(b.od)} - ${mies(b.do)}` : ''} → ${j?.od ? `${mies(j.od)} - ${mies(j.do)}` : ''}`;
     if (!b) return 'dodano';
     if (!j) return 'usunięto';
     return Object.keys(j).filter(k => JSON.stringify(b[k]) !== JSON.stringify(j[k]) && k !== 'zrodlo')
@@ -224,23 +242,16 @@ function komorkaHtml(w, m, kwota) {
 function podepnijKomorke(k, w, m) {
   const b = k.querySelector('[data-zapisz-komorke]');
   if (!b) return;
-  b.onclick = () => {
-    const kwota = naGrosze(k.querySelector('[data-kwota]').value);
-    if (!(kwota >= 0)) return komunikat('Wpisz kwotę liczbą, np. 1 234,56.', true);
-    zmiana('bud', { op: 'komorka', wiersz: w.id, miesiac: m, kwota });
+  const zapisz = () => {
+    const pole_ = k.querySelector('[data-kwota]').value.trim();
+    const kwota = pole_ === '' ? null : kwotaZTekstu(pole_);
+    if (Number.isNaN(kwota)) return komunikat('Wpisz kwotę liczbą, np. 1 234,56.', true);
+    zapiszBud({ op: 'komorka', wiersz: w.id, miesiac: m, kwota });
   };
+  b.onclick = zapisz;
+  k.querySelector('[data-kwota]').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); zapisz(); } };
   const c = k.querySelector('[data-wyczysc-komorke]');
-  if (c) c.onclick = () => zmiana('bud', { op: 'komorka', wiersz: w.id, miesiac: m, kwota: null });
-}
-
-function kartaKomorki(w, m) {
-  const k = $('#karta');
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${esc(miesPelny(m))}</h2>
-    <div class="szary">${esc(w.kontrahent || w.komentarz || 'Wiersz')} · ${esc(w.podstawa)}</div>${komorkaHtml(w, m, null)}`;
-  k.hidden = false;
-  $('.zamknij', k).onclick = () => { k.hidden = true; };
-  podepnijKomorke(k, w, m);
-  $('[data-kwota]', k).focus();
+  if (c) c.onclick = () => zapiszBud({ op: 'komorka', wiersz: w.id, miesiac: m, kwota: null });
 }
 
 // Pola planu, które wolno zmienić na pojedynczej płatności (reszta przychodzi z wiersza; serwer sprawdza to samo).
@@ -254,6 +265,10 @@ function polaPlanu(p) {
   return pola;
 }
 
+// Pole formularza → cecha płatności do pomarańczowego podświetlenia (odstępstwo od ustawień wiersza).
+const POLE_ODST = { kontrahent: 'kontrahent', komentarz: 'komentarz', wystawienie: 'wystawienie', termin: 'termin', realny: 'realny', metoda: 'metoda',
+  ksiegowane: 'ksiegowane', w_cashflow: 'w_cashflow', stawka: 'stawka' };
+
 function formularzPlatnosci(p) {
   const pola = polaPlanu(p);
   if (!pola.length) return '<p class="szary">PIT i ZUS umowy idą za składową dla osoby: zmień ją albo ustawienia wiersza.</p>';
@@ -262,8 +277,8 @@ function formularzPlatnosci(p) {
     netto: () => pole('', p.generowany ? 'Kwota (zmienia kwotę komórki)' : 'Netto (zł)', `<input data-f="netto" inputmode="decimal" value="${zlWpis(p.netto)}">`),
     stawka: () => pole('', 'Stawka VAT', `<select data-f="stawka">${STAWKI.map(x => `<option value="${x}"${p.stawka === x ? ' selected' : ''}>${x} %</option>`).join('')}</select>`),
     kontrahent: () => pole('', 'Kontrahent', `<input data-f="kontrahent" value="${esc(p.w_kontrahent || '')}">`),
-    komentarz: () => pole('', 'Komentarz', `<input data-f="komentarz" maxlength="170" value="${esc(p.komentarz || '')}">`),
-    wystawienie: () => pole('', 'Dzień wystawienia', `<input type="date" data-f="wystawienie" value="${esc(p.wystawienie || '')}">`),
+    komentarz: () => pole('', 'Komentarz (do 170 znaków)', `<input data-f="komentarz" maxlength="170" value="${esc(p.komentarz || '')}">`),
+    wystawienie: () => pole('', 'Dzień wystawienia (przesuwa dzień płatności o tyle samo)', `<input type="date" data-f="wystawienie" value="${esc(p.wystawienie || '')}">`),
     dni: () => pole('', 'Dni na płatność', `<input data-f="dni" inputmode="numeric" value="${dni}">`),
     termin: () => pole('', 'Dzień płatności', `<input type="date" data-f="termin" value="${esc((p.typ === 'plan' ? p.termin : p.termin_efektywny) || '')}">`),
     realny: () => pole('', 'Dzień realnej płatności', `<input type="date" data-f="realny" value="${esc(p.realny || '')}">`),
@@ -271,9 +286,14 @@ function formularzPlatnosci(p) {
     ksiegowane: () => pole('', 'Księgowane (VAT, CIT, rentowność)', `<select data-f="ksiegowane"><option value="1">tak</option><option value=""${p.ksiegowane ? '' : ' selected'}>nie</option></select>`),
     w_cashflow: () => pole('', 'W cash flow', `<select data-f="w_cashflow"><option value="1">tak</option><option value=""${p.w_cashflow ? '' : ' selected'}>nie</option></select>`),
   };
-  return `<div class="formularz" data-edyt="${esc(p.id)}">${pola.map(x => f[x]()).join('')}</div>
-    <div class="akcje"><button data-zapisz="${esc(p.id)}">Zapisz tę płatność</button></div>
-    ${p.typ === 'plan' ? '<p class="szary">Zmiana tej samej cechy w wierszu nadpisze ręczną zmianę we wszystkich planach wiersza.</p>' : ''}`;
+  const odst = new Set(p.odstepstwa || []);
+  const html = pola.map(x => { const h = f[x](); return odst.has(POLE_ODST[x]) ? h.replace('<label class="pole">', '<label class="pole inna" title="Inne niż w ustawieniach wiersza">') : h; }).join('');
+  // rzeczywista: pola dokumentu edytowalne dopiero po „Edytuj dane” (B-LIS-13)
+  const rz = p.typ !== 'plan';
+  return `${rz ? `<div class="akcje"><button data-edytuj-dane="${esc(p.id)}">Edytuj dane</button><span class="szary">Dane dokumentu zmieniaj tylko, gdy import się pomylił.</span></div>` : ''}
+    <div${rz ? ' hidden' : ''} data-edycja-box="${esc(p.id)}"><div class="formularz" data-edyt="${esc(p.id)}">${html}</div>
+    <div class="akcje"><button data-zapisz="${esc(p.id)}">Zapisz tę płatność</button>${p.typ === 'plan' && !(WOREK.includes(p.podstawa) && p.generowany) && !p.skladowa ? `<button data-usun-plan="${esc(p.id)}">Usuń plan</button>` : ''}</div>
+    ${p.typ === 'plan' ? '<p class="szary">Zmiana tej samej cechy w wierszu nadpisze ręczną zmianę we wszystkich planach wiersza.</p>' : ''}</div>`;
 }
 
 function zbierzPlatnosc(box) {
@@ -282,43 +302,50 @@ function zbierzPlatnosc(box) {
   return o;
 }
 
-async function kartaPlatnosci(ids, ark, kom) {
-  const k = $('#karta');
-  const dane = await Promise.all(ids.slice(0, 8).map(id => api('budzet/platnosc', { id })));
-  const planowanie = dane[0]?.planowanie;
-  const naglowekKomorki = kom && kom.w && planowanie && !dane.some(x => x.platnosc.typ !== 'plan' && !WOREK.includes(kom.w.podstawa))
-    ? `<h2>${esc(miesPelny(kom.m))}</h2><div class="szary">${esc(kom.w.kontrahent || kom.w.komentarz || '')} · ${esc(kom.w.podstawa)}</div>
-       ${komorkaHtml(kom.w, kom.m, dane[0]?.kwota_komorki ?? kom.w.komorki?.[kom.m]?.kwota ?? null)}<hr>` : '';
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button>${naglowekKomorki}` + dane.map(({ platnosc: p, powiazania, historia }) => `
-    <h2>${esc(p.w_kontrahent || p.tytul || 'Płatność')}</h2>
-    <div class="szary">${esc(p.folder)} / ${esc(p.arkusz)} · ${mies(p.miesiac)} · ${p.typ === 'plan' ? 'plan' : 'rzeczywista'}</div>
+// Treść karty jednej płatności: dane, etap, powiązania, decyzja po terminie, edycja (plany) i historia. Cechy różne od
+// ustawień wiersza (ręczne wyjątki, dane dokumentu) pomarańczowe (A-ARK-11).
+function htmlPlatnosci({ platnosc: p, powiazania, historia }, { plan, wKomorce = false }) {
+  const odst = new Set(p.odstepstwa || []);
+  const dd = (pole_, html) => `<dd${odst.has(pole_) ? ' class="inna" title="Inne niż w ustawieniach wiersza"' : ''}>${html}</dd>`;
+  return `<section class="karta-platnosc" data-platnosc="${esc(p.id)}"><h2>${esc(p.w_kontrahent || p.tytul || 'Płatność')}</h2>
+    <div class="szary">${wKomorce ? '' : `${esc(p.folder)} / ${esc(p.arkusz)} · ${mies(p.miesiac)} · `}${p.typ === 'plan' ? 'plan' : 'rzeczywista'}${p.skladowa ? ` · ${esc(p.podstawa_platnosci)}` : ''}</div>
     <dl><dt>Podstawa</dt><dd>${esc(p.podstawa_platnosci)}</dd><dt>Etap</dt><dd>${chipEtap(p.etap)}${p.uwaga_stanu ? `\n${esc(p.uwaga_stanu)}` : ''}</dd>
-      <dt>Wg reguł BS</dt><dd>${esc(p.etap_wg_bs || '')}, ${esc((p.aktualnosc || '').toLowerCase())}</dd>
-      <dt>Netto</dt><dd>${zl(p.netto * p.rodzaj)}</dd><dt>VAT</dt><dd>${zl(p.vat * p.rodzaj)}${p.stawka != null ? ` (${p.stawka} %)` : ''}</dd><dt>Brutto</dt><dd>${zl(p.brutto * p.rodzaj)}</dd>
-      ${p.wystawienie ? `<dt>Wystawienie</dt><dd>${dataPl(p.wystawienie)}</dd>` : ''}<dt>Termin</dt><dd>${dataPl(p.termin_efektywny)}</dd>
-      ${p.realny ? `<dt>Realna płatność</dt><dd>${dataPl(p.realny)}</dd>` : ''}${p.ksiegowanie ? `<dt>Księgowanie</dt><dd>${mies(p.ksiegowanie.slice(0, 7))}</dd>` : ''}
+      <dt>Wg reguł BS</dt><dd>${esc(p.etap_wg_bs || '')}, ${p.aktualnosc === 'Nieaktualna' ? '<span class="kropka czerwona"></span> nieaktualna' : esc((p.aktualnosc || '').toLowerCase())}</dd>
+      <dt>Netto</dt><dd>${zl(p.netto * p.rodzaj)}</dd><dt>VAT</dt>${dd('stawka', `${zl(p.vat * p.rodzaj)}${p.stawka != null ? ` (${p.stawka} %)` : ''}`)}<dt>Brutto</dt><dd>${zl(p.brutto * p.rodzaj)}</dd>
+      ${p.wystawienie ? `<dt>Wystawienie</dt>${dd('wystawienie', dataPl(p.wystawienie))}` : ''}<dt>Termin</dt>${dd('termin', dataPl(p.termin_efektywny))}
+      ${p.realny ? `<dt>Realna płatność</dt>${dd('realny', dataPl(p.realny))}` : ''}${p.ksiegowanie ? `<dt>Księgowanie</dt>${dd('ksiegowanie', mies(p.ksiegowanie.slice(0, 7)))}` : ''}
       ${p.data_zaplaty ? `<dt>Zapłacono</dt><dd>${dataPl(p.data_zaplaty)}</dd>` : ''}
-      <dt>Metoda</dt><dd>${esc(p.metoda || '–')}</dd><dt>Księgowane, W cash flow</dt><dd>${p.ksiegowane ? 'tak' : 'nie'}, ${p.w_cashflow ? 'tak' : 'nie'}</dd>
-      ${p.komentarz ? `<dt>Komentarz</dt><dd>${esc(p.komentarz)}</dd>` : ''}
+      <dt>Kontrahent</dt>${dd('kontrahent', esc(p.w_kontrahent || '-'))}<dt>Metoda</dt>${dd('metoda', esc(p.metoda || '-'))}
+      <dt>Księgowane</dt>${dd('ksiegowane', p.ksiegowane ? 'tak' : 'nie')}<dt>W cash flow</dt>${dd('w_cashflow', p.w_cashflow ? 'tak' : 'nie')}
+      ${p.komentarz || odst.has('komentarz') ? `<dt>Komentarz</dt>${dd('komentarz', esc(p.komentarz || '(pusty)'))}` : ''}
       ${p.nr_dok ? `<dt>Nr dokumentu</dt><dd>${esc(p.nr_dok)}</dd>` : ''}${p.nr_wewn ? `<dt>Nr wewnętrzny</dt><dd>${esc(p.nr_wewn)}</dd>` : ''}
-      ${p.tytul ? `<dt>Tytuł</dt><dd>${esc(p.tytul)}</dd>` : ''}${p.bs_id ? `<dt>Etap w BS</dt><dd>${esc(p.etap_bs || '–')}</dd>` : ''}
-      ${p.decyzja ? `<dt>Decyzja</dt><dd>${esc(p.decyzja)}</dd>` : ''}
-      ${Object.keys(p.nadpisane || {}).length ? `<dt>Zmienione ręcznie</dt><dd>${esc(Object.keys(p.nadpisane).join(', '))}</dd>` : ''}</dl>
+      ${p.tytul ? `<dt>Tytuł</dt><dd>${esc(p.tytul)}</dd>` : ''}${p.bs_id ? `<dt>Etap w BS</dt><dd>${esc(p.etap_bs || '-')}</dd>` : ''}
+      ${p.decyzja ? `<dt>Decyzja</dt><dd>${esc(p.decyzja)}</dd>` : ''}</dl>
+    ${odst.size ? `<p class="szary"><span class="inna">Pomarańczowe</span>: inne niż w ustawieniach wiersza (${esc([...odst].map(x => ODSTEPSTWA_OPIS[x] || x).join(', '))}). Zmiana tej cechy w wierszu ${p.typ === 'plan' ? 'je nadpisze' : 'nie zmieni rzeczywistej'}.</p>` : ''}
     <h3>Powiązania</h3>${powiazania.length ? `<ul class="lista">${powiazania.map(x => `<li><b>${esc(x.typ)}</b> ${esc((x.opis || '').replace(/(-?\d+) gr/g, (_, v) => zl(+v)))} <span class="szary">${esc(x.metoda)}, ${esc(x.pewnosc)}</span></li>`).join('')}</ul>` : '<p class="szary">Brak: ani faktury, ani przelewu.</p>'}
-    ${planowanie && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
+    ${plan && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
       <button data-d="przesun">Przesuń</button><button data-d="zaplacone">Zapłacone</button><button data-d="anuluj">Anuluj</button></div>` : ''}
-    ${planowanie ? `<h3>Zmień</h3>${formularzPlatnosci(p)}` : ''}
-    ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(h.op)} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
-    <div class="zrodlo">Źródło: ${esc(p.zrodlo || '')}${p.bs_id ? `, ID w BS ${esc(p.bs_id)}, wiersz ${p.wiersz_pliku}` : ''}</div>`).join('<hr>');
-  k.hidden = false;
-  $('.zamknij', k).onclick = () => { k.hidden = true; };
-  if (naglowekKomorki) podepnijKomorke(k, kom.w, kom.m);
+    ${plan ? `<h3>${p.typ === 'plan' ? 'Zmień ten plan' : 'Dane dokumentu'}</h3>${formularzPlatnosci(p)}` : ''}
+    ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(nazwaOp(h.op))} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
+    <div class="zrodlo">Źródło: ${esc(p.zrodlo || '')}${p.bs_id ? `, ID w BS ${esc(p.bs_id)}, wiersz ${p.wiersz_pliku}` : ''}</div></section>`;
+}
+const ODSTEPSTWA_OPIS = { kontrahent: 'kontrahent', komentarz: 'komentarz', metoda: 'metoda', ksiegowane: 'Księgowane', w_cashflow: 'W cash flow',
+  stawka: 'stawka VAT', wystawienie: 'dzień wystawienia', termin: 'dzień płatności', realny: 'dzień realnej płatności', ksiegowanie: 'miesiąc księgowania' };
+
+// Zdarzenia w karcie płatności (pojedynczej albo komórki): decyzje, edycja zmienionych pól, usunięcie planu.
+function podepnijPlatnosci(k, dane) {
+  const zostaw = { zostawKarte: true };
   k.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
     const box = b.closest('[data-pid]');
     const termin = $('[data-termin]', box).value;
     if (b.dataset.d === 'przesun' && !termin) return komunikat('Wybierz nowy termin.', true);
-    zmiana('bud', { op: 'decyzja_planu', platnosc: box.dataset.pid, decyzja: b.dataset.d, termin, data: termin });
+    zapiszBud({ op: 'decyzja_planu', platnosc: box.dataset.pid, decyzja: b.dataset.d, termin, data: termin }, zostaw);
   });
+  k.querySelectorAll('[data-edytuj-dane]').forEach(b => b.onclick = () => {
+    k.querySelector(`[data-edycja-box="${CSS.escape(b.dataset.edytujDane)}"]`).hidden = false;
+    b.closest('.akcje').hidden = true;
+  });
+  k.querySelectorAll('[data-usun-plan]').forEach(b => b.onclick = () => zapiszBud({ op: 'platnosc', obiekt: { id: b.dataset.usunPlan }, usun: true }, zostaw));
   k.querySelectorAll('[data-edyt]').forEach(box => {
     // dni na płatność ↔ dzień płatności: zmiana jednego przelicza drugie; zmiana dnia płatności ustawia dzień realny
     const el = n => box.querySelector(`[data-f="${n}"]`);
@@ -336,19 +363,32 @@ async function kartaPlatnosci(ids, ark, kom) {
     const obiekt = { id: b.dataset.zapisz };
     for (const [k2, v] of Object.entries(po)) {
       if (v === przed[k2] || k2 === 'dni') continue;
-      if (k2 === 'netto') { const g = naGrosze(v); if (!(g >= 0)) return komunikat('Podaj kwotę liczbą, np. 1 234,56.', true); obiekt.netto = g; }
+      if (k2 === 'netto') { const g = kwotaZTekstu(v); if (Number.isNaN(g)) return komunikat('Podaj kwotę liczbą, np. 1 234,56.', true); obiekt.netto = g; }
       else if (k2 === 'stawka') obiekt.stawka = +v;
       else if (k2 === 'ksiegowane' || k2 === 'w_cashflow') obiekt[k2] = !!v;
       else obiekt[k2] = v;
     }
     if (Object.keys(obiekt).length === 1) return komunikat('Nic się nie zmieniło.', true);
-    zmiana('bud', { op: 'platnosc', obiekt });
+    zapiszBud({ op: 'platnosc', obiekt }, zostaw);
   });
+}
+
+// Karta płatności z list, cash flow i rozjazdów (wszystkie wskazane płatności, bez limitu); z komórki arkusza karta komórki.
+async function kartaPlatnosci(ids, ark, kom) {
+  if (kom && kom.w && typeof kartaKomorkiArk === 'function' && arkWidoczny()) return kartaKomorkiArk(kom.w.id, kom.m);
+  const k = $('#karta');
+  let dane;
+  try { dane = await Promise.all(ids.map(id => api('budzet/platnosc', { id }))); } catch (e) { return komunikat(e.message, true); }
+  const plan = dane[0]?.planowanie;
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button>${dane.map(x => htmlPlatnosci(x, { plan })).join('<hr>')}`;
+  k.hidden = false;
+  $('.zamknij', k).onclick = () => { k.hidden = true; };
+  podepnijPlatnosci(k, dane);
 }
 
 // Wiersz = generator planów (pakiet 2): podstawa, VAT, reguła dnia wystawienia, dni na płatność, metoda, przełączniki,
 // proporcje umów. Zapis wysyła tylko zmienione cechy: zmiana cechy nadpisuje ją we wszystkich planach wiersza.
-function kartaWiersza(w, d) {
+function kartaWiersza(w, d, wstepne = {}) {
   const k = $('#karta');
   const r = regulaZ(w?.dzien_wystawienia || 'Ostatni');
   const prop = w?.proporcje || {};
@@ -426,6 +466,8 @@ function kartaWiersza(w, d) {
     return o;
   };
   const poczatek = JSON.stringify(zbierz());
+  // z listy podstaw w arkuszu: umowa potrzebuje kwot od księgowej, więc karta otwiera się z wybraną podstawą
+  if (wstepne.podstawa) { $('#w-podstawa').value = wstepne.podstawa; odswiez(); $('#w-prop-osoba').focus(); }
   $('#w-zapisz').onclick = () => {
     const o = zbierz(), stare = JSON.parse(poczatek);
     if (!(o.dni_na_platnosc >= 0 && o.dni_na_platnosc <= 99)) return komunikat('Dni na płatność: liczba od 0 do 99.', true);
@@ -446,7 +488,7 @@ function kartaWiersza(w, d) {
       }
     }
     if (!ops.length) return komunikat('Nic się nie zmieniło.', true);
-    zmiana('bud', ops.length === 1 ? ops[0] : { op: 'seria', operacje: ops });
+    zapiszBud(ops.length === 1 ? ops[0] : { op: 'seria', operacje: ops });
   };
 }
 
@@ -466,73 +508,6 @@ function kartaArkusza(a, drzewo) {
     const o = { id: nowyId('a'), nazwa: $('#a-nazwa').value.trim(), folder: $('#a-folder').value.trim(), kategoria: $('#a-kategoria').value.trim(), od: $('#a-od').value, do: $('#a-do').value };
     if (!o.nazwa || !o.folder || !o.kategoria || !o.od || !o.do || o.od > o.do) return komunikat('Uzupełnij nazwę, folder, kategorię i zakres miesięcy.', true);
     zmiana('bud', { op: 'arkusz', obiekt: o });
-  };
-}
-
-// Akcje na zaznaczonych wierszach: każda z podglądem (co się stanie) i potwierdzeniem w karcie. Cała akcja to jeden
-// wpis „seria”: serwer sprawdza wszystkie operacje i zapisuje je razem albo wcale (jedno przeliczenie, cofnięcie w całości).
-// Kopie płatności powstają na serwerze ze wzoru („wzor”): ta sama stawka i daty, VAT liczony z netto.
-async function akcjaNaWierszach(akcja, d) {
-  const ids = [...document.querySelectorAll('[data-zazn]:checked')].map(x => x.dataset.zazn);
-  const wiersze = d.wiersze.filter(w => ids.includes(w.id));
-  if (!wiersze.length) return komunikat('Zaznacz co najmniej jeden wiersz.', true);
-  if ((akcja === 'scal' && wiersze.length < 2) || (akcja === 'podziel' && wiersze.length !== 1)) return komunikat(akcja === 'scal' ? 'Do scalenia zaznacz co najmniej dwa wiersze.' : 'Do podziału zaznacz jeden wiersz.', true);
-  if (akcja === 'scal' && new Set(wiersze.map(w => w.rodzaj)).size > 1) return komunikat('Scalić można tylko wiersze tego samego rodzaju (same wpływy albo same obciążenia).', true);
-  const k = $('#karta');
-  const opis = { duplikuj: 'Powstanie kopia każdego wiersza z tymi samymi płatnościami planowanymi (ta sama stawka VAT i daty).', przenies: 'Wiersze przejdą do wybranego arkusza.',
-    scal: 'Powstanie jeden wiersz ze wszystkimi płatnościami zaznaczonych wierszy; zaznaczone wiersze znikną.', podziel: 'Powstanie drugi wiersz z podanym procentem każdej płatności; pierwszy zostanie pomniejszony.',
-    usun: 'Wiersze i ich płatności znikną z budżetu (cofniesz w historii).' }[akcja];
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${{ duplikuj: 'Duplikuj', przenies: 'Przenieś', scal: 'Scal', podziel: 'Podziel', usun: 'Usuń' }[akcja]}</h2>
-    <p>${esc(opis)}</p><ul class="lista">${wiersze.map(w => `<li>${esc(w.kontrahent)} · ${esc(w.komentarz)} · ${esc(w.podstawa)}</li>`).join('')}</ul>
-    ${akcja === 'przenies' ? pole('', 'Do arkusza', `<select id="ak-ark">${d.arkusze.filter(a => a.id !== d.arkusz.id).map(a => `<option value="${a.id}">${esc(a.folder)} / ${esc(a.nazwa)}</option>`).join('')}</select>`) : ''}
-    ${akcja === 'podziel' ? pole('', 'Ile procent do nowego wiersza', '<input id="ak-proc" inputmode="decimal" value="50">') : ''}
-    <div class="akcje"><button class="glowny" id="ak-ok">Wykonaj</button></div>`;
-  k.hidden = false;
-  $('.zamknij', k).onclick = () => { k.hidden = true; };
-  $('#ak-ok').onclick = async () => {
-    const ops = [];
-    // aktualne płatności wiersza z kwotami netto (te same, które sumuje komórka)
-    const platnosciWiersza = w => Object.values(w.komorki).flatMap(c => Object.entries(c.kwoty || {}).map(([id, netto]) => ({ id, netto })));
-    const kopia = (wzor, wiersz, netto) => ({ op: 'platnosc', obiekt: { id: nowyId('p'), wzor, wiersz, netto } });
-    // pola wiersza do zapisu (bez pól liczonych przez apkę)
-    const opisWiersza = w => {
-      const o = { arkusz: w.arkusz, rodzaj: w.rodzaj, podstawa: w.podstawa, kontrahent: w.kontrahent || '', komentarz: w.komentarz || '',
-        przedmiot: w.przedmiot || '', sekcja: w.sekcja || '', dzien_wystawienia: w.dzien_wystawienia || '', metoda: w.metoda || '',
-        ksiegowane: !!w.ksiegowane, w_cashflow: !!w.w_cashflow, cykl: w.cykl || 'brak', plan: w.plan || null, split: !!w.split };
-      if (w.proporcje) o.proporcje = w.proporcje;
-      if (w.kup) o.kup = w.kup;
-      if (stawkaStd(w.stawka_vat) != null) o.stawka_vat = stawkaStd(w.stawka_vat);
-      if (w.dni_na_platnosc !== '' && w.dni_na_platnosc != null) o.dni_na_platnosc = w.dni_na_platnosc;
-      return o;
-    };
-    // komórki z kwotą wpisaną w apce kopiujemy jako kwoty (plany policzą się z ustawień kopii), resztę jako kopie płatności
-    const zKomorek = w => Object.entries(w.komorki).filter(([, c]) => c.kwota != null);
-    const spozaKomorek = w => Object.values(w.komorki).filter(c => c.kwota == null).flatMap(c => Object.entries(c.kwoty || {}).map(([id, netto]) => ({ id, netto })));
-    if (akcja === 'duplikuj') for (const w of wiersze) {
-      const id = nowyId('w');
-      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id } }, ...zKomorek(w).map(([m, c]) => ({ op: 'komorka', wiersz: id, miesiac: m, kwota: c.kwota })),
-        ...spozaKomorek(w).map(x => kopia(x.id, id, x.netto)));
-    }
-    if (akcja === 'przenies') ops.push({ op: 'przenies', wiersze: ids, do_arkusza: $('#ak-ark').value });
-    if (akcja === 'usun') wiersze.forEach(w => ops.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
-    if (akcja === 'scal') {
-      const id = nowyId('w');
-      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(wiersze[0]), id, komentarz: `scalone: ${wiersze.map(w => w.komentarz || w.kontrahent).join(' + ')}`.slice(0, 170) } });
-      wiersze.forEach(w => platnosciWiersza(w).forEach(x => ops.push(kopia(x.id, id, x.netto))));
-      wiersze.forEach(w => ops.push({ op: 'wiersz', obiekt: { id: w.id }, usun: true }));
-    }
-    if (akcja === 'podziel') {
-      const proc = parseFloat($('#ak-proc').value.replace(',', '.')) / 100;
-      if (!(proc > 0 && proc < 1)) return komunikat('Procent między 0 a 100.', true);
-      const w = wiersze[0], id = nowyId('w');
-      ops.push({ op: 'wiersz', obiekt: { ...opisWiersza(w), id, komentarz: `${w.komentarz || ''} (część)`.slice(0, 170) } });
-      platnosciWiersza(w).forEach(x => {
-        const czesc = Math.round(x.netto * proc);
-        ops.push(kopia(x.id, id, czesc), { op: 'platnosc', obiekt: { id: x.id, netto: x.netto - czesc } });
-      });
-    }
-    if (!ops.length) return komunikat('Brak zmian do zapisania.', true);
-    zmiana('bud', ops.length === 1 ? ops[0] : { op: 'seria', operacje: ops });
   };
 }
 
@@ -891,172 +866,4 @@ async function listaPlanu(p, { arkusz = null, dane = null } = {}) {
       wierszKlasa: x => `${x.typ === 'plan' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.rodzaj === 1 ? ' wiersz-plus' : ''}`,
       stopkaSum: { rodzaj: `suma ${d.razem} pozycji`, kwota: zl(d.suma, false) } })}
     ${stopka(d, p)}`;
-}
-
-// ---------- Arkusz budżetu: tabela jak w BS (wygląd; edycja jak dotąd: karta komórki, wiersza i płatności) ----------
-const suwak = wl => `<span class="suwak${wl ? ' wl' : ''}" role="img" aria-label="${wl ? 'tak' : 'nie'}"></span>`;
-const dniOpis = v => v === '' || v == null ? '' : /^\d+$/.test(String(v)) ? (+v === 0 ? 'Natychmiast' : `${v} dni`) : String(v);
-const KOL_UST = [
-  ['podstawa', 'Podstawa płatności', w => esc(w.podstawa), '', w => w.podstawa],
-  ['vat', 'VAT', w => w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : '-', 'liczba-kol', w => stawkaStd(w.stawka_vat) ?? -1],
-  ['dzien', 'Dzień wystaw.', w => esc(w.dzien_opis), '', w => w.dzien_opis],
-  ['dni', 'Dni na płatność', w => esc(dniOpis(w.dni_na_platnosc)), 'liczba-kol', w => parseInt(w.dni_na_platnosc, 10) || 0],
-  ['metoda', 'Metoda płatn.', w => esc(w.metoda || ''), '', w => w.metoda || ''],
-  ['split', 'Split Pay.', w => suwak(w.split), 'przel', w => +w.split],
-  ['ksiegowane', 'Księgowane', w => suwak(w.ksiegowane), 'przel', w => +w.ksiegowane],
-  ['w_cashflow', 'W cash flow', w => suwak(w.w_cashflow), 'przel', w => +w.w_cashflow],
-];
-const KOL_OPIS = [
-  ['przedmiot', 'Przedmiot transakcji', w => esc(w.przedmiot || 'Przedmiot transakcji'), 'sep', w => w.przedmiot || ''],
-  ['kontrahent', 'Kontrahent', w => esc(w.kontrahent || ''), '', w => w.kontrahent || ''],
-  ['sekcja', 'Sekcja', w => esc(w.sekcja || '-'), 'szary', w => w.sekcja || ''],
-  ['komentarz', 'Komentarz', w => esc(w.komentarz || ''), '', w => w.komentarz || ''],
-  ['rodzaj', 'Rodzaj', w => chipZnak(w.rodzaj), '', w => w.rodzaj],
-];
-const GRUPY_ARK = { '': 'Nie grupuj', rodzaj: 'Rodzaj', kontrahent: 'Kontrahent', przedmiot: 'Przedmiot transakcji', podstawa: 'Podstawa płatności',
-  vat: 'Stawka VAT', dzien: 'Dzień wystawienia', dni: 'Dni na płatność', metoda: 'Metoda płatności', ksiegowane: 'Księgowane', w_cashflow: 'W cash flow' };
-const etykietaGrupy = (k, w) => ({ rodzaj: w.rodzaj === 1 ? 'wpływy' : 'obciążenia', vat: w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : 'bez VAT',
-  dzien: w.dzien_opis, dni: dniOpis(w.dni_na_platnosc) || '-', ksiegowane: w.ksiegowane ? 'Księgowane' : 'Nieksięgowane',
-  w_cashflow: w.w_cashflow ? 'W cash flow' : 'Poza cash flow', sekcja: w.sekcja || 'bez sekcji' }[k] ?? (w[k] || '-'));
-const miesNag = m => { const t = mies(m); return t.charAt(0).toUpperCase() + t.slice(1); };
-
-function arkuszTabela(d, p) {
-  const m = d.miesiace, ust = p.ustawienia === '1', sekcje = p.sekcje === '1', grupuj = GRUPY_ARK[p.grupuj] ? p.grupuj || '' : '';
-  const stanM = (STAN?.naleznosci?.dzien_stanu || '').slice(0, 7);
-  const kolumny = [...(ust ? KOL_UST : []), ...KOL_OPIS];
-  const nOpis = 1 + (d.planowanie ? 1 : 0) + kolumny.length;
-  let wiersze = [...d.wiersze];
-  const ks = kolumny.find(k => k[0] === p.sortuj);
-  if (ks) {
-    const znak = p.kolejnosc === 'malejaco' ? -1 : 1;
-    wiersze.sort((a, b) => { const x = ks[4](a), y = ks[4](b); return znak * (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pl')); });
-  }
-  const suma = w => Object.values(w.komorki).reduce((s, k) => s + k.netto, 0);
-  const kom = (w, x) => {
-    const k = w.komorki[x];
-    if (!k) return `<td class="liczba-kol pusta${d.planowanie ? ' klik' : ''}" data-w="${esc(w.id)}" data-m="${x}">-</td>`;
-    const kl = ['komorka', k.rzeczywiste ? '' : 'plany', k.stan === 'po-terminie' ? 'po-terminie' : '', k.stan === 'wg-bs' ? 'wg-bs' : '', k.netto < 0 ? 'minus' : k.netto > 0 ? 'plus' : ''].filter(Boolean).join(' ');
-    const kropka = k.nieaktualne || k.stan === 'po-terminie' ? '<span class="kropka czerwona" title="wymaga uwagi"></span>' : k.stan === 'oplacona' ? '<span class="kropka zielona" title="opłacone"></span>' : '';
-    const tytul = `${k.platnosci.length} ${k.platnosci.length === 1 ? 'płatność' : 'płatności'}${k.rzeczywiste ? `, w tym rzeczywiste: ${k.rzeczywiste}` : ', tylko plany'}`;
-    return `<td class="liczba-kol ${kl}" data-p="${k.platnosci.join(',')}" data-w="${esc(w.id)}" data-m="${x}" title="${tytul}"><span class="kom">${kropka}${zl(k.netto, false)}</span></td>`;
-  };
-  let lp = 0;
-  const wiersz = w => `<tr data-w="${esc(w.id)}"><td class="lp">${++lp}.</td>${d.planowanie ? `<td class="kr"><input type="checkbox" data-zazn="${esc(w.id)}" aria-label="Zaznacz wiersz"></td>` : ''}
-    ${kolumny.map(k => `<td class="opis-kom ${k[3] || ''}${k[0] === 'podstawa' || k[0] === 'dzien' ? ' ust' : ''}">${k[2](w)}</td>`).join('')}
-    ${m.map(x => kom(w, x)).join('')}<td class="liczba-kol sep ${suma(w) < 0 ? 'minus' : 'plus'}">${zl(suma(w), false)}</td></tr>`;
-  const naglowekGrupy = (etyk, ws, wciecie = false) => {
-    const s = x => ws.reduce((a, w) => a + (w.komorki[x]?.netto || 0), 0);
-    const r = ws.reduce((a, w) => a + suma(w), 0);
-    return `<tr class="grupa"><td colspan="${nOpis}">${wciecie ? '&nbsp;&nbsp;&nbsp;· ' : ''}${esc(etyk)} <span class="szary">(${ws.length})</span></td>
-      ${m.map(x => `<td class="liczba-kol ${s(x) < 0 ? 'minus' : s(x) > 0 ? 'plus' : 'szary'}">${s(x) ? zl(s(x), false) : '-'}</td>`).join('')}<td class="liczba-kol sep">${zl(r, false)}</td></tr>`;
-  };
-  const grupy = (ws, klucz) => { const g = new Map(); ws.forEach(w => { const e = etykietaGrupy(klucz, w); (g.get(e) || g.set(e, []).get(e)).push(w); }); return [...g]; };
-  let tbody = '';
-  if (sekcje) {
-    for (const [sek, ws] of grupy(wiersze, 'sekcja')) {
-      tbody += naglowekGrupy(sek, ws);
-      tbody += grupuj ? grupy(ws, grupuj).map(([e, xs]) => naglowekGrupy(e, xs, true) + xs.map(wiersz).join('')).join('') : ws.map(wiersz).join('');
-    }
-  } else if (grupuj) tbody = grupy(wiersze, grupuj).map(([e, ws]) => naglowekGrupy(e, ws) + ws.map(wiersz).join('')).join('');
-  else tbody = wiersze.map(wiersz).join('');
-  const sumaCala = d.podsumowanie.reduce((a, x) => a + x.saldo, 0);
-  const wp = d.podsumowanie.reduce((a, x) => a + x.wplywy, 0), ob = d.podsumowanie.reduce((a, x) => a + x.obciazenia, 0);
-  const pusteOpis = `<th colspan="${nOpis}"></th>`;
-  const thead = `<tr class="ark-wykres">${pusteOpis}<th colspan="${m.length + 1}"><div id="ark-wyk"></div></th></tr>
-    <tr class="ark-mies">${pusteOpis}${m.map(x => `<th class="${x === stanM ? 'biezacy' : ''}">${esc(miesNag(x))}</th>`).join('')}<th class="sep">Suma</th></tr>
-    <tr class="ark-suma pierwszy"><th class="etyk" colspan="${nOpis}">=</th>${d.podsumowanie.map(s => `<th>${zl(s.saldo, false)}</th>`).join('')}<th class="sep">${zl(sumaCala, false)}</th></tr>
-    <tr class="ark-suma"><th class="etyk" colspan="${nOpis}"><span class="plus">↗</span><br><span class="minus">↘</span></th>${d.podsumowanie.map(s => `<th><span class="plus">${zl(s.wplywy, false)}</span><br><span class="minus">${zl(s.obciazenia, false)}</span></th>`).join('')}
-      <th class="sep"><span class="plus">${zl(wp, false)}</span><br><span class="minus">${zl(ob, false)}</span></th></tr>
-    <tr class="ark-kol"><th class="lp"></th>${d.planowanie ? '<th></th>' : ''}${kolumny.map(k => `<th class="sort${k[3] === 'liczba-kol' ? ' liczba-kol' : ''}${k[3] === 'sep' ? ' sep' : ''}" data-sort="${k[0]}"${p.sortuj === k[0] ? ` data-kierunek="${p.kolejnosc === 'malejaco' ? 'malejaco' : 'rosnaco'}"` : ''}>${k[1]}</th>`).join('')}
-      ${m.map(() => '<th></th>').join('')}<th class="sep"></th></tr>`;
-  let wybrana = null;
-  setTimeout(() => {
-    const tab = $('#ark-tabela');
-    if (!tab) return;
-    const naglowkiMies = () => [...tab.querySelectorAll('tr.ark-mies th:not([colspan])')].slice(0, m.length);
-    Wykresy.bs($('#ark-wyk'), { wysokosc: 118, opis: 'Arkusz miesięcznie: wpływy, obciążenia i saldo narastające',
-      okresy: d.podsumowanie.map(s => ({ etykieta: mies(s.miesiac), wplywy: s.wplywy, obciazenia: s.obciazenia, saldo: s.saldo, narastajaco: s.narastajaco, biezacy: s.miesiac === stanM })),
-      kolumny: () => { const r0 = $('#ark-wyk').getBoundingClientRect(); return naglowkiMies().map(th => { const r = th.getBoundingClientRect(); return { x: r.left - r0.left, w: r.width }; }); } });
-    const wiersz = id => d.wiersze.find(w => w.id === id);
-    const pokazWiersz = w => {
-      tab.querySelectorAll('tr.zaznaczony').forEach(x => x.classList.remove('zaznaczony'));
-      tab.querySelector(`tr[data-w="${CSS.escape(w.id)}"]`)?.classList.add('zaznaczony');
-      $('#ark-zazn').innerHTML = `<span>${w.rodzaj === 1 ? '<b class="plus">↗</b>' : '<b class="minus">↘</b>'} ${esc(w.podstawa)}</span><span>${w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : 'bez VAT'}</span>
-        <span>${esc(w.dzien_opis)}</span><span>${esc(dniOpis(w.dni_na_platnosc))}</span><span>${esc(w.metoda || '')}</span>
-        <span>split ${suwak(w.split)}</span><span>K ${suwak(w.ksiegowane)}</span><span>CF ${suwak(w.w_cashflow)}</span>
-        <span>${esc(w.przedmiot || 'Przedmiot transakcji')}</span><span>${esc(w.kontrahent || '')}</span><span>${esc(w.sekcja || '-')}</span>`;
-    };
-    const wybierz = td => {
-      tab.querySelectorAll('.wybrana').forEach(x => x.classList.remove('wybrana'));
-      td.classList.add('wybrana'); wybrana = td;
-      pokazWiersz(wiersz(td.dataset.w));
-      $('#ark-karta').disabled = !td.classList.contains('komorka');
-    };
-    tab.querySelectorAll('td.komorka').forEach(td => td.onclick = e => { e.stopPropagation(); wybierz(td);
-      kartaPlatnosci(td.dataset.p.split(','), d, { w: wiersz(td.dataset.w), m: td.dataset.m }); });
-    tab.querySelectorAll('td.pusta').forEach(td => td.onclick = e => { e.stopPropagation(); wybierz(td);
-      if (d.planowanie) kartaKomorki(wiersz(td.dataset.w), td.dataset.m); });
-    tab.querySelectorAll('tr[data-w] td.opis-kom').forEach(td => td.onclick = e => {
-      e.stopPropagation(); const w = wiersz(td.parentElement.dataset.w); pokazWiersz(w); if (d.planowanie) kartaWiersza(w, d); });
-    $('#ark-karta').onclick = e => { e.stopPropagation(); if (wybrana?.classList.contains('komorka')) wybrana.click(); };
-    tab.querySelectorAll('th.sort').forEach(h => h.onclick = () => ustawParametry({ sortuj: h.dataset.sort,
-      kolejnosc: p.sortuj === h.dataset.sort && p.kolejnosc !== 'malejaco' ? 'malejaco' : 'rosnaco' }));
-    $('#ark-grupuj').onchange = e => ustawParametry({ grupuj: e.target.value });
-    $('#ark-sekcje').onchange = e => ustawParametry({ sekcje: e.target.checked ? '1' : '' });
-    $('#ark-ustawienia').onchange = e => ustawParametry({ ustawienia: e.target.checked ? '1' : '' });
-    // wyszukiwarka arkusza: nie ukrywa wierszy, podświetla komórki z frazą (A-ARK-12)
-    let trafienia = [], nr = -1;
-    const szukaj = $('#ark-szukaj');
-    szukaj.oninput = () => {
-      const q = szukaj.value.trim().toLowerCase();
-      tab.querySelectorAll('.podswietl').forEach(x => x.classList.remove('podswietl'));
-      trafienia = q ? [...tab.querySelectorAll('tbody td')].filter(td => td.textContent.toLowerCase().includes(q)) : [];
-      trafienia.forEach(td => td.classList.add('podswietl'));
-      nr = -1;
-    };
-    const skocz = krok => { if (!trafienia.length) return; nr = (nr + krok + trafienia.length) % trafienia.length; trafienia[nr].scrollIntoView({ block: 'center', inline: 'center' }); };
-    $('#ark-szukaj-gora').onclick = () => skocz(-1);
-    $('#ark-szukaj-dol').onclick = () => skocz(1);
-    document.addEventListener('keydown', function f(e) {
-      if (!document.body.contains(szukaj)) return document.removeEventListener('keydown', f);
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); szukaj.focus(); }
-    });
-    if (d.planowanie) {
-      $('#dodaj-wiersz').onclick = e => { e.stopPropagation(); kartaWiersza(null, d); };
-      document.querySelectorAll('[data-akcja]').forEach(b => b.onclick = e => { e.stopPropagation(); akcjaNaWierszach(b.dataset.akcja, d); });
-    }
-    if (d.wiersze[0]) pokazWiersz(d.wiersze[0]);
-  });
-  return `<div class="ark-pasek">
-      <label class="pole-grupuj">Grupuj wiersze wg<select id="ark-grupuj">${Object.entries(GRUPY_ARK).map(([v, t]) => `<option value="${v}"${v === grupuj ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-      <label class="przelacznik"><input type="checkbox" id="ark-sekcje"${sekcje ? ' checked' : ''}><span class="suwak"></span>Sekcje</label>
-      <label class="przelacznik"><input type="checkbox" id="ark-ustawienia"${ust ? ' checked' : ''}><span class="suwak"></span>Ustawienia planowanych płatności</label>
-      <span class="prawo"></span>
-      ${d.planowanie ? `<button class="przycisk glowny" id="dodaj-wiersz">Dodaj wiersz ${ik('plus')}</button>` : ''}
-      <button class="przycisk" id="ark-karta" disabled data-karta>Otwórz kartę płatności</button></div>
-    ${d.planowanie ? `<div class="akcje"><span class="szary">Zaznaczone wiersze:</span><button data-akcja="duplikuj">Duplikuj</button><button data-akcja="przenies">Przenieś do arkusza</button>
-        <button data-akcja="scal">Scal</button><button data-akcja="podziel">Podziel</button><button data-akcja="usun">Usuń</button></div>`
-      : '<p class="notka">Tryb podglądu: plany z Budget Studio. Edycję włącza przełącznik w Ustawieniach budżetu.</p>'}
-    <div class="legenda-stany"><span><i class="plany"></i>tylko plany</span><span><i class="rzecz"></i>rzeczywiste</span><span><i class="po"></i>po terminie</span>
-      <span><i class="wg-bs"></i>opłacone tylko wg BS</span><span><span class="kropka czerwona"></span>wymaga uwagi</span><span><span class="kropka zielona"></span>opłacone</span></div>
-    <div class="tabela-ramka arkusz" id="ark-tabela"><table class="ark"><thead>${thead}</thead><tbody>${tbody || `<tr><td colspan="${nOpis + m.length + 1}" class="pusto">Arkusz nie ma wierszy.</td></tr>`}</tbody></table></div>
-    <div class="stopka"><span class="zaznaczony" id="ark-zazn"></span>
-      <button id="ark-szukaj-gora" aria-label="Poprzednie trafienie">↑</button><button id="ark-szukaj-dol" aria-label="Następne trafienie">↓</button>
-      <input class="szukaj" id="ark-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj w arkuszu"></div>`;
-}
-
-function menuZarzadzaj(przycisk, d) {
-  document.querySelectorAll('.zarzadzaj-menu').forEach(x => x.remove());
-  const m = document.createElement('div');
-  m.className = 'zarzadzaj-menu';
-  m.innerHTML = `<a href="/api/eksport/arkusz?id=${encodeURIComponent(d.arkusz.id)}">${ik('plik')}Eksport arkusza do Excela</a>
-    ${d.planowanie ? `<button data-m="wiersz">${ik('plus')}Dodaj wiersz</button>` : ''}
-    <a href="#/budzet/historia">${ik('historia')}Historia zmian planów</a>
-    <div class="opis">Zmiana nazwy, zakresu miesięcy i folderu arkusza: jeszcze nie w apce.</div>`;
-  const r = przycisk.getBoundingClientRect();
-  m.style.left = `${r.left}px`; m.style.top = `${r.bottom + window.scrollY + 2}px`;
-  document.body.appendChild(m);
-  const b = m.querySelector('[data-m="wiersz"]');
-  if (b) b.onclick = e => { e.stopPropagation(); m.remove(); kartaWiersza(null, d); };
-  setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }));
 }

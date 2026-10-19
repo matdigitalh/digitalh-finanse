@@ -41,6 +41,8 @@
   --ostrzezenie: rgb(138, 97, 0);
   --ostrzezenie-tlo: rgb(255, 248, 222);
   --ostrzezenie-kropka: rgb(255, 109, 1);
+  --pomarancz: rgb(214, 92, 0);
+  --pomarancz-tlo: rgb(255, 236, 219);
   /* pasek boczny: ciemny granat z gradientem w fiolet */
   --pasek-tlo: rgb(14, 6, 62);
   --pasek-tlo-2: rgb(52, 14, 112);
@@ -93,6 +95,10 @@
     --niebieski-tlo: rgb(28, 44, 72);
     --niebieski-tlo-2: rgb(22, 31, 50);
     --dzis: rgb(255, 140, 50);
+  --pomarancz: rgb(255, 160, 80);
+  --pomarancz-tlo: rgb(64, 38, 16);
+    --pomarancz: rgb(255, 160, 80);
+    --pomarancz-tlo: rgb(64, 38, 16);
     --ostrzezenie: rgb(242, 201, 76);
     --ostrzezenie-tlo: rgb(52, 44, 20);
     --pasek-tlo: rgb(10, 5, 38);
@@ -661,3 +667,82 @@ a.przycisk { display: inline-flex; align-items: center; }
 .wyk-podpowiedz { color: var(--tekst); text-align: left; font-weight: 400; white-space: nowrap; }
 table.ark thead tr.ark-suma th.etyk { text-align: right; padding-right: 14px; }
 table.ark thead tr.ark-wykres th { background: transparent; }
+
+/* ---------- Pakiet 3: edycja arkusza jak w BS ---------- */
+table.ark td { scroll-margin: 96px 40px 60px 40px; }
+table.ark td[data-k] { cursor: cell; }
+table.ark td.wybrana { outline: 2px solid var(--fiolet); outline-offset: -2px; }
+table.ark td.w-zakresie { background-color: var(--fiolet-tlo) !important; }
+table.ark td.skopiowane { outline: 1px dashed var(--fiolet); outline-offset: -3px; }
+table.ark td.edycja { position: relative; overflow: visible; }
+table.ark td.edycja .ark-stare { visibility: hidden; }
+table.ark td.zapisuje { opacity: .55; }
+.ark-input { position: absolute; z-index: 4; left: 0; top: 0; box-sizing: border-box; width: 100%; min-width: 90px; height: 100%; border: none; outline: 2px solid var(--fiolet); outline-offset: -2px;
+  background: var(--tlo); color: var(--tekst); font: inherit; font-size: 12px; text-align: right; padding: 0 7px; }
+.ark-input.tekst { text-align: left; min-width: 220px; }
+td.komorka.mieszana { background-image: linear-gradient(135deg, var(--niebieski-tlo-2) 0 50%, transparent 50%); }
+.legenda-stany i.mieszana { background-image: linear-gradient(135deg, var(--niebieski-tlo-2) 0 50%, var(--tlo) 50%); }
+table.ark td.lp { white-space: nowrap; }
+table.ark td.lp input, table.ark th.lp input { display: none; margin: 0; width: 13px; height: 13px; accent-color: var(--fiolet); cursor: pointer; }
+table.ark th.lp input { display: inline-block; opacity: 0; }
+table.ark thead tr.ark-kol:hover th.lp input, table.ark th.lp input:checked, table.ark th.lp input:indeterminate { opacity: 1; }
+table.ark tr:hover td.lp input, table.ark tr.zazn td.lp input { display: inline-block; }
+table.ark tr:hover td.lp .nr, table.ark tr.zazn td.lp .nr { display: none; }
+table.ark tr.zazn td:not(.lp) { background-color: var(--fiolet-tlo); }
+table.ark tr.nowy td { color: var(--tekst-3); border-bottom-color: var(--linia); }
+table.ark tr.nowy td.lp svg.ik { width: 11px; height: 11px; color: var(--fiolet); }
+table.ark tr.nowy td.opis-kom:first-of-type .szary { color: var(--fiolet); }
+.ark-podpowiedz { margin: 0 0 4px; }
+.ark-lista { position: absolute; z-index: 45; max-height: 280px; overflow-y: auto; background: var(--tlo); border: 1px solid var(--linia); box-shadow: var(--cien);
+  padding: 4px 0; font-size: 12px; }
+.ark-lista .poz { padding: 6px 12px; cursor: pointer; white-space: nowrap; color: var(--tekst); }
+.ark-lista .poz:hover, .ark-lista .poz.aktywna { background: var(--fiolet-tlo); }
+.ark-lista .poz.obecna { font-weight: 600; }
+.ark-lista .poz.dodaj { color: var(--fiolet); border-top: 1px solid var(--linia-2); }
+.ark-lista .pusto-lista { padding: 6px 12px; color: var(--tekst-2); }
+.ark-dzien { width: 280px; padding: 12px 14px; max-height: none; overflow: visible; }
+.ark-akcje { position: fixed; left: var(--pasek); right: 0; bottom: 46px; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 7px 40px; background: var(--fiolet-tlo); border-top: 1px solid var(--fiolet-tlo-2); font-size: 12px; }
+.ark-akcje[hidden] { display: none; }
+.ark-akcje .przyciski { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.ark-akcje button { height: 26px; padding: 0 11px; border: 1px solid var(--fiolet-2); border-radius: 4px; background: var(--tlo); color: var(--fiolet); font: inherit; font-size: 12px; cursor: pointer; }
+.ark-akcje button:hover:not(:disabled) { background: var(--fiolet); color: #fff; }
+.ark-akcje button:disabled { opacity: .45; cursor: not-allowed; }
+body.filtry-otwarte .ark-akcje { right: 210px; }
+.inna, dd.inna, .stopka .zaznaczony span.inna { background: var(--pomarancz-tlo); color: var(--pomarancz); border-radius: 3px; }
+dd.inna { padding: 0 4px; margin-left: -4px; }
+.pole.inna input, .pole.inna select { border-color: var(--pomarancz); background: var(--pomarancz-tlo); }
+.pole.inna > span { color: var(--pomarancz); }
+.karta-platnosc h2 { font-size: 17px; }
+.tytul-ark { all: unset; cursor: text; border-radius: 3px; padding: 0 2px; }
+.tytul-ark:hover { box-shadow: inset 0 -1px 0 var(--fiolet-2); }
+.tytul-ark:focus-visible, .ikona-ark:focus-visible { outline: 2px solid var(--fiolet-2); }
+.ikona-ark { all: unset; cursor: pointer; display: inline-flex; }
+.ikona-ark:hover .ik-tytul.szary { color: var(--fiolet); }
+.zarzadzaj-menu button:disabled { opacity: .45; cursor: not-allowed; }
+.zarzadzaj-menu .oddziel { border-top: 1px solid var(--linia); margin: 5px 0; }
+.dwie-kolumny { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dwie-kolumny h3 { margin: 12px 0 6px; }
+.wybor-lista { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; border: 1px solid var(--linia); margin-bottom: 8px; }
+.wybor-lista button { all: unset; padding: 6px 10px; font-size: 12px; cursor: pointer; color: var(--tekst); }
+.wybor-lista button:hover { background: var(--tlo-2); }
+.wybor-lista button.aktywna { background: var(--fiolet-tlo); color: var(--fiolet); font-weight: 600; }
+.kalendarz-ark { display: grid; grid-template-columns: 40px repeat(12, minmax(0, 1fr)); gap: 3px; margin: 10px 0; font-size: 11px; }
+.kalendarz-ark .rok { align-self: center; color: var(--tekst-2); }
+.kalendarz-ark button { all: unset; box-sizing: border-box; height: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid var(--linia-2); border-radius: 3px; cursor: pointer; color: var(--tekst); }
+.kalendarz-ark button:hover { border-color: var(--fiolet-2); }
+.kalendarz-ark button.obecny { border-color: var(--tekst); }
+.kalendarz-ark button.w-zakresie { background: var(--fiolet-tlo); }
+.kalendarz-ark button.kraniec { background: var(--fiolet); color: #fff; }
+.kalendarz-ark button.rz { font-weight: 600; }
+.kalendarz-ark .dolar, p .dolar { color: var(--plus); font-weight: 600; font-size: 10px; line-height: 1; }
+svg.ik.mini { width: 10px; height: 10px; }
+.ostrzezenie-tekst { color: var(--ostrzezenie); }
+fieldset.radio { border: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
+fieldset.radio legend { color: var(--tekst-2); margin-bottom: 4px; padding: 0; }
+fieldset.radio label { display: flex; gap: 6px; align-items: center; }
+@media (max-width: 700px) {
+  .ark-akcje { padding: 7px 16px; }
+  .dwie-kolumny { grid-template-columns: 1fr; }
+}

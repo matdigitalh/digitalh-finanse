@@ -180,9 +180,13 @@ def komorka(con, wid: str, m: str) -> dict:
 
 def ostatni(con) -> dict | None:
     """Ostatnia zmiana budżetu, która jeszcze obowiązuje (do „Cofnij” i Cmd+Z)."""
-    r = con.execute('SELECT wpis, MAX(czas) AS czas, mac, COUNT(*) AS ile, MIN(op) AS op, MIN(obiekt) AS obiekt FROM bud_historia'
-                    ' GROUP BY wpis ORDER BY czas DESC LIMIT 1').fetchone()
-    return dict(r) if r else None
+    r = con.execute('SELECT wpis, MAX(czas) AS czas, mac, COUNT(*) AS ile, MIN(op) AS op, GROUP_CONCAT(DISTINCT op) AS ops, MIN(obiekt) AS obiekt'
+                    ' FROM bud_historia GROUP BY wpis ORDER BY czas DESC LIMIT 1').fetchone()
+    if not r:
+        return None
+    r = dict(r)
+    r['ops'] = sorted({o.replace('seria: ', '') for o in (r['ops'] or '').split(',') if o})
+    return r
 
 
 def platnosc(con, pid: str) -> dict:

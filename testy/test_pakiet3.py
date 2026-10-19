@@ -269,6 +269,7 @@ class TestKartaIOdstepstwa(Pakiet3):
         wpis = self.bud({'op': 'komorka', 'wiersz': 'w1', 'miesiac': '2026-01', 'kwota': 5})
         self.przelicz()
         self.assertEqual(zapytania_budzet.ostatni(self.con)['wpis'], wpis['id'])
+        self.assertEqual(zapytania_budzet.ostatni(self.con)['ops'], ['komorka'])
         zmiany.zapisz('cofnij', {'wpis': wpis['id']})
         self.przelicz()
         self.assertNotEqual(zapytania_budzet.ostatni(self.con)['wpis'], wpis['id'])

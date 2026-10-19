@@ -157,7 +157,8 @@ async function zmiana(typ, dane) {
   $('#karta').hidden = true;
   await sprawdzStan();
   await pokaz();
-  komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.');
+  komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.', false,
+    typ === 'bud' && typeof cofnijOstatni === 'function' ? { nazwa: 'Cofnij', akcja: cofnijOstatni } : null);
   return true;
 }
 
