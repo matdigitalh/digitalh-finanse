@@ -746,3 +746,6 @@ fieldset.radio label { display: flex; gap: 6px; align-items: center; }
   .ark-akcje { padding: 7px 16px; }
   .dwie-kolumny { grid-template-columns: 1fr; }
 }
+/* komunikat (zapisane, blokada, cofnij) zawsze w polu widzenia, także po przewinięciu długiego arkusza */
+#komunikaty { position: sticky; top: 8px; z-index: 35; }
+#komunikaty .komunikat { box-shadow: var(--cien-maly); }

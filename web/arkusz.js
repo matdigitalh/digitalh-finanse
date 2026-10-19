@@ -731,7 +731,8 @@ function edytujPole(td, w, k, znak) {
     if (tekstowe) return t || obecna ? wybierz(t, krok) : (anuluj(), krok && ruch(...krok));
     const wl = wlasna(t);
     if (wl) return wybierz(wl[0], krok);
-    komunikat('Wybierz pozycję z listy (strzałki i Enter).', true);
+    komunikat(k === 'dni' ? 'Dni na płatność: liczba od 0 do 99. Dłuższy termin ustaw na karcie płatności (dzień płatności).'
+      : 'Wybierz pozycję z listy (strzałki i Enter).', true);
   };
   ARK.edycja = { anuluj };
   inp.addEventListener('input', () => { aktywny = -1; rysuj(); });
