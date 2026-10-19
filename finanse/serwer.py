@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import (baza, budzet, cashflow, controlling, eksport, konfig, odbudowa, rentownosc, wynik, zapytania,
-               zapytania_budzet, zmiany)
+               zapytania_budzet, zapytania_listy, zmiany)
 
 mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
 WEB = Path(__file__).resolve().parent.parent / 'web'
@@ -66,6 +66,25 @@ def _sprawdz_bud(con, d):
             if r and r['spinacz'] and r['etap'] != 'Opłacona':
                 raise ValueError('PIT i ZUS oznaczysz jako zapłacone dopiero, gdy wypłata dla osoby jest opłacona.')
     budzet.sprawdz_wpis(d, zmiany.wczytaj()[0], dzis=dzis)
+
+
+# Pozycja przenoszona do Do weryfikacji musi istnieć w bazie (pakiet 7)
+OBIEKTY_SQL = {'operacja': 'SELECT 1 FROM operacje WHERE klucz = ?', 'faktura': 'SELECT 1 FROM faktury WHERE numer = ?',
+               'zakup': 'SELECT 1 FROM zakupy WHERE nr_ewid = ?', 'platnosc': 'SELECT 1 FROM bud_platnosc WHERE id = ?'}
+
+
+def _sprawdz_odwolania(con, typ, dane):
+    """Odwołania wpisu (operacja, faktura, obiekt budżetu) sprawdzane w bazie, żeby do pliku nie trafiło nic zmyślonego."""
+    if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje WHERE klucz = ? AND wewnetrzna = 0',
+                                              (dane['operacja'],)).fetchone():
+        raise ValueError('nie ma takiej operacji')
+    if typ == 'bud':
+        _sprawdz_bud(con, dane)
+    if typ == 'do_weryfikacji' and not dane.get('usun') and not con.execute(OBIEKTY_SQL[dane['obiekt']], (dane['ref'],)).fetchone():
+        raise ValueError(f"nie ma pozycji {dane['ref']}")
+    for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
+        if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
+            raise ValueError(f'nie ma faktury {n}')
 
 
 class Obsluga(BaseHTTPRequestHandler):
@@ -156,6 +175,14 @@ class Obsluga(BaseHTTPRequestHandler):
             elif sciezka == 'budzet/lista':
                 dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona'), q.get('ile'),
                                               q.get('arkusz'))
+            elif sciezka.startswith('lista/'):
+                dane = zapytania_listy.lista(con, sciezka.split('/', 1)[1].replace('-', '_'), q)
+            elif sciezka == 'widoki':
+                dane = zapytania_listy.widoki(con, q.get('ekran', ''))
+            elif sciezka == 'listy/menu':
+                dane = zapytania_listy.menu(con)
+            elif sciezka == 'zakres':
+                dane = zapytania_listy.podglad_zakresu(con, q.get('spec', ''), q.get('miesieczny') == '1')
             elif sciezka == 'budzet/kafle':
                 dane = zapytania_budzet.kafle(con)
             elif sciezka == 'budzet/rozjazdy':
@@ -232,14 +259,14 @@ class Obsluga(BaseHTTPRequestHandler):
             dane = zmiany.sprawdz(typ, cialo.get('dane'))
             con = baza.polacz(konfig.plik_bazy(), tylko_odczyt=True)
             try:
-                if 'operacja' in dane and not con.execute('SELECT 1 FROM operacje WHERE klucz = ? AND wewnetrzna = 0',
-                                                          (dane['operacja'],)).fetchone():
-                    raise ValueError('nie ma takiej operacji')
-                if typ == 'bud':
-                    _sprawdz_bud(con, dane)
-                for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
-                    if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
-                        raise ValueError(f'nie ma faktury {n}')
+                if typ == 'seria':   # akcja grupowa: każdy wpis sprawdzony, zanim cokolwiek trafi do pliku
+                    for i, w in enumerate(dane['wpisy'], start=1):
+                        try:
+                            _sprawdz_odwolania(con, w['typ'], w['dane'])
+                        except ValueError as e:
+                            raise ValueError(f"seria, wpis {i} z {len(dane['wpisy'])}: {e}; nic nie zapisano")
+                else:
+                    _sprawdz_odwolania(con, typ, dane)
             finally:
                 con.close()
         except (ValueError, TypeError, json.JSONDecodeError) as e:

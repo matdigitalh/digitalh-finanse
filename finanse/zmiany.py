@@ -35,8 +35,15 @@ TYPY = {
     'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
+    'widok': ('ekran', 'id'),                 # zapisany widok listy: filtry, sortowanie, kolumny (pakiet 7)
+    'do_weryfikacji': ('obiekt', 'ref'),      # pozycja przeniesiona do sprawdzenia (Do weryfikacji); usun = sprawdzone
+    'seria': ('wpisy',),                      # akcja grupowa na liście: kilka wpisów w jednym, wszystko albo nic
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
+# Co może wejść do serii z listy (akcje grupowe); budżet ma własną serię w „bud”.
+TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 'klient_faktura', 'koszt_regula', 'koszt_operacja',
+                'do_weryfikacji', 'cofnij')
+MAKS_W_SERII = 1000
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 USTAWIENIA = {'planowanie': ('tak', 'nie')}
@@ -57,6 +64,12 @@ def sprawdz(typ: str, dane) -> dict:
         return {'klucz': dane['klucz'], 'wartosc': dane['wartosc']}
     if typ == 'umowa':
         return _sprawdz_umowe(dane)
+    if typ == 'widok':
+        return _sprawdz_widok(dane)
+    if typ == 'do_weryfikacji':
+        return _sprawdz_do_weryfikacji(dane)
+    if typ == 'seria':
+        return _sprawdz_serie(dane)
     if typ == 'estymata':
         try:
             u = float(str(dane.get('udzial')).replace(',', '.'))
@@ -105,6 +118,8 @@ def sprawdz(typ: str, dane) -> dict:
         elif not isinstance(v, str) or not v or len(v) > 300:
             raise ValueError(f'brak pola {pole}')
         czyste[pole] = v
+    if typ == 'poza_bankiem' and dane.get('data'):   # wyjątek poza bankiem z datą przelewu (kompensata, karta w walucie)
+        czyste['data'] = _data(dane['data'], 'data zapłaty')
     return czyste
 
 
@@ -138,8 +153,34 @@ def wczytaj() -> tuple[list[dict], list[str]]:
                 ostrzezenia.append(f'{p.name}, linia {nr}: nieczytelny wpis (może jeszcze się synchronizuje)')
     for p in katalog.glob('*conflict*'):
         ostrzezenia.append(f'iCloud zrobił kopię konfliktu: {p.name}')
+    wpisy = _rozwin_serie(wpisy, ostrzezenia)
     wpisy.sort(key=lambda w: (w.get('czas', ''), w.get('id', '')))
     return wpisy, ostrzezenia
+
+
+def _rozwin_serie(wpisy: list[dict], ostrzezenia: list[str]) -> list[dict]:
+    """Seria (akcja grupowa na liście) leży w pliku jako jeden wpis, więc zapisuje się w całości albo wcale. Moduły widzą
+    jej wpisy jak zwykłe (identyfikator serii z numerem), a cofnięcie serii cofa każdy z nich."""
+    wynik, serie = [], {}
+    for w in wpisy:
+        if w.get('typ') != 'seria':
+            wynik.append(w)
+            continue
+        czlony = (w.get('dane') or {}).get('wpisy')
+        if not isinstance(czlony, list):
+            ostrzezenia.append(f"seria {w.get('id', '')}: nieczytelny wpis")
+            continue
+        serie[w['id']] = []
+        for i, c in enumerate(czlony, start=1):
+            sid = f"{w['id']}:{i}"
+            serie[w['id']].append(sid)
+            wynik.append({'czas': w.get('czas', ''), 'id': sid, 'mac': w.get('mac', ''), 'typ': c.get('typ'), 'dane': c.get('dane') or {},
+                          'seria': w['id']})
+    for w in list(wynik):
+        cel = (w.get('dane') or {}).get('wpis') if w.get('typ') == 'cofnij' else None
+        for j, sid in enumerate(serie.get(cel, []), start=1):
+            wynik.append({'czas': w.get('czas', ''), 'id': f"{w['id']}:c{j}", 'mac': w.get('mac', ''), 'typ': 'cofnij', 'dane': {'wpis': sid}})
+    return wynik
 
 
 def odcisk() -> str:
@@ -402,3 +443,58 @@ def _sprawdz_umowe(d: dict) -> dict:
     return {'id': d['id'], 'klient': klient, 'zawarta': data('zawarta'), 'rodzaj': rodzaj, 'do': data('do'),
             'wypowiedzenie_mies': okres, 'koniec_miesiaca': bool(d.get('koniec_miesiaca', True)), 'przedluzenie': bool(d.get('przedluzenie')),
             'wartosc_mies': wartosc, 'alert_dni': alert, 'uwagi': str(d.get('uwagi') or '')[:300]}
+
+
+def _sprawdz_widok(d: dict) -> dict:
+    """Zapisany widok listy (B-LIS-03): nazwa, parametry z adresu (filtry, sortowanie), widoczne kolumny w kolejności."""
+    from .widoki import EKRANY
+    if d.get('ekran') not in EKRANY:
+        raise ValueError('widok: nieznana lista')
+    wid = _niepusty(60)(d.get('id'), 'widok')
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+', wid):
+        raise ValueError('widok: identyfikator z liter, cyfr, kropki, kreski')
+    if d.get('usun'):
+        return {'ekran': d['ekran'], 'id': wid, 'usun': True}
+    nazwa = _niepusty(60)(d.get('nazwa'), 'nazwa widoku')
+    par = d.get('parametry') or {}
+    if not isinstance(par, dict) or len(par) > 60:
+        raise ValueError('widok: parametry jako słownik (najwyżej 60)')
+    czyste = {}
+    for k, v in par.items():
+        if not isinstance(k, str) or not re.fullmatch(r'[a-z_]{1,30}', k) or k in ('widok', 'zm', 'strona', 'q', 'id', 'zakladka'):
+            raise ValueError(f'widok: nieznany parametr {k}')
+        if isinstance(v, bool) or not isinstance(v, (str, int)) or len(str(v)) > 2000:
+            raise ValueError(f'widok: wartość parametru {k} za długa albo nie tekst')
+        czyste[k] = str(v)
+    kol = d.get('kolumny') or []
+    if not isinstance(kol, list) or len(kol) > 60 or not all(isinstance(x, str) and re.fullmatch(r'[a-z_]{1,30}', x) for x in kol):
+        raise ValueError('widok: kolumny jako lista nazw')
+    return {'ekran': d['ekran'], 'id': wid, 'nazwa': nazwa, 'parametry': czyste, 'kolumny': kol, 'usun': False}
+
+
+def _sprawdz_do_weryfikacji(d: dict) -> dict:
+    from .widoki import OBIEKTY
+    if d.get('obiekt') not in OBIEKTY:
+        raise ValueError('do weryfikacji: operacja, faktura, zakup albo płatność')
+    ref = _niepusty(120)(d.get('ref'), 'do weryfikacji')
+    if d.get('usun'):
+        return {'obiekt': d['obiekt'], 'ref': ref, 'usun': True}
+    return {'obiekt': d['obiekt'], 'ref': ref, 'powod': _tekst(200)(d.get('powod'), 'powód'), 'usun': False}
+
+
+def _sprawdz_serie(d: dict) -> dict:
+    """Akcja grupowa: każdy wpis sprawdzany jak pojedynczy; jeden zły odrzuca całą serię (nic nie trafia do pliku)."""
+    lista = d.get('wpisy')
+    if not isinstance(lista, list) or not 0 < len(lista) <= MAKS_W_SERII:
+        raise ValueError(f'seria: od 1 do {MAKS_W_SERII} wpisów')
+    wynik = []
+    for i, w in enumerate(lista, start=1):
+        if not isinstance(w, dict) or w.get('typ') not in TYPY_W_SERII:
+            raise ValueError(f'seria, wpis {i}: niedozwolony rodzaj wpisu')
+        try:
+            wynik.append({'typ': w['typ'], 'dane': sprawdz(w['typ'], w.get('dane'))})
+        except ValueError as e:
+            raise ValueError(f'seria, wpis {i} z {len(lista)}: {e}')
+    if len(json.dumps(wynik, ensure_ascii=False)) > 450000:
+        raise ValueError('za duży wpis')
+    return {'wpisy': wynik}

@@ -114,6 +114,11 @@ CREATE TABLE bud_rozjazd (rodzaj TEXT, ref TEXT, kwota INTEGER, opis TEXT);
 CREATE TABLE bud_stan (platnosc TEXT PRIMARY KEY, etap TEXT, zaplacono INTEGER, data_zaplaty TEXT, termin_efektywny TEXT, uwaga TEXT,
   etap_wg_bs TEXT, aktualnosc TEXT);
 CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), stan TEXT, operacja_id INTEGER);
+
+-- Pakiet 7 (widoki.py): zapisane widoki list (zdarzenie „widok”) i pozycje oznaczone do sprawdzenia („do_weryfikacji”).
+CREATE TABLE widoki (ekran TEXT NOT NULL, id TEXT NOT NULL, nazwa TEXT, parametry TEXT, kolumny TEXT, usuniety INTEGER NOT NULL DEFAULT 0,
+  wpis TEXT, czas TEXT, PRIMARY KEY (ekran, id));
+CREATE TABLE oznaczone (obiekt TEXT NOT NULL, ref TEXT NOT NULL, powod TEXT, wpis TEXT, czas TEXT, PRIMARY KEY (obiekt, ref));
 """
 
 
@@ -125,6 +130,8 @@ def polacz(sciezka: Path, tylko_odczyt=False) -> sqlite3.Connection:
         con.execute('PRAGMA journal_mode=DELETE')
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA foreign_keys=ON')
+    from .filtry import porownaj_pl
+    con.create_collation('PL', porownaj_pl)   # sortowanie tekstu na listach po polsku (pakiet 7)
     return con
 
 

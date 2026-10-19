@@ -1,16 +1,71 @@
-"""Odczyty dla interfejsu. Każdy wiersz niesie źródło (plik, wiersz), żeby każdą liczbę dało się sprawdzić."""
-from . import konfig
+"""Odczyty dla interfejsu. Każdy wiersz niesie źródło (plik, wiersz), żeby każdą liczbę dało się sprawdzić.
+
+Listy (pakiet 7): sortowanie po stronie serwera z białej listy kolumn (słowniki KOL_*: klucz z interfejsu → wyrażenie
+SQL i czy tekst), filtry dat w trybach BS (słowniki DATY_*: typ daty → kolumna i czy miesiąc), podsumowanie wszystkich
+wyników (liczba, netto, VAT, brutto osobno dla wpływów i obciążeń) do paska zaznaczenia."""
+from datetime import date
+
+from . import filtry, konfig
 
 STRONA = 100
+MAKS_WSZYSTKIE = 5000   # „zaznacz wszystkie wyniki”: tyle pozycji naraz
 
 
-def _strona(sql, params, strona, ile, con, porzadek):
+def _strona(sql, params, strona, ile, con, porzadek, maks=500):
     razem = con.execute(f'SELECT COUNT(*) FROM ({sql})', params).fetchone()[0]
-    ile = max(1, min(int(ile or STRONA), 500))
+    ile = max(1, min(int(ile or STRONA), maks))
     strona = max(1, int(strona or 1))
     wiersze = [dict(r) for r in con.execute(f'{sql} ORDER BY {porzadek} LIMIT ? OFFSET ?',
                                             [*params, ile, (strona - 1) * ile])]
     return {'razem': razem, 'strona': strona, 'ile': ile, 'wiersze': wiersze}
+
+
+def _ile(ile, wszystkie):
+    """Liczba pozycji na stronę; „wszystkie” = cała lista naraz (do zaznaczenia wszystkich wyników), z limitem."""
+    return (MAKS_WSZYSTKIE, MAKS_WSZYSTKIE) if wszystkie else (ile, 500)
+
+
+def _pierwszy_dzien_tyg() -> int:
+    """Tydzień jak w cash flow (BS: od wtorku), parametr w Finanse/Aplikacja/ustawienia.json."""
+    from .cashflow import PIERWSZY_DZIEN_TYGODNIA
+    from .wynik import ustawienia
+    return int(ustawienia().get('cashflow_pierwszy_dzien_tygodnia', PIERWSZY_DZIEN_TYGODNIA))
+
+
+def dzis(con) -> date:
+    d = dzien_stanu(con)
+    return date.fromisoformat(d) if d else date.today()
+
+
+def _daty(con, daty: dict | None, kolumny: dict, warunki: list, params: list):
+    """Filtry dat z adresu (d_<typ>=tryb): kolumny = typ → (wyrażenie SQL, czy miesiąc). „Dziś” = dzień stanu."""
+    if not daty:
+        return
+    d, pierwszy = dzis(con), _pierwszy_dzien_tyg()
+    for typ, spec in daty.items():
+        if typ not in kolumny:
+            raise ValueError(f'nieznany typ daty: {typ}')
+        sql, p = filtry.warunek(kolumny[typ][0], spec, d, kolumny[typ][1], pierwszy)
+        if sql:
+            warunki.append(sql)
+            params.extend(p)
+
+
+def _podsumowanie(con, sql, params, rodzaj, netto=None, vat=None, brutto=None) -> dict:
+    """Podsumowanie wszystkich wyników filtra w układzie filtry.podsumuj (kwoty ze znakiem); brak kolumny = None."""
+    kol = ', '.join(f'SUM({x})' if x else 'NULL' for x in (netto, vat, brutto))
+    w = {'wplywy': {'ile': 0, 'netto': 0, 'vat': 0, 'brutto': 0}, 'obciazenia': {'ile': 0, 'netto': 0, 'vat': 0, 'brutto': 0}}
+    for r in con.execute(f'SELECT ({rodzaj}) AS r_, COUNT(*), {kol} FROM ({sql}) GROUP BY r_', params):
+        g = w['wplywy' if (r[0] or 0) > 0 else 'obciazenia']
+        g['ile'] += r[1]
+        for i, k in enumerate(('netto', 'vat', 'brutto')):
+            g[k] += r[2 + i] or 0
+    for k, x in (('netto', netto), ('vat', vat), ('brutto', brutto)):
+        if not x:
+            w['wplywy'][k] = w['obciazenia'][k] = None
+    w['ile'] = w['wplywy']['ile'] + w['obciazenia']['ile']
+    w['razem'] = {k: None if w['wplywy'][k] is None else w['wplywy'][k] + w['obciazenia'][k] for k in ('netto', 'vat', 'brutto')}
+    return w
 
 
 def salda(con) -> dict:
@@ -36,9 +91,17 @@ def stan(con) -> dict:
             'bledy': [b for b in meta.get('bledy', '').split('\n') if b]}
 
 
+KOL_OPERACJI = {'data_ksiegowania': ('data_ksiegowania', False), 'data_transakcji': ('data_transakcji', False),
+                'kwota': ('kwota', False), 'rodzaj': ('kwota > 0', False), 'kontrahent': ('kontrahent', True), 'rachunek': ('rachunek', True),
+                'tytul': ("COALESCE(NULLIF(tytul, ''), opis)", True), 'saldo_po': ('saldo_po', False), 'wewnetrzna': ('wewnetrzna', False),
+                'faktury': ('faktury', True)}
+DATY_OPERACJI = {'ksiegowania': ('data_ksiegowania', False), 'transakcji': ('data_transakcji', False)}
+
+
 def operacje(con, rachunek=None, kierunek=None, wewnetrzne=None, q=None, od=None, do=None, strona=1, ile=STRONA,
-             sortuj='data_ksiegowania', malejaco=True):
+             sortuj='data_ksiegowania', malejaco=True, kolejnosc=None, daty=None, wszystkie=False):
     warunki, params = [], []
+    _daty(con, daty, DATY_OPERACJI, warunki, params)
     if rachunek:
         warunki.append('rachunek = ?'); params.append(rachunek)
     if kierunek == 'wplywy':
@@ -58,17 +121,29 @@ def operacje(con, rachunek=None, kierunek=None, wewnetrzne=None, q=None, od=None
     sql = ("SELECT operacje.*, (SELECT GROUP_CONCAT(numer, ', ') FROM dopasowania d WHERE d.operacja_id = operacje.id) AS faktury,"
            ' (SELECT stan FROM wplaty w WHERE w.operacja_id = operacje.id) AS stan_wplaty FROM operacje'
            + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
-    kolumny = {'data_ksiegowania', 'kwota', 'kontrahent', 'rachunek'}
-    porzadek = f"{sortuj if sortuj in kolumny else 'data_ksiegowania'} {'DESC' if malejaco else 'ASC'}, data_pliku DESC, wiersz"
-    wynik = _strona(sql, params, strona, ile, con, porzadek)
-    suma = con.execute(f'SELECT COALESCE(SUM(CASE WHEN kwota>0 THEN kwota END),0), COALESCE(SUM(CASE WHEN kwota<0 THEN kwota END),0)'
-                       f' FROM ({sql})', params).fetchone()
-    wynik['wplywy'], wynik['obciazenia'] = suma[0], suma[1]
+    kolejnosc = kolejnosc or ('malejaco' if malejaco else 'rosnaco')
+    porzadek = filtry.porzadek(sortuj or 'data_ksiegowania', kolejnosc, KOL_OPERACJI, 'data_ksiegowania DESC', 'data_pliku DESC, wiersz')
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con, porzadek, maks)
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, 'CASE WHEN kwota > 0 THEN 1 ELSE -1 END', brutto='kwota')
+    wynik['wplywy'], wynik['obciazenia'] = wynik['podsumowanie']['wplywy']['brutto'], wynik['podsumowanie']['obciazenia']['brutto']
     return wynik
 
 
-def faktury(con, status=None, q=None, od=None, do=None, strona=1, ile=STRONA, bank=None):
+KOL_FAKTUR = {'numer': ('numer', True), 'status': ('status', True), 'stan_bank': ('stan_bank', True), 'klient': ('klient', True),
+              'nabywca': ('nabywca', True), 'pozycje': ('pozycje', True), 'netto': ('netto', False), 'vat': ('vat', False),
+              'brutto': ('brutto', False), 'data_wystawienia': ('data_wystawienia', False), 'data_sprzedazy': ('data_sprzedazy', False),
+              'termin': ('termin', False), 'pozostalo': ('pozostalo', False), 'dni_po_terminie': ('dni_po_terminie', False)}
+DATY_FAKTUR = {'wystawienie': ('f.data_wystawienia', False), 'sprzedaz': ('f.data_sprzedazy', False), 'termin': ('f.termin', False)}
+
+
+def faktury(con, status=None, q=None, od=None, do=None, strona=1, ile=STRONA, bank=None, sortuj=None, kolejnosc=None, daty=None,
+            klient=None, wszystkie=False):
     warunki, params = [], []
+    _daty(con, daty, DATY_FAKTUR, warunki, params)
+    if klient:
+        k = filtry.lista_wartosci(klient)
+        warunki.append(f"COALESCE(fk.klient, '') IN ({','.join('?' * len(k))})"); params.extend(k)
     if status:
         warunki.append('status = ?'); params.append(status)
     if od:
@@ -82,21 +157,30 @@ def faktury(con, status=None, q=None, od=None, do=None, strona=1, ile=STRONA, ba
     sql = ('SELECT f.*, (SELECT GROUP_CONCAT(nazwa, ' + "' | '" + ') FROM faktury_pozycje p WHERE p.numer=f.numer) AS pozycje,'
            ' s.stan AS stan_bank, s.pozostalo, s.zaplacono, s.dni_po_terminie, s.ostatnia_wplata,'
            " (SELECT GROUP_CONCAT(o.data_ksiegowania || ' ' || d.kwota, '; ') FROM dopasowania d JOIN operacje o ON o.id = d.operacja_id"
-           '  WHERE d.numer = f.numer) AS wplaty'
-           ' FROM faktury f LEFT JOIN faktury_stan s USING(numer)' + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
-    wynik = _strona(sql, params, strona, ile, con, 'data_wystawienia DESC, f.numer DESC')
+           '  WHERE d.numer = f.numer) AS wplaty,'
+           " COALESCE(fk.klient, '') AS klient, COALESCE(fk.zrodlo, '') AS klient_zrodlo"
+           ' FROM faktury f LEFT JOIN faktury_stan s USING(numer) LEFT JOIN faktury_klient fk USING(numer)'
+           + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con, filtry.porzadek(sortuj, kolejnosc, KOL_FAKTUR, 'data_wystawienia DESC', 'numer DESC'), maks)
     from .klienci import klucz_nabywcy
     for w in wynik['wiersze']:
         w['nabywca_klucz'] = klucz_nabywcy(w)
-        k = con.execute('SELECT klient, zrodlo FROM faktury_klient WHERE numer = ?', (w['numer'],)).fetchone()
-        w['klient'], w['klient_zrodlo'] = (k[0], k[1]) if k else ('', '')
-    s = con.execute(f'SELECT COALESCE(SUM(netto),0), COALESCE(SUM(brutto),0) FROM ({sql})', params).fetchone()
-    wynik['netto'], wynik['brutto'] = s[0], s[1]
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, '1', 'netto', 'vat', 'brutto')
+    wynik['netto'], wynik['brutto'] = wynik['podsumowanie']['razem']['netto'], wynik['podsumowanie']['razem']['brutto']
     return wynik
 
 
-def zakupy(con, rejestr=None, q=None, od=None, do=None, strona=1, ile=STRONA, stan=None):
+KOL_ZAKUPOW = {'rejestr': ('rejestr', True), 'nr_ewid': ('nr_ewid', True), 'podmiot': ('podmiot', True), 'nr_dok': ('nr_dok', True),
+               'data': ('data', False), 'data_zaewid': ('data_zaewid', False), 'netto': ('netto', False), 'vat': ('vat', False),
+               'brutto': ('brutto', False), 'stan': ('stan', True), 'data_platnosci': ('data_platnosci', False)}
+DATY_ZAKUPOW = {'data': ('z.data', False), 'zaewid': ('z.data_zaewid', False)}
+
+
+def zakupy(con, rejestr=None, q=None, od=None, do=None, strona=1, ile=STRONA, stan=None, sortuj=None, kolejnosc=None, daty=None,
+           wszystkie=False):
     warunki, params = [], []
+    _daty(con, daty, DATY_ZAKUPOW, warunki, params)
     if rejestr:
         warunki.append('z.rejestr = ?'); params.append(rejestr)
     if od:
@@ -110,8 +194,10 @@ def zakupy(con, rejestr=None, q=None, od=None, do=None, strona=1, ile=STRONA, st
     sql = ('SELECT z.*, s.stan, o.data_ksiegowania AS data_platnosci, o.kwota AS kwota_platnosci FROM zakupy z'
            ' LEFT JOIN zakupy_stan s USING(nr_ewid) LEFT JOIN operacje o ON o.id = s.operacja_id'
            + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
-    wynik = _strona(sql, params, strona, ile, con, 'data DESC, nr_ewid DESC')
-    wynik['netto'] = con.execute(f'SELECT COALESCE(SUM(netto),0) FROM ({sql})', params).fetchone()[0]
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con, filtry.porzadek(sortuj, kolejnosc, KOL_ZAKUPOW, 'data DESC', 'nr_ewid DESC'), maks)
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, '-1', '-netto', '-vat', '-brutto')
+    wynik['netto'] = -wynik['podsumowanie']['razem']['netto']
     return wynik
 
 
@@ -150,8 +236,16 @@ def podsumowanie_naleznosci(con) -> dict:
             'do_weryfikacji': len(do_weryfikacji(con))}
 
 
-def naleznosci(con, przedzial=None, po_terminie=None, q=None, strona=1, ile=STRONA):
+KOL_NALEZNOSCI = {'numer': ('numer', True), 'nabywca': ('nabywca', True), 'termin': ('termin', False), 'naleznosc': ('naleznosc', False),
+                  'pozostalo': ('pozostalo', False), 'status': ('status', True), 'dni_po_terminie': ('dni_po_terminie', False),
+                  'data_wystawienia': ('data_wystawienia', False), 'stan_bank': ('stan_bank', True)}
+DATY_NALEZNOSCI = {'wystawienie': ('f.data_wystawienia', False), 'termin': ('f.termin', False)}
+
+
+def naleznosci(con, przedzial=None, po_terminie=None, q=None, strona=1, ile=STRONA, sortuj=None, kolejnosc=None, daty=None,
+               wszystkie=False):
     warunki, params = ['s.pozostalo > 0'], []
+    _daty(con, daty, DATY_NALEZNOSCI, warunki, params)
     if przedzial:
         warunki.append('s.przedzial = ?'); params.append(przedzial)
     if po_terminie:
@@ -160,22 +254,34 @@ def naleznosci(con, przedzial=None, po_terminie=None, q=None, strona=1, ile=STRO
         warunki.append("(f.numer || ' ' || f.nabywca || ' ' || f.nip) LIKE ?"); params.append(f'%{q}%')
     sql = ('SELECT f.*, s.naleznosc, s.korekty, s.zaplacono, s.pozostalo, s.stan AS stan_bank, s.dni_po_terminie,'
            ' s.przedzial, s.ostatnia_wplata FROM faktury_stan s JOIN faktury f USING(numer) WHERE ' + ' AND '.join(warunki))
-    wynik = _strona(sql, params, strona, ile, con, 'dni_po_terminie DESC, termin, numer')
-    wynik['pozostalo'] = con.execute(f'SELECT COALESCE(SUM(pozostalo),0) FROM ({sql})', params).fetchone()[0]
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con,
+                    filtry.porzadek(sortuj, kolejnosc, KOL_NALEZNOSCI, 'dni_po_terminie DESC, termin', 'numer'), maks)
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, '1', brutto='pozostalo')
+    wynik['pozostalo'] = wynik['podsumowanie']['razem']['brutto']
     wynik['dzien_stanu'] = dzien_stanu(con)
     return wynik
 
 
-def wplaty(con, stan='nieznana', q=None, strona=1, ile=STRONA):
+KOL_WPLAT = {'data_ksiegowania': ('data_ksiegowania', False), 'kontrahent': ('kontrahent', True),
+             'tytul': ("COALESCE(NULLIF(tytul, ''), opis)", True), 'kwota': ('kwota', False), 'faktury': ('faktury', True),
+             'uwaga': ("COALESCE(uwaga, '') || ' ' || COALESCE(podpowiedz, '')", True)}
+DATY_WPLAT = {'ksiegowania': ('o.data_ksiegowania', False)}
+
+
+def wplaty(con, stan='nieznana', q=None, strona=1, ile=STRONA, sortuj=None, kolejnosc=None, daty=None, wszystkie=False):
     """Wpłaty od klientów z ich stanem dopasowania (Do połączenia)."""
     warunki, params = ['w.stan = ?'], [stan if stan in ('nieznana', 'sprzed_eksportu', 'bez_faktury', 'dopasowana', 'zwrot_zakupu') else 'nieznana']
+    _daty(con, daty, DATY_WPLAT, warunki, params)
     if q:
         warunki.append("(o.kontrahent || ' ' || o.tytul || ' ' || o.opis) LIKE ?"); params.append(f'%{q}%')
     sql = ('SELECT o.*, w.stan, w.pewnosc, w.nadplata, w.uwaga, w.podpowiedz, w.wpis,'
            " (SELECT GROUP_CONCAT(numer, ', ') FROM dopasowania d WHERE d.operacja_id = o.id) AS faktury"
            ' FROM wplaty w JOIN operacje o ON o.id = w.operacja_id WHERE ' + ' AND '.join(warunki))
-    wynik = _strona(sql, params, strona, ile, con, 'data_ksiegowania DESC, o.id DESC')
-    wynik['suma'] = con.execute(f'SELECT COALESCE(SUM(kwota),0) FROM ({sql})', params).fetchone()[0]
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con, filtry.porzadek(sortuj, kolejnosc, KOL_WPLAT, 'data_ksiegowania DESC', 'id DESC'), maks)
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, 'CASE WHEN kwota > 0 THEN 1 ELSE -1 END', brutto='kwota')
+    wynik['suma'] = wynik['podsumowanie']['razem']['brutto']
     wynik['liczniki'] = {r[0]: r[1] for r in con.execute('SELECT stan, COUNT(*) FROM wplaty GROUP BY stan')}
     return wynik
 
@@ -260,7 +366,44 @@ def do_weryfikacji(con) -> list[dict]:
         lista.append({'rodzaj': 'do_odhaczenia', 'tytul': 'Zapłacona w banku, w Fakturowni nieodhaczona', 'numer': x['numer'],
                       'data': x['ostatnia_wplata'], 'kwota': x['brutto'], 'kontrahent': x['nabywca'], 'faktury': x['numer'],
                       'opis': 'odhacz w Fakturowni jako opłaconą'})
+    lista += _oznaczone(con)
+    for x in lista:   # klucz pozycji do zaznaczania na liście
+        x['id'] = f"{x['rodzaj']}|{x.get('operacja_id') or x.get('numer') or x.get('ref') or ''}|{x.get('faktury') or ''}"
     return lista
+
+
+def _oznaczone(con) -> list[dict]:
+    """Pozycje przeniesione do sprawdzenia z list (pakiet 7): operacja, faktura, dokument z rejestru albo płatność budżetu."""
+    wynik = []
+    for r in con.execute('SELECT * FROM oznaczone ORDER BY czas DESC'):
+        x = {'rodzaj': 'oznaczone', 'tytul': 'Przeniesione do sprawdzenia', 'obiekt': r['obiekt'], 'ref': r['ref'], 'wpis': r['wpis'],
+             'data': r['czas'][:10], 'kwota': None, 'kontrahent': '', 'faktury': '', 'opis': r['powod'] or 'bez komentarza'}
+        if r['obiekt'] == 'operacja':
+            o = con.execute('SELECT id, data_ksiegowania, kwota, kontrahent, tytul FROM operacje WHERE klucz = ?', (r['ref'],)).fetchone()
+            if o:
+                x.update(operacja_id=o['id'], data=o['data_ksiegowania'], kwota=o['kwota'], kontrahent=o['kontrahent'] or o['tytul'])
+        elif r['obiekt'] == 'faktura':
+            f = con.execute('SELECT f.numer, f.nabywca, f.data_wystawienia, f.brutto, s.pozostalo FROM faktury f'
+                            ' LEFT JOIN faktury_stan s USING(numer) WHERE f.numer = ?', (r['ref'],)).fetchone()
+            if f:
+                x.update(numer=f['numer'], data=f['data_wystawienia'], kwota=f['brutto'], kontrahent=f['nabywca'], faktury=f['numer'])
+        elif r['obiekt'] == 'zakup':
+            z = con.execute('SELECT nr_dok, podmiot, data, brutto, netto FROM zakupy WHERE nr_ewid = ?', (r['ref'],)).fetchone()
+            if z:
+                x.update(data=z['data'], kwota=-(z['brutto'] if z['brutto'] is not None else z['netto'] or 0), kontrahent=z['podmiot'],
+                         faktury=z['nr_dok'])
+        else:
+            p = con.execute("SELECT p.id, p.brutto * p.rodzaj AS kwota, COALESCE(NULLIF(p.kontrahent, ''), w.kontrahent) AS kontrahent,"
+                            ' p.termin, p.miesiac, p.nr_dok FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz WHERE p.id = ?',
+                            (r['ref'],)).fetchone()
+            if p:
+                x.update(platnosc=p['id'], data=p['termin'] or p['miesiac'] + '-01', kwota=p['kwota'], kontrahent=p['kontrahent'],
+                         faktury=p['nr_dok'] or '')
+        if x['kwota'] is None:
+            x['opis'] = f"{x['opis']} · nie ma już tej pozycji w danych"
+            x['kwota'] = 0
+        wynik.append(x)
+    return wynik
 
 
 # ---------- Etap 3: klienci, wydatki, reguły ----------
@@ -332,8 +475,16 @@ def klient(con, nazwa, rok=None) -> dict:
             'faktury': faktury, 'koszty': koszty}
 
 
-def wydatki(con, rodzaj=None, klient=None, dokument=None, zrodlo=None, q=None, od=None, do=None, strona=1, ile=STRONA):
+KOL_WYDATKOW = {'data_ksiegowania': ('data_ksiegowania', False), 'kontrahent': ("COALESCE(NULLIF(kontrahent, ''), opis)", True),
+                'tytul': ('tytul', True), 'kwota': ('kwota', False), 'rodzaj': ('rodzaj', True), 'klient': ('klient', True),
+                'zrodlo': ('zrodlo', True), 'dokument': ('dokument', True), 'netto_dok': ('netto_dok', False)}
+DATY_WYDATKOW = {'ksiegowania': ('o.data_ksiegowania', False)}
+
+
+def wydatki(con, rodzaj=None, klient=None, dokument=None, zrodlo=None, q=None, od=None, do=None, strona=1, ile=STRONA,
+            sortuj=None, kolejnosc=None, daty=None, wszystkie=False):
     warunki, params = [], []
+    _daty(con, daty, DATY_WYDATKOW, warunki, params)
     for kol, v in (('w.rodzaj', rodzaj), ('w.dokument', dokument)):
         if v:
             warunki.append(f'{kol} = ?'); params.append(v)
@@ -355,11 +506,13 @@ def wydatki(con, rodzaj=None, klient=None, dokument=None, zrodlo=None, q=None, o
            " (SELECT GROUP_CONCAT(z.podmiot || ' ' || z.nr_dok, '; ') FROM wydatki_dok d JOIN zakupy z USING(nr_ewid)"
            '  WHERE d.operacja_id = o.id) AS dokumenty FROM wydatki w JOIN operacje o ON o.id = w.operacja_id'
            + (' WHERE ' + ' AND '.join(warunki) if warunki else ''))
-    wynik = _strona(sql, params, strona, ile, con, 'data_ksiegowania DESC, o.id DESC')
-    wynik['suma'] = con.execute(f'SELECT COALESCE(SUM(kwota), 0) FROM ({sql})', params).fetchone()[0]
+    ile, maks = _ile(ile, wszystkie)
+    wynik = _strona(sql, params, strona, ile, con, filtry.porzadek(sortuj, kolejnosc, KOL_WYDATKOW, 'data_ksiegowania DESC', 'id DESC'), maks)
+    wynik['podsumowanie'] = _podsumowanie(con, sql, params, '-1', brutto='kwota')
+    wynik['suma'] = wynik['podsumowanie']['razem']['brutto']
     wynik['klienci'] = [r[0] for r in con.execute(
         "SELECT klient FROM faktury_klient UNION SELECT klient FROM wydatki WHERE klient != '' ORDER BY 1")]
-    wynik['podsumowanie'] = [dict(r) for r in con.execute(
+    wynik['rodzaje'] = [dict(r) for r in con.execute(
         'SELECT w.rodzaj, COUNT(*) AS ile, SUM(o.kwota) AS kwota FROM wydatki w JOIN operacje o ON o.id = w.operacja_id'
         ' GROUP BY w.rodzaj ORDER BY kwota')]
     return wynik
