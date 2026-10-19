@@ -4,7 +4,7 @@ a płatności planowane są jej pochodną liczoną przy każdej odbudowie.
 Same reguły, bez bazy i plików (testowalne wprost):
   - podstawy i liczba płatności z jednej komórki (faktura, worek, bez faktury, umowy, daniny),
   - reguła dnia wystawienia (pierwszy, ostatni, wybrany dzień, przesunięcie o N miesięcy, księgowanie wg budżetu),
-  - worek: tygodnie pon–nd przycięte do miesiąca, kwota proporcjonalnie do dni, reszta groszy do ostatniego tygodnia,
+  - worek: tygodnie (domyślnie od wtorku, jak w BS) przycięte do miesiąca, kwota proporcjonalnie do dni, reszta groszy do ostatniego,
   - umowy: udziały z kwot referencyjnych od księgowej (bez własnych wzorów podatkowych), reszta zaokrąglenia do osoby,
   - nadpisania pojedynczego planu i reguła „zmiana w wierszu kasuje ręczny wyjątek”,
   - etap i aktualność jak w BS.
@@ -146,13 +146,13 @@ def plus_dni(d: str, n: int) -> str:
 
 # ---------- Worek i umowy ----------
 
-# Pierwszy dzień tygodnia worka: 0 = poniedziałek (decyzja Mata 2026-10-19). Eksport BS z 14.10.2026 pokazuje tygodnie
-# od wtorku (1), stąd parametr w Finanse/Aplikacja/ustawienia.json: "worek_pierwszy_dzien_tygodnia".
-PIERWSZY_DZIEN_TYGODNIA = 0
+# Pierwszy dzień tygodnia worka: 1 = wtorek (decyzja Mata 2026-10-19, wieczór): BS dzieli tygodnie od wtorku do poniedziałku, a celem jest
+# zgodność 1:1 z BS. Zmiana w Finanse/Aplikacja/ustawienia.json: "worek_pierwszy_dzien_tygodnia" (0 = poniedziałek).
+PIERWSZY_DZIEN_TYGODNIA = 1
 
 
 def tygodnie(m: str, pierwszy: int = PIERWSZY_DZIEN_TYGODNIA) -> list[tuple[str, int]]:
-    """Tygodnie kalendarzowe (domyślnie pon–nd) zahaczające o miesiąc, przycięte do jego granic: (pierwszy dzień części, liczba dni)."""
+    """Tygodnie kalendarzowe (domyślnie od wtorku) zahaczające o miesiąc, przycięte do jego granic: (pierwszy dzień części, liczba dni)."""
     ost = ostatni_dzien(m)
     wynik, d = [], 1
     while d <= ost:
@@ -217,11 +217,22 @@ def nadpisz(p: dict, n: dict, dni: int):
         p['ksiegowanie'] = n['ksiegowanie']
 
 
+def podzial_pasuje(podzial, kwota: int) -> bool:
+    """Podział komórki przeniesiony z kopii BS (pakiet 6) obowiązuje, dopóki sumuje się do kwoty do podziału;
+    po zmianie kwoty komórki (albo rzeczywistych w worku) plany liczą się znowu z reguły."""
+    if isinstance(podzial, dict):
+        return sum(int(v) for v in podzial.values()) == kwota
+    return isinstance(podzial, list) and bool(podzial) and sum(int(k) for _, k in podzial) == kwota
+
+
 def generuj_komorke(w: dict, m: str, kwota: int, nadpisane: dict | None = None,
-                    pierwszy_dzien_tygodnia: int = PIERWSZY_DZIEN_TYGODNIA) -> list[dict]:
+                    pierwszy_dzien_tygodnia: int = PIERWSZY_DZIEN_TYGODNIA, podzial=None) -> list[dict]:
     """Płatności planowane z kwoty w komórce wg podstawy wiersza. Kwota 0 = jeden ukryty plan 0 (miejsce na rzeczywistą).
-    nadpisane: {id planu: {pole: wartość}} z kart płatności."""
+    nadpisane: {id planu: {pole: wartość}} z kart płatności. podzial: podział z kopii BS (worek: [[dzień, kwota], ...],
+    umowa: {osoba, us, zus}), używany tylko, gdy sumuje się do kwoty."""
     nadpisane = nadpisane or {}
+    if podzial is not None and not podzial_pasuje(podzial, kwota):
+        podzial = None
     pod = w.get('podstawa', '')
     dni = dni_na_platnosc(w.get('dni_na_platnosc'))
     umowa = jest_umowa(pod)
@@ -247,11 +258,13 @@ def generuj_komorke(w: dict, m: str, kwota: int, nadpisane: dict | None = None,
         return p
 
     if pod in WOREK:
-        czesci = podziel_worek(kwota, m, pierwszy_dzien_tygodnia) if kwota else [(f'{m}-01', 0)]
+        czesci = ([(d, int(k)) for d, k in podzial] if isinstance(podzial, list) else
+                  podziel_worek(kwota, m, pierwszy_dzien_tygodnia) if kwota else [(f'{m}-01', 0)])
         wynik = [plan(f't{i}', k, start, f'{m}-01') for i, (start, k) in enumerate(czesci, start=1)]
     elif umowa:
         skladowe = UMOWY[pod]
-        kwoty = podziel_umowe(kwota, w.get('proporcje'), skladowe) if kwota else {'osoba': 0}
+        kwoty = ({k: int(podzial.get(k, 0)) for k in skladowe} if isinstance(podzial, dict) else
+                 podziel_umowe(kwota, w.get('proporcje'), skladowe) if kwota else {'osoba': 0})
         wyst, ksieg = wystawienie_z_reguly(m, w.get('dzien_wystawienia'))
         osoba = plan('osoba', kwoty['osoba'], wyst, ksieg, 'osoba')
         wynik = [osoba]
