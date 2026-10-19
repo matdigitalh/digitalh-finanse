@@ -57,7 +57,7 @@ def _sprawdz_bud(con, d):
     """Zmiany budżetu tylko przy włączonym planowaniu i tylko do istniejących obiektów: wpis (także cała seria) jest
     najpierw próbnie nakładany na bieżący model; gdy którakolwiek operacja nie ma do czego się odnieść, nic nie trafia do pliku."""
     if not zapytania_budzet.planowanie(con):
-        raise ValueError('planowanie w apce jest wyłączone (tryb podglądu do 31.12.2026); włączysz je w Budżet, Ustawienia')
+        raise ValueError('Planowanie w apce jest wyłączone, więc edycja budżetu też. Włączysz je w Budżet, Ustawienia budżetu.')
     dzis = zapytania_budzet._dzien_stanu(con)
     for o in (d['operacje'] if d['op'] == 'seria' else [d]):
         if o['op'] == 'decyzja_planu' and o['decyzja'] == 'zaplacone':   # PIT i ZUS umowy dopiero po wypłacie dla osoby
@@ -153,6 +153,10 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania_budzet.arkusz(con, q.get('id', ''))
             elif sciezka == 'budzet/platnosc':
                 dane = zapytania_budzet.platnosc(con, q.get('id', ''))
+            elif sciezka == 'budzet/komorka':
+                dane = zapytania_budzet.komorka(con, q.get('wiersz', ''), q.get('miesiac', ''))
+            elif sciezka == 'budzet/ostatni':
+                dane = {'ostatni': zapytania_budzet.ostatni(con)}
             elif sciezka == 'budzet/lista':
                 dane = zapytania_budzet.lista(con, q.get('lista', 'wszystkie'), q.get('rodzaj'), q.get('q'), q.get('strona'), q.get('ile'),
                                               q.get('arkusz'))

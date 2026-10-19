@@ -202,7 +202,7 @@ class TestBlokadaPrzezSerwer(unittest.TestCase):
                 wiersz = {'op': 'wiersz', 'obiekt': {'id': 'w1', 'arkusz': aid, 'rodzaj': 1, 'podstawa': 'Faktura (jedna)'}}
                 status, odp = wyslij('bud', wiersz)
                 self.assertEqual(status, 400)
-                self.assertIn('podglądu', odp['blad'])
+                self.assertIn('Planowanie w apce jest wyłączone', odp['blad'])
                 self.assertEqual(wyslij('ustawienie', {'klucz': 'planowanie', 'wartosc': 'tak'})[0], 200)
                 self.assertEqual(wyslij('bud', {**wiersz, 'obiekt': {**wiersz['obiekt'], 'arkusz': 'nie-ma'}})[0], 400)
                 self.assertEqual(wyslij('bud', wiersz)[0], 200)

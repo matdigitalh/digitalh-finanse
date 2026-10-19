@@ -37,8 +37,15 @@ TYPY = {
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
-OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria')
+OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria',
+                # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
+                'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
+MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
+# Nazwy pól w komunikatach (po ludzku, jak w BS)
+NAZWY_POL = {'nazwa': 'Nazwa arkusza', 'folder': 'Folder', 'kategoria': 'Kategoria', 'komentarz': 'Komentarz', 'kontrahent': 'Kontrahent',
+             'przedmiot': 'Przedmiot transakcji', 'sekcja': 'Sekcja', 'metoda': 'Metoda płatności', 'tytul': 'Tytuł',
+             'dni_na_platnosc': 'Dni na płatność', 'od': 'Początek zakresu', 'do': 'Koniec zakresu', 'miesiac': 'Miesiąc'}
 USTAWIENIA = {'planowanie': ('tak', 'nie')}
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
@@ -159,10 +166,10 @@ def _tekst(maks):
         if v is None:
             return ''
         if not isinstance(v, (str, int)) or isinstance(v, bool):
-            raise ValueError(f'{pole}: oczekiwany tekst')
+            raise ValueError(f'{NAZWY_POL.get(pole, pole)}: oczekiwany tekst')
         v = str(v).strip()
         if len(v) > maks:
-            raise ValueError(f'{pole}: najwyżej {maks} znaków')
+            raise ValueError(f'{NAZWY_POL.get(pole, pole)}: najwyżej {maks} znaków (jest {len(v)}). Skróć tekst.')
         return v
     return f
 
@@ -173,7 +180,7 @@ def _niepusty(maks):
     def f(v, pole):
         v = t(v, pole)
         if not v:
-            raise ValueError(f'{pole}: pole nie może być puste')
+            raise ValueError(f'{NAZWY_POL.get(pole, pole)}: pole nie może być puste. Wpisz wartość.')
         return v
     return f
 
@@ -223,7 +230,7 @@ def _dni(v, pole):
         t = v.strip()
         v = 0 if t.lower() == 'natychmiast' else int(m.group()) if (m := re.match(r'\d+', t)) else None
     if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 99:
-        raise ValueError(f'{pole}: liczba dni od 0 do 99')
+        raise ValueError('Dni na płatność: liczba od 0 do 99. Dłuższy termin ustaw na karcie płatności (dzień płatności).')
     return v
 
 
@@ -324,6 +331,17 @@ POLA_BUD = {
 }
 
 
+def sprawdz_zakres(od, do):
+    """Zakres arkusza: początek nie po końcu, najwyżej 20 lat (A-KOM-07, A-OPS-01). Gdy podano tylko jedną granicę,
+    resztę sprawdza serwer na bieżącym arkuszu."""
+    if od and do:
+        if od > do:
+            raise ValueError('Początek zakresu jest po końcu. Wybierz najpierw miesiąc startu, potem miesiąc końca.')
+        ile = (int(do[:4]) - int(od[:4])) * 12 + int(do[5:7]) - int(od[5:7]) + 1
+        if ile > MAKS_MIESIECY:
+            raise ValueError(f'Arkusz może mieć najwyżej 20 lat (240 miesięcy), a wybrany zakres ma {ile}. Podziel plan na kilka arkuszy.')
+
+
 def _pola(o, slownik: dict, nazwa: str) -> dict:
     if not isinstance(o, dict):
         raise ValueError(f'{nazwa}: oczekiwany obiekt')
@@ -346,7 +364,7 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         if len(json.dumps(wynik)) > 400000:
             raise ValueError('za duży wpis')
         return wynik
-    if len(json.dumps(d)) > 8000:
+    if len(json.dumps(d)) > (8000 if op in ('arkusz', 'wiersz', 'platnosc', 'komorka', 'decyzja_planu') else 120000):
         raise ValueError('za duży wpis')
     if op in ('arkusz', 'wiersz', 'platnosc'):
         o = d.get('obiekt')
@@ -354,7 +372,46 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
             raise ValueError('brak obiektu')
         if d.get('usun'):
             return {'op': op, 'obiekt': {'id': _niepusty(80)(o['id'], 'id')}, 'usun': True}
-        return {'op': op, 'obiekt': _pola(o, POLA_BUD[op], op), 'usun': False}
+        obiekt = _pola(o, POLA_BUD[op], op)
+        if op == 'arkusz':
+            sprawdz_zakres(obiekt.get('od'), obiekt.get('do'))
+        return {'op': op, 'obiekt': obiekt, 'usun': False}
+    if op in ('scal', 'duplikuj'):
+        ws = d.get('wiersze')
+        if not isinstance(ws, list) or not ws or len(ws) > 1000 or not all(isinstance(x, str) and 0 < len(x) <= 80 for x in ws):
+            raise ValueError('brak zaznaczonych wierszy')
+        if len(set(ws)) != len(ws):
+            raise ValueError('ten sam wiersz zaznaczony dwa razy')
+        if op == 'scal':
+            if len(ws) < 2:
+                raise ValueError('Do scalenia zaznacz co najmniej dwa wiersze.')
+            return {'op': op, 'wiersze': ws}
+        nowe = d.get('nowe')
+        if not isinstance(nowe, list) or len(nowe) != len(ws) or len(set(nowe)) != len(nowe):
+            raise ValueError('duplikuj: lista nowych identyfikatorów tej samej długości co wiersze')
+        wynik = {'op': op, 'wiersze': ws, 'nowe': [_niepusty(80)(x, 'id') for x in nowe]}
+        if d.get('do_arkusza'):
+            wynik['do_arkusza'] = _niepusty(80)(d['do_arkusza'], 'id')
+        return wynik
+    if op == 'podziel':
+        if set(d) - {'op', 'wiersz'}:
+            raise ValueError('podziel: tylko wiersz')
+        return {'op': op, 'wiersz': _niepusty(80)(d.get('wiersz'), 'id')}
+    if op == 'przesun_arkusz':
+        o_ = d.get('o')
+        if isinstance(o_, bool) or not isinstance(o_, int) or not 0 < abs(o_) <= MAKS_MIESIECY:
+            raise ValueError('Przesunięcie startu: liczba miesięcy różna od zera (najwyżej 240 w każdą stronę).')
+        return {'op': op, 'arkusz': _niepusty(80)(d.get('arkusz'), 'id'), 'o': o_}
+    if op == 'duplikuj_arkusz':
+        o = _pola(d.get('obiekt'), POLA_BUD['arkusz'], 'arkusz')
+        if not all(o.get(k) for k in ('id', 'nazwa', 'folder', 'kategoria', 'od', 'do')):
+            raise ValueError('Kopia arkusza: podaj nazwę, folder, kategorię i zakres miesięcy.')
+        sprawdz_zakres(o['od'], o['do'])
+        prz = d.get('przesuniecie', 0)
+        if isinstance(prz, bool) or not isinstance(prz, int) or abs(prz) > MAKS_MIESIECY:
+            raise ValueError('Przesunięcie wartości: liczba miesięcy (najwyżej 240 w każdą stronę).')
+        return {'op': op, 'arkusz': _niepusty(80)(d.get('arkusz'), 'id'), 'obiekt': o, 'przesuniecie': prz,
+                'wartosci': _tak_nie(d.get('wartosci', False), 'wartosci')}
     if op == 'komorka':
         if not d.get('wiersz') or not d.get('miesiac'):
             raise ValueError('komórka: wiersz i miesiąc')
@@ -364,7 +421,9 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
     if op == 'przenies':
         if not isinstance(d.get('wiersze'), list) or not d['wiersze'] or not d.get('do_arkusza'):
             raise ValueError('brak wierszy albo arkusza docelowego')
-        return {'op': op, 'wiersze': [str(x) for x in d['wiersze']][:200], 'do_arkusza': str(d['do_arkusza'])}
+        if len(d['wiersze']) > 1000:
+            raise ValueError('Naraz przeniesiesz najwyżej 1000 wierszy.')
+        return {'op': op, 'wiersze': [str(x) for x in d['wiersze']], 'do_arkusza': str(d['do_arkusza'])}
     if d.get('decyzja') not in ('przesun', 'zaplacone', 'anuluj') or not d.get('platnosc'):
         raise ValueError('decyzja: przesun, zaplacone albo anuluj')
     wynik = {'op': op, 'platnosc': str(d['platnosc']), 'decyzja': d['decyzja']}

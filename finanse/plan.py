@@ -300,6 +300,51 @@ def przelicz_jawny(p: dict, w: dict, pola: set) -> dict:
     return p
 
 
+# ---------- Odstępstwa płatności od ustawień wiersza (A-ARK-11, A-KOL-20) ----------
+
+def odstepstwa(p: dict, w: dict) -> list[str]:
+    """Cechy płatności różne od tego, co wynika z ustawień wiersza (ręczny wyjątek na planie albo dane dokumentu
+    rzeczywistej). Interfejs podświetla je na pomarańczowo w karcie i w panelu podglądu. Daty sprawdzamy wg reguły dnia
+    wystawienia i dni na płatność; przy regule „(auto)” (wiersz z importu bez jednej reguły) dat nie oceniamy."""
+    from .budzet import stawka_proc
+    pod = w.get('podstawa', '')
+    umowa = jest_umowa(pod)
+    wynik = []
+    if (p.get('kontrahent') or w.get('kontrahent') or '') != (w.get('kontrahent') or ''):
+        wynik.append('kontrahent')
+    for k in ('komentarz', 'metoda'):
+        if (p.get(k) or '') != (w.get(k) or ''):
+            wynik.append(k)
+    if bool(p.get('ksiegowane', True)) != (True if umowa else bool(w.get('ksiegowane', True))):
+        wynik.append('ksiegowane')
+    if bool(p.get('w_cashflow', True)) != bool(w.get('w_cashflow', True)):
+        wynik.append('w_cashflow')
+    if ma_vat(pod) and stawka_proc(p.get('stawka')) != stawka_proc(w.get('stawka_vat')):
+        wynik.append('stawka')
+    if p.get('skladowa') in ('us', 'zus') or not p.get('wystawienie'):
+        return wynik
+    dni = dni_na_platnosc(w.get('dni_na_platnosc'))
+    if pod not in WOREK:
+        try:
+            r = regula(w.get('dzien_wystawienia'))
+        except ValueError:
+            r = None
+        if r is None:   # „(auto)” albo zapis spoza reguł: daty bez oceny
+            return wynik
+        wyst, ksieg = wystawienie_z_reguly(p['miesiac'], w.get('dzien_wystawienia'))
+        if p['wystawienie'] != wyst:
+            wynik.append('wystawienie')
+            ksieg = p['wystawienie'][:7] + '-01'
+        if p.get('ksiegowanie') and p['ksiegowanie'][:7] != ksieg[:7]:
+            wynik.append('ksiegowanie')
+    termin = plus_dni(p['wystawienie'], dni)
+    if p.get('termin') and p['termin'] != termin:
+        wynik.append('termin')
+    if p.get('realny') and p['realny'] != (p.get('termin') or termin):
+        wynik.append('realny')
+    return wynik
+
+
 # ---------- Etap i aktualność (B-MOD-08 do 10) ----------
 
 def etap_wg_bs(typ: str, oplacona: bool, termin: str | None, dzis: str) -> str:

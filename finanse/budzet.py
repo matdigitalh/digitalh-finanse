@@ -391,6 +391,270 @@ def _ma_rzeczywiste(st: dict, wid: str) -> bool:
     return any(p['wiersz'] == wid and p['typ'] != 'plan' for p in st['platnosc'].values())
 
 
+# ---------- Pakiet 3: akcje na wierszach i arkuszu (reguły BS w jednym miejscu, zawsze jedną serią) ----------
+
+LIMIT_WIERSZY = 1000   # wierszy na arkusz (A-ARK-09)
+MIESIACE_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik',
+               'listopad', 'grudzień']
+WOREK_DLA = {'Faktura (jedna)': 'Faktura (w worku)', 'Bez faktury': 'Bez faktury (w worku)'}
+
+
+def _mies_pl(m: str) -> str:
+    return f'{MIESIACE_PL[int(m[5:7]) - 1]} {m[:4]}'
+
+
+def _lista_mies(ms) -> str:
+    ms = sorted(ms)
+    t = ', '.join(_mies_pl(m) for m in ms[:4])
+    return t + (f' i {len(ms) - 4} innych' if len(ms) > 4 else '')
+
+
+def _rodzina(podstawa: str) -> str:
+    """Faktura z fakturą w worku to ta sama rodzina (scalanie dozwolone, A-OPS-12); tak samo bez faktury."""
+    return {'Faktura (w worku)': 'Faktura (jedna)', 'Bez faktury (w worku)': 'Bez faktury'}.get(podstawa, podstawa)
+
+
+def _usun_wiersz(st: dict, wid: str):
+    st['wiersz'].pop(wid, None)
+    for pid in [p for p, x in st['platnosc'].items() if x['wiersz'] == wid]:
+        st['platnosc'].pop(pid)
+    for k in [k for k in st['komorka'] if k[0] == wid]:
+        st['komorka'].pop(k)
+    for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:')]:
+        st['nadpisane'].pop(k)
+
+
+def _utrwal(st: dict, wid: str, cel: str | None = None) -> dict:
+    """Plany liczone z komórek wiersza stają się zwykłymi planami (jak plany z BS): kwota, daty i cechy (razem z ręcznymi
+    zmianami) zostają, komórka znika. Potrzebne przy scalaniu i dzieleniu, bo płatności przechodzą wtedy do innego wiersza
+    bez przeliczania („wszystkie płatności, nie suma kwot”). Nowe ID, bo ID planu z komórki należy do komórki.
+    Zwraca mapę stare ID → nowe. Słowniki stanu podmieniamy, nie zmieniamy w miejscu (seria musi dać się odrzucić)."""
+    cel = cel or wid
+    pla = st['platnosc']
+    mapa = {}
+    for pid in sorted(pid for pid, p in pla.items() if p['wiersz'] == wid and p.get('generowany')):
+        p = pla.pop(pid)
+        nid = _wolne(f'p-{_slug(pid, cel)}', pla)
+        mapa[pid] = nid
+        pla[nid] = {**{k: v for k, v in p.items() if k not in ('generowany', 'nadpisane')}, 'id': nid, 'wiersz': cel, 'zrodlo': 'apka'}
+    for nid in mapa.values():
+        if pla[nid].get('spinacz') in mapa:
+            pla[nid] = {**pla[nid], 'spinacz': mapa[pla[nid]['spinacz']]}
+    for k in [k for k in st['komorka'] if k[0] == wid]:
+        st['komorka'].pop(k)
+    for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:')]:
+        st['nadpisane'].pop(k)
+    return mapa
+
+
+def wartosci_komorek(st: dict, wid: str, tylko_plany: bool = False) -> dict:
+    """Wartość każdej komórki wiersza tak, jak widać ją w arkuszu: kwota wpisana w apce, a gdy jej brak, suma netto
+    aktualnych płatności (plany z BS i rzeczywiste). Worek z rzeczywistymi: większa z kwoty i sumy rzeczywistych (A-KOM-04).
+    Używane przy duplikowaniu (rzeczywiste stają się planami z ustawień wiersza) i przesuwaniu arkusza."""
+    wynik = {m: k for (w, m), k in st['komorka'].items() if w == wid}
+    suma, rz, jest = defaultdict(int), defaultdict(int), set()
+    for p in st['platnosc'].values():
+        if p['wiersz'] != wid or not p.get('aktualna', True) or (tylko_plany and p['typ'] != 'plan'):
+            continue
+        jest.add(p['miesiac'])
+        if p.get('generowany'):
+            continue
+        suma[p['miesiac']] += p['netto']
+        if p['typ'] != 'plan':
+            rz[p['miesiac']] += p['netto']
+    for m in jest:
+        wynik[m] = max(wynik[m], rz[m]) if m in wynik else suma[m]
+    return wynik
+
+
+def _wiersze_ark(st: dict, aid: str) -> list[str]:
+    return [x for x, w in st['wiersz'].items() if w['arkusz'] == aid]
+
+
+def _za_duzo_wierszy(st: dict, aid: str, dochodzi: int) -> str | None:
+    ile = len(_wiersze_ark(st, aid))
+    if ile + dochodzi > LIMIT_WIERSZY:
+        return (f'Arkusz może mieć najwyżej {LIMIT_WIERSZY} wierszy (ma {ile}, dochodzi {dochodzi}). '
+                'Przenieś część wierszy do nowego arkusza tematycznego.')
+    return None
+
+
+def _scal(st: dict, d: dict, scisle: bool):
+    """A-OPS-12: ten sam rodzaj i ta sama podstawa (faktura z fakturą w worku wolno). Wynik: pierwszy zaznaczony wiersz
+    (opis i ustawienia z niego) ze WSZYSTKIMI płatnościami; gdy w miesiącu jest kilka płatności, podstawa w worku."""
+    wie, pla = st['wiersz'], st['platnosc']
+    ids = d['wiersze']
+    oid = ids[0]
+    brak = [x for x in ids if x not in wie]
+    if brak:
+        return f'nie ma wierszy: {", ".join(brak)}', None, oid
+    ws = [wie[x] for x in ids]
+    if len({w['rodzaj'] for w in ws}) > 1:
+        return 'Scalić można tylko wiersze tego samego rodzaju: same wpływy albo same obciążenia. Odznacz wiersze drugiego rodzaju.', None, oid
+    if len({_rodzina(w.get('podstawa', '')) for w in ws}) > 1:
+        return ('Scalić można tylko wiersze o tej samej podstawie płatności (wyjątek: faktura z fakturą w worku). '
+                'Zmień podstawę jednego z wierszy albo scal je w osobnych grupach.'), None, oid
+    pod = ws[0].get('podstawa', '')
+    if _rodzina(pod) not in WOREK_DLA:   # umowy i podatki nie mają wersji w worku: miesiące nie mogą się pokrywać
+        mies = [{p['miesiac'] for p in pla.values() if p['wiersz'] == x and not p.get('ukryty')} for x in ids]
+        wspolne = sorted({m for s in mies for m in s if sum(m in t for t in mies) > 1})
+        if wspolne and scisle:
+            return (f'Wiersze mają płatności w tych samych miesiącach ({_lista_mies(wspolne)}), a podstawa „{pod}” nie ma wersji '
+                    'w worku. Scal wiersze bez wspólnych miesięcy albo zostaw je osobno.'), None, oid
+    bylo = {'wiersze': [dict(w) for w in ws]}
+    for x in ids:
+        _utrwal(st, x, oid)
+    for pid, p in list(pla.items()):
+        if p['wiersz'] in ids[1:]:
+            pla[pid] = {**p, 'wiersz': oid}
+    for x in ids[1:]:
+        wie.pop(x)
+    nowy = {**wie[oid], 'zrodlo': 'apka'}
+    widoczne = Counter(p['miesiac'] for p in pla.values() if p['wiersz'] == oid and not p.get('ukryty'))
+    for pid, p in list(pla.items()):   # plan zerowy był tylko miejscem na płatność; obok innej płatności jest zbędny
+        if p['wiersz'] == oid and p.get('ukryty') and widoczne[p['miesiac']]:
+            pla.pop(pid)
+    if pod in WOREK_DLA and any(n > 1 for n in widoczne.values()):
+        nowy['podstawa'] = WOREK_DLA[pod]
+    wie[oid] = nowy
+    return None, bylo, oid
+
+
+def _podziel(st: dict, d: dict, scisle: bool):
+    """A-OPS-13: tylko wiersz z co najmniej dwiema płatnościami; tyle wierszy, ile płatności, każdy z jedną płatnością
+    i tymi samymi cechami. Pierwsza płatność (najwcześniejsza) zostaje w oryginale."""
+    wie, pla = st['wiersz'], st['platnosc']
+    wid = d['wiersz']
+    if wid not in wie:
+        return 'nie ma wiersza do podziału', None, wid
+    w = wie[wid]
+    if plan.jest_umowa(w.get('podstawa', '')):
+        return ('Wiersza umowy nie podzielisz: wypłata, PIT i ZUS z jednej komórki muszą zostać razem. '
+                'Zduplikuj wiersz i rozdziel kwoty w komórkach.'), None, wid
+    ile = sum(1 for p in pla.values() if p['wiersz'] == wid and not p.get('ukryty'))
+    if ile < 2:
+        return (f'Podzielić można tylko wiersz z co najmniej dwiema płatnościami (ten ma {ile}). '
+                'Żeby rozbić kwotę, użyj „Podziel procentem” albo wpisz kwoty w nowym wierszu.'), None, wid
+    if scisle and (powod := _za_duzo_wierszy(st, w['arkusz'], ile - 1)):
+        return powod, None, wid
+    bylo = dict(w)
+    _utrwal(st, wid)
+    ps = sorted((p for p in pla.values() if p['wiersz'] == wid and not p.get('ukryty')),
+                key=lambda p: (p['miesiac'], p.get('wystawienie') or '', p['id']))
+    for i, p in enumerate(ps[1:], start=2):
+        nid = _wolne(f'{wid[:70]}-{i}', wie)
+        wie[nid] = {**w, 'id': nid, 'zrodlo': 'apka'}
+        pla[p['id']] = {**p, 'wiersz': nid}
+    return None, bylo, wid
+
+
+def _duplikuj(st: dict, d: dict, scisle: bool):
+    """A-OPS-10: kopia wiersza z ustawieniami i wartościami komórek; rzeczywiste oryginału stają się w kopii planami
+    z ustawień wiersza (wartość komórki = kwota, plany liczy generator)."""
+    wie, ark = st['wiersz'], st['arkusz']
+    oid = ','.join(d['nowe'])
+    brak = [x for x in d['wiersze'] if x not in wie]
+    if brak:
+        return f'nie ma wierszy: {", ".join(brak)}', None, oid
+    cel = d.get('do_arkusza')
+    if cel and cel not in ark:
+        return 'nie ma arkusza docelowego', None, oid
+    if any(x in wie for x in d['nowe']):
+        return 'wiersz o tym identyfikatorze już jest', None, oid
+    if scisle:
+        for aid, n in Counter(cel or wie[x]['arkusz'] for x in d['wiersze']).items():
+            if powod := _za_duzo_wierszy(st, aid, n):
+                return powod, None, oid
+    for src, nid in zip(d['wiersze'], d['nowe']):
+        w = wie[src]
+        wie[nid] = {**w, 'id': nid, 'zrodlo': 'apka', **({'arkusz': cel} if cel else {})}
+        a = ark.get(wie[nid]['arkusz']) or {}
+        for m, k in wartosci_komorek(st, src).items():
+            if not a or a['od'] <= m <= a['do']:
+                st['komorka'][(nid, m)] = k
+        _odswiez(st, nid)
+    return None, None, oid
+
+
+def _przesun_arkusz(st: dict, d: dict, scisle: bool):
+    """A-OPS-05: cały arkusz o N miesięcy bez zmiany długości; tylko bez płatności rzeczywistych. Plany powstają na nowo
+    z ustawień wierszy (ręczne zmiany pojedynczych planów przepadają)."""
+    ark, wie, pla = st['arkusz'], st['wiersz'], st['platnosc']
+    aid, o = d['arkusz'], d['o']
+    a = ark.get(aid)
+    if not a:
+        return 'nie ma takiego arkusza', None, aid
+    ids = set(_wiersze_ark(st, aid))
+    if scisle and any(p['wiersz'] in ids and p['typ'] != 'plan' for p in pla.values()):
+        return ('Arkusz ma płatności rzeczywiste, więc jego startu nie przesuniesz. Zmień zakres miesięcy (Zmodyfikuj czas trwania) '
+                'albo zduplikuj arkusz z przesunięciem startu.'), None, aid
+    bylo = dict(a)
+    for wid in ids:
+        wart = wartosci_komorek(st, wid, tylko_plany=True)
+        for pid in [pid for pid, p in pla.items() if p['wiersz'] == wid and p['typ'] == 'plan']:
+            pla.pop(pid)
+        for k in [k for k in st['komorka'] if k[0] == wid]:
+            st['komorka'].pop(k)
+        for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{wid}:')]:
+            st['nadpisane'].pop(k)
+        for m, k in wart.items():
+            st['komorka'][(wid, plan.przesun_miesiac(m, o))] = k
+        _odswiez(st, wid)
+    ark[aid] = {**a, 'od': plan.przesun_miesiac(a['od'], o), 'do': plan.przesun_miesiac(a['do'], o), 'zrodlo': 'apka'}
+    return None, bylo, aid
+
+
+def _duplikuj_arkusz(st: dict, d: dict, scisle: bool):
+    """A-OPS-06: kopia struktury (wiersze, sekcje, ustawienia), a z „Duplikuj wartości” także kwot komórek, przesuniętych
+    o N miesięcy i przyciętych do zakresu kopii. Wszystkie płatności oryginału stają się w kopii nowymi planami z ustawień
+    wiersza (bez ręcznych zmian pojedynczych planów)."""
+    ark, wie = st['arkusz'], st['wiersz']
+    src, o = d['arkusz'], d['obiekt']
+    nid = o['id']
+    if src not in ark:
+        return 'nie ma arkusza do zduplikowania', None, nid
+    if nid in ark:
+        return 'arkusz o tym identyfikatorze już jest', None, nid
+    ark[nid] = {**o, 'zrodlo': 'apka'}
+    zrodlowe = sorted((wie[x] for x in _wiersze_ark(st, src)),
+                      key=lambda w: (-w['rodzaj'], w.get('kontrahent') or '', w.get('komentarz') or '', w['id']))
+    for w in zrodlowe:
+        wid = _wolne(f"w-{_slug(nid, w['id'])}", wie)
+        wie[wid] = {**w, 'id': wid, 'arkusz': nid, 'zrodlo': 'apka'}
+        if d['wartosci']:
+            for m, k in wartosci_komorek(st, w['id']).items():
+                m2 = plan.przesun_miesiac(m, d['przesuniecie'])
+                if o['od'] <= m2 <= o['do']:
+                    st['komorka'][(wid, m2)] = k
+            _odswiez(st, wid)
+    return None, None, nid
+
+
+def _zmien_zakres(st: dict, a: dict, nowy: dict, scisle: bool) -> str | None:
+    """A-OPS-04: miesiąc z płatnością rzeczywistą musi zostać w zakresie (🔒); plany z wyciętych miesięcy znikają (💲)."""
+    od, do = nowy['od'], nowy['do']
+    if od > do:
+        return 'Początek zakresu jest po końcu. Wybierz najpierw miesiąc startu, potem miesiąc końca.'
+    ile = _roznica_mies(od, do) + 1
+    if ile > 240:
+        return f'Arkusz może mieć najwyżej 20 lat (240 miesięcy), a wybrany zakres ma {ile}. Podziel plan na kilka arkuszy.'
+    if (od, do) == (a.get('od'), a.get('do')):
+        return None
+    ids = set(_wiersze_ark(st, a['id']))
+    poza = [p for p in st['platnosc'].values() if p['wiersz'] in ids and not od <= p['miesiac'] <= do]
+    rz = {p['miesiac'] for p in poza if p['typ'] != 'plan'}
+    if scisle and rz:
+        return (f'W miesiącach: {_lista_mies(rz)} są płatności rzeczywiste, więc te miesiące muszą zostać w zakresie arkusza. '
+                'Wybierz zakres, który je obejmuje.')
+    for p in poza:
+        if p['typ'] == 'plan':
+            st['platnosc'].pop(p['id'])
+            st['nadpisane'].pop(p['id'], None)
+    for k in [k for k in st['komorka'] if k[0] in ids and not od <= k[1] <= do]:
+        st['komorka'].pop(k)
+    return None
+
+
 def _rowne(pole: str, a, b) -> bool:
     """Porównanie wartości cechy wiersza po normalizacji (stawka 0,23 = 23, „14” = 14, „10” = „10.”)."""
     try:
@@ -511,6 +775,10 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
     nie zmienia. scisle=True przy sprawdzaniu nowego wpisu z interfejsu: wtedy obowiązują też blokady BS."""
     ark, wie, pla = st['arkusz'], st['wiersz'], st['platnosc']
     op = d['op']
+    akcje = {'scal': _scal, 'podziel': _podziel, 'duplikuj': _duplikuj, 'przesun_arkusz': _przesun_arkusz,
+             'duplikuj_arkusz': _duplikuj_arkusz}
+    if op in akcje:
+        return akcje[op](st, d, scisle)
     if op == 'komorka':
         wid, m, kwota = d['wiersz'], d['miesiac'], d.get('kwota')
         oid = f'{wid}:{m}'
@@ -557,19 +825,35 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
         if d.get('usun'):
             if bylo is None:
                 return f'nie ma {nazwa} do usunięcia', None, oid
-            zbior.pop(oid)
+            if op == 'arkusz':
+                wiersze_ark = set(_wiersze_ark(st, oid))
+                if scisle and any(p['wiersz'] in wiersze_ark and p['typ'] != 'plan' for p in pla.values()):
+                    return ('Arkusz ma płatności rzeczywiste, więc go nie usuniesz. Przenieś wiersze z rzeczywistymi do innego '
+                            'arkusza albo zostaw arkusz i wyczyść tylko plany.'), None, oid
+                zbior.pop(oid)
+                for wid in wiersze_ark:
+                    _usun_wiersz(st, wid)
+                return None, bylo, oid
             if op == 'wiersz':
-                for pid in [p for p, x in pla.items() if x['wiersz'] == oid]:
-                    pla.pop(pid)
-                for k in [k for k in st['komorka'] if k[0] == oid]:
-                    st['komorka'].pop(k)
-                for k in [k for k in st['nadpisane'] if k.startswith(f'plan:{oid}:')]:
-                    st['nadpisane'].pop(k)
+                if scisle and _ma_rzeczywiste(st, oid):
+                    return ('Wiersz ma płatność rzeczywistą, więc go nie usuniesz. Wyczyść kwoty planów w komórkach '
+                            'albo przenieś wiersz do innego arkusza.'), None, oid
+                _usun_wiersz(st, oid)
+                return None, bylo, oid
+            if scisle and bylo.get('typ') != 'plan':
+                return ('To płatność rzeczywista (dokument albo przelew), więc nie usuniesz jej z budżetu. '
+                        'Usunąć możesz tylko płatność planowaną.'), None, oid
+            zbior.pop(oid)
             return None, bylo, oid
         if op == 'arkusz':
             if bylo is None and not all(obiekt.get(k) for k in ('nazwa', 'folder', 'kategoria', 'od', 'do')):
                 return 'nie ma takiego arkusza', None, oid
-            ark[oid] = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            nowy = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            if bylo:
+                powod = _zmien_zakres(st, bylo, nowy, scisle)
+                if powod:
+                    return powod, None, oid
+            ark[oid] = nowy
             return None, bylo, oid
         if op == 'wiersz':
             if 'arkusz' in obiekt and obiekt['arkusz'] not in ark:
@@ -579,6 +863,8 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             nowy = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
             if scisle:
                 powod = _blokady_wiersza(st, oid, bylo, nowy, obiekt)
+                if not powod and (bylo is None or bylo.get('arkusz') != nowy['arkusz']):
+                    powod = _za_duzo_wierszy(st, nowy['arkusz'], 1)
                 if powod:
                     return powod, None, oid
             if plan.jest_umowa(nowy.get('podstawa', '')):   # umowa: Księgowane zawsze tak, VAT „-”
@@ -607,6 +893,17 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             if not (obiekt.get('wiersz') in wie and obiekt.get('miesiac') and 'netto' in obiekt):
                 return 'nie ma takiej płatności', None, oid
             obiekt = {'typ': 'plan', 'etap_bs': 'Planowana', 'aktualna': True, 'nr_dok': '', 'nr_wewn': '', **obiekt}
+        elif obiekt.get('miesiac', bylo['miesiac']) != bylo['miesiac'] or obiekt.get('wiersz', bylo['wiersz']) != bylo['wiersz']:
+            if bylo.get('typ') != 'plan':
+                if scisle:
+                    return ('Płatności rzeczywistej nie przeniesiesz ręcznie do innej komórki. '
+                            'Przenieś cały wiersz do innego arkusza.'), None, oid
+            elif 'miesiac' in obiekt:   # plan na inny miesiąc: wszystkie daty przesuwają się o tyle samo (B-MOD-11)
+                o = _roznica_mies(bylo['miesiac'], obiekt['miesiac'])
+                obiekt = {**{k: _przesun_date(bylo.get(k), o) for k in ('wystawienie', 'termin', 'realny', 'ksiegowanie')}, **obiekt}
+            a = ark.get(wie.get(obiekt.get('wiersz', bylo['wiersz']), {}).get('arkusz'))
+            if scisle and a and not a['od'] <= obiekt.get('miesiac', bylo['miesiac']) <= a['do']:
+                return f"Miesiąc {_mies_pl(obiekt['miesiac'])} jest poza zakresem arkusza. Najpierw wydłuż arkusz (Zarządzaj).", None, oid
         if scisle and dzis and (bylo or obiekt).get('typ') == 'plan':
             for k in ('wystawienie', 'termin', 'realny', 'ksiegowanie'):
                 if obiekt.get(k) and (bylo is None or obiekt[k] != bylo.get(k)):
@@ -622,6 +919,14 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
         brak = [w for w in d['wiersze'] if w not in wie]
         if d['do_arkusza'] not in ark or brak:
             return 'nie ma arkusza docelowego' if d['do_arkusza'] not in ark else f'nie ma wierszy: {", ".join(brak)}', None, ','.join(d['wiersze'])
+        if scisle:
+            cel, ids = ark[d['do_arkusza']], set(d['wiersze'])
+            poza = {p['miesiac'] for p in pla.values() if p['wiersz'] in ids and not cel['od'] <= p['miesiac'] <= cel['do']}
+            if poza:
+                return (f"Arkusz „{cel['nazwa']}” obejmuje {_mies_pl(cel['od'])} do {_mies_pl(cel['do'])}, a wiersze mają płatności "
+                        f"także w: {_lista_mies(poza)}. Najpierw wydłuż arkusz docelowy (Zarządzaj, Zmodyfikuj czas trwania)."), None, ','.join(d['wiersze'])
+            if powod := _za_duzo_wierszy(st, d['do_arkusza'], len([x for x in ids if wie[x]['arkusz'] != d['do_arkusza']])):
+                return powod, None, ','.join(d['wiersze'])
         for wid in d['wiersze']:
             wie[wid] = {**wie[wid], 'arkusz': d['do_arkusza']}
         return None, None, ','.join(d['wiersze'])
@@ -686,7 +991,8 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict]) -> list[dict]:
         if powod:
             d = w['dane']
             obiekt = ((d.get('obiekt') or {}).get('id') or d.get('platnosc') or ','.join(d.get('wiersze', []))
-                      or (f"{d['wiersz']}:{d['miesiac']}" if d['op'] == 'komorka' else f"{len(d.get('operacje', []))} operacji"))
+                      or (f"{d['wiersz']}:{d['miesiac']}" if d['op'] == 'komorka' else d.get('wiersz') or d.get('arkusz')
+                          or f"{len(d.get('operacje', []))} operacji"))
             osierocone.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': d['op'], 'obiekt': obiekt, 'powod': powod})
             continue
         for o, bylo, oid in wykonane:
@@ -719,7 +1025,7 @@ def sprawdz_wpis(dane: dict, wpisy: list[dict], model: dict | None = None, dzis:
     zastosuj_zdarzenia(model, wpisy)
     powod, _ = _zastosuj_wpis(_stan(model), {'dane': dane}, model.get('stare_id', {}), scisle=True, dzis=dzis)
     if powod:
-        raise ValueError(f'zmiana odrzucona, nic nie zapisano ({powod})')
+        raise ValueError(f'Nic nie zapisano. {powod}' if powod[:1].isupper() else f'Nic nie zapisano: {powod}')
 
 
 def generuj_cykliczne(model: dict):
@@ -793,20 +1099,26 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     if not model:
         return {'arkuszy': 0}
     model = json.loads(json.dumps(model))   # kopia, plik zostaje nietknięty
+    z_importu = {w['id'] for w in model['wiersze']}
     historia = zastosuj_zdarzenia(model, wpisy)
     generuj_cykliczne(model)
+    # Kolejność wierszy w arkuszu: wiersze z importu jak dotąd (wpływy, potem obciążenia, kontrahent, komentarz), wiersze
+    # dodane w apce na końcu w kolejności powstania (nowy wiersz zostaje tam, gdzie go wpisano, jak w BS).
+    klucz = {w['id']: ((0, -w['rodzaj'], w.get('kontrahent') or '', w.get('komentarz') or '', w['id']) if w['id'] in z_importu
+                       else (1, nr)) for nr, w in enumerate(model['wiersze'])}
+    kolejnosc = {wid: i for i, wid in enumerate(sorted(klucz, key=klucz.get))}
     for a in model['arkusze']:
         con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo) VALUES (?,?,?,?,?,?,?)',
                     (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', '')))
     for w in model['wiersze']:
         con.execute('INSERT INTO bud_wiersz (id, arkusz, rodzaj, podstawa, kontrahent, komentarz, przedmiot, sekcja, stawka_vat,'
-                    ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo, split, proporcje, kup)'
-                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo, split, proporcje, kup, kolejnosc)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (w['id'], w['arkusz'], w['rodzaj'], w['podstawa'], w.get('kontrahent', ''), w.get('komentarz', ''), w.get('przedmiot', ''),
                      w.get('sekcja', ''), '' if w.get('stawka_vat') is None else str(w['stawka_vat']), w.get('dzien_wystawienia', ''),
                      str(w.get('dni_na_platnosc', '')), w.get('metoda', ''), int(bool(w.get('ksiegowane', True))), int(bool(w.get('w_cashflow', True))),
                      w.get('cykl', 'brak'), json.dumps(w.get('plan')) if w.get('plan') else None, w.get('zrodlo', ''), int(bool(w.get('split'))),
-                     json.dumps(w['proporcje'], sort_keys=True) if w.get('proporcje') else None, w.get('kup')))
+                     json.dumps(w['proporcje'], sort_keys=True) if w.get('proporcje') else None, w.get('kup'), kolejnosc[w['id']]))
     znak = {w['id']: w['rodzaj'] for w in model['wiersze']}
     kontrahent = {w['id']: w.get('kontrahent', '') for w in model['wiersze']}
     for p in model['platnosci']:

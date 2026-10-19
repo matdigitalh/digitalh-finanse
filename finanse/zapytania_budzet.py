@@ -58,15 +58,22 @@ def arkusz(con, aid: str) -> dict:
     miesiace = _miesiace(a['od'], a['do'])
     wiersze = [dict(r) for r in con.execute(
         "SELECT w.*, EXISTS (SELECT 1 FROM bud_platnosc p WHERE p.wiersz = w.id AND p.typ != 'plan') AS ma_rzeczywiste"
-        ' FROM bud_wiersz w WHERE w.arkusz = ? ORDER BY w.rodzaj DESC, w.kontrahent, w.komentarz', (aid,))]
+        ' FROM bud_wiersz w WHERE w.arkusz = ? ORDER BY w.kolejnosc, w.id', (aid,))]
     kwoty_komorek = {(r['wiersz'], r['miesiac']): r['kwota'] for r in con.execute(
         'SELECT k.* FROM bud_komorka k JOIN bud_wiersz w ON w.id = k.wiersz WHERE w.arkusz = ?', (aid,))}
     komorki = {}
-    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, s.etap, s.aktualnosc FROM bud_platnosc p'
-                         ' JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
+    poza_zakresem = {}   # miesiące płatności spoza zakresu arkusza (do kalendarza „Zmodyfikuj czas trwania”)
+    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, p.ukryty, s.etap, s.aktualnosc'
+                         ' FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id'
+                         ' WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
+        if not a['od'] <= r['miesiac'] <= a['do']:
+            x = poza_zakresem.setdefault(r['miesiac'], {'rzeczywiste': 0, 'plany': 0})
+            x['rzeczywiste' if r['typ'] != 'plan' else 'plany'] += 1
         k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': [], 'kwoty': {}, 'rzeczywiste': 0,
-                                                              'nieaktualne': 0})
+                                                              'nieaktualne': 0, 'plany': 0, 'oplacone': 0})
         k['rzeczywiste'] += r['typ'] != 'plan'   # do koloru komórki jak w BS: tło planów, kropka nieaktualnych
+        k['plany'] += r['typ'] == 'plan' and not r['ukryty'] and bool(r['aktualna'])
+        k['oplacone'] += r['etap'] == 'Opłacona'
         k['nieaktualne'] += bool(r['aktualna'] and r['aktualnosc'] == 'Nieaktualna')
         if r['aktualna']:
             k['netto'] += r['netto'] * r['rodzaj']
@@ -82,13 +89,16 @@ def arkusz(con, aid: str) -> dict:
                 stan = ('po-terminie' if 'Po terminie' in etapy else 'oplacona' if etapy <= {'Opłacona', 'Nieaktualna'}
                         else 'wg-bs' if 'Opłacona wg BS' in etapy else 'planowana')
                 w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan,
-                                   'rzeczywiste': k['rzeczywiste'], 'nieaktualne': k['nieaktualne'],
+                                   'rzeczywiste': k['rzeczywiste'], 'nieaktualne': k['nieaktualne'], 'plany': k['plany'],
+                                   'oplacone': k['oplacone'],
                                    'kwota': kwoty_komorek.get((w['id'], m))}   # kwota wpisana w apce (plany z niej liczone)
         w['plan'] = json.loads(w['plan']) if w['plan'] else None
         w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None
         w['ma_rzeczywiste'] = bool(w['ma_rzeczywiste'])
         w['dzien_opis'] = 'tydzień (worek)' if w['podstawa'] in reguly.WOREK else reguly.regula_opis(w['dzien_wystawienia'])
         w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
+        w['stawka'] = _stawka(w['stawka_vat'])
+        w['dni'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
     podsumowanie = []
     narast = 0
     for m in miesiace:
@@ -96,9 +106,83 @@ def arkusz(con, aid: str) -> dict:
         ob = sum(w['komorki'][m]['netto'] for w in wiersze if m in w['komorki'] and w['komorki'][m]['netto'] < 0)
         narast += wp + ob
         podsumowanie.append({'miesiac': m, 'wplywy': wp, 'obciazenia': ob, 'saldo': wp + ob, 'narastajaco': narast})
-    inne = [dict(r) for r in con.execute('SELECT id, folder, kategoria, nazwa FROM bud_arkusz ORDER BY folder, nazwa')]
+    inne = [dict(r) for r in con.execute('SELECT id, folder, kategoria, nazwa, od, do FROM bud_arkusz ORDER BY folder, nazwa')]
     return {'arkusz': a, 'miesiace': miesiace, 'wiersze': wiersze, 'podsumowanie': podsumowanie, 'planowanie': planowanie(con),
-            'arkusze': inne, 'podstawy': reguly.PODSTAWY_WIERSZA}
+            'arkusze': inne, 'podstawy': reguly.PODSTAWY_WIERSZA, 'slowniki': slowniki(con), 'wzorce': wzorce_kontrahentow(con, aid),
+            'poza_zakresem': poza_zakresem, 'limit_wierszy': 1000}
+
+
+def _stawka(s):
+    from .budzet import stawka_proc
+    return stawka_proc(s)
+
+
+def _po_polsku(xs):
+    return sorted(xs, key=lambda x: (x.casefold().translate(_PL), x))
+
+
+_PL = str.maketrans({'ą': 'a~', 'ć': 'c~', 'ę': 'e~', 'ł': 'l~', 'ń': 'n~', 'ó': 'o~', 'ś': 's~', 'ź': 'z~', 'ż': 'z~~'})
+
+
+def slowniki(con) -> dict:
+    """Wartości do list wyboru w arkuszu (kontrahent, sekcja, przedmiot, metoda) ze wszystkich arkuszy budżetu; do czasu
+    Biblioteki (pakiet 4) słownikiem jest to, co już jest w wierszach i płatnościach."""
+    wynik = {}
+    for pole in ('kontrahent', 'sekcja', 'przedmiot', 'metoda'):
+        xs = {r[0].strip() for r in con.execute(f"SELECT DISTINCT {pole} FROM bud_wiersz WHERE COALESCE({pole}, '') != ''")}
+        if pole in ('kontrahent', 'metoda'):
+            xs |= {r[0].strip() for r in con.execute(f"SELECT DISTINCT {pole} FROM bud_platnosc WHERE typ = 'plan' AND COALESCE({pole}, '') != ''")}
+        wynik[pole] = _po_polsku(x for x in xs if x and x not in ('-', 'Przedmiot transakcji'))
+    return wynik
+
+
+POLA_WZORCA = ('rodzaj', 'podstawa', 'stawka_vat', 'dzien_wystawienia', 'dni_na_platnosc', 'metoda', 'ksiegowane', 'w_cashflow', 'split')
+
+
+def wzorce_kontrahentow(con, aid: str) -> dict:
+    """Ustawienia domyślne kontrahenta (A-KOL-04) do czasu Biblioteki: ustawienia jego wiersza, najpierw z tego arkusza,
+    potem z innych (ostatni dodany). Umowy pomijamy, bo wymagają kwot od księgowej."""
+    wynik = {}
+    for r in con.execute('SELECT * FROM bud_wiersz WHERE COALESCE(kontrahent, \'\') != \'\' ORDER BY (arkusz = ?), kolejnosc', (aid,)):
+        if r['podstawa'] in reguly.UMOWY or r['podstawa'] not in reguly.PODSTAWY_WIERSZA:
+            continue
+        w = {k: r[k] for k in POLA_WZORCA}
+        w['stawka_vat'] = _stawka(w['stawka_vat'])
+        w['dni_na_platnosc'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
+        w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
+        if w['dzien_wystawienia'] in ('', '(auto)'):
+            w.pop('dzien_wystawienia')
+        wynik[r['kontrahent'].strip()] = w   # wiersze z tego arkusza są na końcu, więc wygrywają
+    return wynik
+
+
+def komorka(con, wid: str, m: str) -> dict:
+    """Karta komórki (A-ARK-13, B-LIS-13): wszystkie płatności komórki (plany i rzeczywiste, bez limitu), kwota komórki,
+    ustawienia wiersza i cechy każdej płatności różne od wiersza (pomarańczowe podświetlenie)."""
+    w = con.execute('SELECT * FROM bud_wiersz WHERE id = ?', (wid,)).fetchone()
+    if not w:
+        raise ValueError('nie ma takiego wiersza')
+    ids = [r[0] for r in con.execute("SELECT id FROM bud_platnosc WHERE wiersz = ? AND miesiac = ?"
+                                     " ORDER BY typ = 'plan', COALESCE(wystawienie, ''), id", (wid, m))]
+    platnosci = [platnosc(con, pid) for pid in ids]
+    k = con.execute('SELECT kwota FROM bud_komorka WHERE wiersz = ? AND miesiac = ?', (wid, m)).fetchone()
+    a = dict(con.execute('SELECT * FROM bud_arkusz WHERE id = ?', (w['arkusz'],)).fetchone())
+    w = dict(w)
+    w['dzien_opis'] = 'tydzień (worek)' if w['podstawa'] in reguly.WOREK else reguly.regula_opis(w['dzien_wystawienia'])
+    w['dni'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
+    w['stawka'] = _stawka(w['stawka_vat'])
+    w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
+    w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None
+    rz = [x['platnosc'] for x in platnosci if x['platnosc']['typ'] != 'plan']
+    return {'wiersz': w, 'arkusz': a, 'miesiac': m, 'kwota': k[0] if k else None, 'platnosci': platnosci,
+            'rzeczywiste': sum(p['netto'] for p in rz), 'ma_rzeczywiste': bool(rz), 'planowanie': planowanie(con)}
+
+
+def ostatni(con) -> dict | None:
+    """Ostatnia zmiana budżetu, która jeszcze obowiązuje (do „Cofnij” i Cmd+Z)."""
+    r = con.execute('SELECT wpis, MAX(czas) AS czas, mac, COUNT(*) AS ile, MIN(op) AS op, MIN(obiekt) AS obiekt FROM bud_historia'
+                    ' GROUP BY wpis ORDER BY czas DESC LIMIT 1').fetchone()
+    return dict(r) if r else None
 
 
 def platnosc(con, pid: str) -> dict:
@@ -129,8 +213,10 @@ def platnosc(con, pid: str) -> dict:
     p['nadpisane'] = json.loads(p['nadpisane']) if p['nadpisane'] else {}
     p['podstawa_platnosci'] = reguly.ETYKIETY_SKLADOWYCH.get(p['podstawa'], {}).get(p['skladowa'] or '', p['podstawa'])
     w = dict(con.execute('SELECT * FROM bud_wiersz WHERE id = ?', (p['wiersz'],)).fetchone())
+    p['odstepstwa'] = reguly.odstepstwa(p, w)   # cechy różne od wiersza: pomarańczowe w karcie (A-ARK-11)
     w['dni'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
     w['dzien_opis'] = reguly.regula_opis(w['dzien_wystawienia'])
+    w['stawka'] = _stawka(w['stawka_vat'])
     k = con.execute('SELECT kwota FROM bud_komorka WHERE wiersz = ? AND miesiac = ?', (p['wiersz'], p['miesiac'])).fetchone()
     return {'platnosc': p, 'wiersz': w, 'kwota_komorki': k[0] if k else None, 'powiazania': pow_, 'historia': historia,
             'planowanie': planowanie(con)}

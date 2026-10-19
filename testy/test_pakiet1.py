@@ -257,6 +257,8 @@ class TestSeria(Baza):
     def test_seria_cala_i_cofniecie_calej(self):
         d = self.scal_z_bledem()
         d['operacje'][2]['obiekt']['wzor'] = 'bs:3'
+        # wiersza z płatnością rzeczywistą nie usuniesz (pakiet 3, A-OPS-09), więc seria usuwa sam plan bs:2
+        d['operacje'][3] = {'op': 'platnosc', 'obiekt': {'id': 'bs:2'}, 'usun': True}
         budzet.sprawdz_wpis(d, zmiany.wczytaj()[0])   # bez wyjątku
         wpis = zmiany.zapisz('bud', zmiany.sprawdz('bud', d))
         self.przelicz()
