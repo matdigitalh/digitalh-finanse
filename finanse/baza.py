@@ -93,13 +93,21 @@ CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
 CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT);
 CREATE TABLE bud_wiersz (id TEXT PRIMARY KEY, arkusz TEXT, rodzaj INTEGER, podstawa TEXT, kontrahent TEXT, komentarz TEXT,
   przedmiot TEXT, sekcja TEXT, stawka_vat TEXT, dzien_wystawienia TEXT, dni_na_platnosc TEXT, metoda TEXT, ksiegowane INTEGER,
-  w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT, split INTEGER, proporcje TEXT, kup INTEGER, kolejnosc INTEGER);
+  w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT, split INTEGER, proporcje TEXT, kup INTEGER, kolejnosc INTEGER, lista_plac INTEGER);
 CREATE INDEX bud_wiersz_ark ON bud_wiersz(arkusz);
 CREATE TABLE bud_platnosc (id TEXT PRIMARY KEY, bs_id TEXT, wiersz TEXT, miesiac TEXT, typ TEXT, etap_bs TEXT, aktualna INTEGER,
   netto INTEGER, vat INTEGER, brutto INTEGER, stawka INTEGER, rodzaj INTEGER, nr_dok TEXT, nr_wewn TEXT, tytul TEXT, wystawienie TEXT, termin TEXT,
   realny TEXT, ksiegowanie TEXT, metoda TEXT, w_cashflow INTEGER, komentarz TEXT, decyzja TEXT, zrodlo TEXT, wiersz_pliku INTEGER,
-  kontrahent TEXT, ksiegowane INTEGER, skladowa TEXT, spinacz TEXT, generowany INTEGER, nadpisane TEXT, ukryty INTEGER);
+  kontrahent TEXT, ksiegowane INTEGER, skladowa TEXT, spinacz TEXT, generowany INTEGER, nadpisane TEXT, ukryty INTEGER, dokument TEXT,
+  skladniki TEXT);
 CREATE INDEX bud_platnosc_w ON bud_platnosc(wiersz);
+CREATE INDEX bud_platnosc_dok ON bud_platnosc(dokument);
+-- Pakiet 5: płatności rzeczywiste dodane ręcznie (zdarzenie „rzeczywista”) i każdy dokument rzeczywisty z jego stanem
+-- łączenia z budżetem (do połączenia, połączony w apce, w budżecie z BS, sprzed startu łączenia) i podpowiedzią planu.
+CREATE TABLE bud_reczne (id TEXT PRIMARY KEY, dane TEXT, wpis TEXT);
+CREATE TABLE bud_laczenie (ref TEXT PRIMARY KEY, typ TEXT, rodzaj INTEGER, rodzina TEXT, data TEXT, kontrahent TEXT, nr_dok TEXT,
+  netto INTEGER, vat INTEGER, brutto INTEGER, kwota INTEGER, tytul TEXT, stan TEXT, platnosci TEXT, pod_wiersz TEXT, pod_miesiac TEXT,
+  pod_arkusz TEXT, pod_kwota INTEGER, pewnosc TEXT, punkty INTEGER, uzasadnienie TEXT, zrodlo TEXT, oplacono TEXT);
 -- Kwoty komórek (wiersz × miesiąc) wpisane w apce; plany z nich są pochodną (pakiet 2).
 CREATE TABLE bud_komorka (wiersz TEXT, miesiac TEXT, kwota INTEGER, PRIMARY KEY (wiersz, miesiac));
 CREATE TABLE bud_historia (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT, bylo TEXT, jest TEXT);

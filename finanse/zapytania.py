@@ -233,7 +233,16 @@ def podsumowanie_naleznosci(con) -> dict:
             'po_terminie': sum(v[1] for p, v in przedzialy.items() if p != 'przed terminem'),
             'nabywcy_po_terminie': po_terminie,
             'do_polaczenia': con.execute("SELECT COUNT(*) FROM wplaty WHERE stan='nieznana'").fetchone()[0],
-            'do_weryfikacji': len(do_weryfikacji(con))}
+            'do_weryfikacji': len(do_weryfikacji(con)), **_liczniki_laczenia(con)}
+
+
+def _liczniki_laczenia(con) -> dict:
+    """Pakiet 5: rzeczywiste do połączenia z budżetem i ostrzeżenia kosztu pracy (liczniki menu i pulpitu)."""
+    from . import laczenie
+    try:
+        return {'do_polaczenia_bud': laczenie.ile_do_polaczenia(con), 'ostrzezenia': len(laczenie.ostrzezenia(con))}
+    except Exception:   # baza sprzed pakietu 5 (przed pierwszą odbudową): bez liczników
+        return {'do_polaczenia_bud': 0, 'ostrzezenia': 0}
 
 
 KOL_NALEZNOSCI = {'numer': ('numer', True), 'nabywca': ('nabywca', True), 'termin': ('termin', False), 'naleznosc': ('naleznosc', False),
@@ -367,9 +376,21 @@ def do_weryfikacji(con) -> list[dict]:
                       'data': x['ostatnia_wplata'], 'kwota': x['brutto'], 'kontrahent': x['nabywca'], 'faktury': x['numer'],
                       'opis': 'odhacz w Fakturowni jako opłaconą'})
     lista += _oznaczone(con)
+    lista += _ostrzezenia_listy_plac(con)
     for x in lista:   # klucz pozycji do zaznaczania na liście
         x['id'] = f"{x['rodzaj']}|{x.get('operacja_id') or x.get('numer') or x.get('ref') or ''}|{x.get('faktury') or ''}"
     return lista
+
+
+def _ostrzezenia_listy_plac(con) -> list[dict]:
+    """Pakiet 5 (decyzja Mata 12): ostrzeżenia kosztu pracy na liście Do weryfikacji; klik otwiera listę płac."""
+    from . import laczenie
+    try:
+        ostrz = laczenie.ostrzezenia(con)
+    except Exception:
+        return []
+    return [{'rodzaj': o['rodzaj'], 'tytul': o['tytul'], 'data': o['data'], 'kwota': o['kwota'], 'kontrahent': o['osoba'],
+             'faktury': '', 'opis': o['opis'], 'lista_plac': o['miesiac'], 'ref': o['id']} for o in ostrz]
 
 
 def _oznaczone(con) -> list[dict]:
@@ -387,6 +408,13 @@ def _oznaczone(con) -> list[dict]:
                             ' LEFT JOIN faktury_stan s USING(numer) WHERE f.numer = ?', (r['ref'],)).fetchone()
             if f:
                 x.update(numer=f['numer'], data=f['data_wystawienia'], kwota=f['brutto'], kontrahent=f['nabywca'], faktury=f['numer'])
+        elif r['obiekt'] == 'reczna':   # pakiet 5: płatność dodana ręcznie
+            z = con.execute('SELECT dane FROM bud_reczne WHERE id = ?', (r['ref'],)).fetchone()
+            if z:
+                import json
+                d = json.loads(z[0])
+                x.update(data=d.get('wystawienie'), kwota=int(d.get('netto') or 0) * d.get('rodzaj', -1), kontrahent=d.get('kontrahent', ''),
+                         faktury=d.get('nr_dok') or '', dokument=f"reczna:{r['ref']}")
         elif r['obiekt'] == 'zakup':
             z = con.execute('SELECT nr_dok, podmiot, data, brutto, netto FROM zakupy WHERE nr_ewid = ?', (r['ref'],)).fetchone()
             if z:

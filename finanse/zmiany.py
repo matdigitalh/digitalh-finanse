@@ -48,7 +48,9 @@ TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 
 MAKS_W_SERII = 1000
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria',
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
-                'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz')
+                'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz',
+                # pakiet 5: rzeczywista zastępuje plan (połącz, odłącz), ręczne dodanie, zamiana planu, lista płac
+                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
 # Nazwy pól w komunikatach (po ludzku, jak w BS)
@@ -56,6 +58,7 @@ NAZWY_POL = {'nazwa': 'Nazwa arkusza', 'folder': 'Folder', 'kategoria': 'Kategor
              'przedmiot': 'Przedmiot transakcji', 'sekcja': 'Sekcja', 'metoda': 'Metoda płatności', 'tytul': 'Tytuł',
              'dni_na_platnosc': 'Dni na płatność', 'od': 'Początek zakresu', 'do': 'Koniec zakresu', 'miesiac': 'Miesiąc'}
 USTAWIENIA = {'planowanie': ('tak', 'nie'), 'import_bs': ('tak', 'nie')}
+LACZENIE_OD = '2026-11-01'   # pakiet 5: od tej daty dokumenty łączy Mat w apce (wcześniejsze są połączone w Budget Studio)
 CELE = {'cel_obrot_rok': (0, 10 ** 11), 'cel_marza_proc': (0, 100), 'rezerwa_miesiecy': (0, 24)}
 RODZAJE = ('przenoszony', 'staly', 'praca', 'podatki', 'vat', 'dywidenda', 'zwrot', 'nieprzypisany')
 
@@ -73,6 +76,8 @@ def sprawdz(typ: str, dane) -> dict:
     if typ == 'ustawienie' and dane.get('klucz') == 'podatki':   # ustawienia podatkowe (pakiet 8), część pól wystarczy
         from .podatki import sprawdz_ustawienia
         return {'klucz': 'podatki', 'wartosc': sprawdz_ustawienia(dane.get('wartosc'))}
+    if typ == 'ustawienie' and dane.get('klucz') == 'laczenie_od':   # pakiet 5: data startu łączenia w apce
+        return {'klucz': 'laczenie_od', 'wartosc': _data(dane.get('wartosc'), 'Łączenie w apce od') or LACZENIE_OD}
     if typ == 'ustawienie':
         if dane.get('klucz') not in USTAWIENIA or dane.get('wartosc') not in USTAWIENIA[dane.get('klucz')]:
             raise ValueError('nieznane ustawienie')
@@ -371,7 +376,8 @@ POLA_BUD = {
     'wiersz': {'id': _niepusty(80), 'arkusz': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa, 'kontrahent': _tekst(200),
                'komentarz': _tekst(170), 'przedmiot': _tekst(200), 'sekcja': _tekst(100), 'stawka_vat': _stawka,
                'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'metoda': _tekst(60), 'ksiegowane': _tak_nie,
-               'w_cashflow': _tak_nie, 'cykl': _cykl, 'plan': _plan, 'split': _tak_nie, 'proporcje': _proporcje, 'kup': _kup},
+               'w_cashflow': _tak_nie, 'cykl': _cykl, 'plan': _plan, 'split': _tak_nie, 'proporcje': _proporcje, 'kup': _kup,
+               'lista_plac': _tak_nie},   # pakiet 5: wiersz wynagrodzenia bez umowy (np. powołanie prezesa) na liście płac
     'platnosc': {'id': _niepusty(80), 'wzor': _niepusty(80), 'wiersz': _niepusty(80), 'miesiac': _miesiac, 'netto': _kwota,
                  'stawka': _stawka, 'wystawienie': _data, 'termin': _data, 'realny': _data, 'ksiegowanie': _data,
                  'metoda': _tekst(60), 'ksiegowane': _tak_nie, 'w_cashflow': _tak_nie, 'komentarz': _tekst(170), 'tytul': _tekst(200),
@@ -380,6 +386,100 @@ POLA_BUD = {
     # 0 = plan zerowy (będzie płatność, kwota nieznana), brak kwoty = pusta komórka
     'komorka': {'wiersz': _niepusty(80), 'miesiac': _miesiac, 'kwota': _kwota_lub_pusta},
 }
+
+
+# Pakiet 5: dokument rzeczywisty (faktura z Fakturowni, dokument z rejestru biura, przelew ING, płatność dodana ręcznie)
+# i źródła rzeczywistych, które da się odłączyć (zamiana planu, lista płac).
+_REF = re.compile(r'(faktura|zakup|operacja|reczna):[^\x00-\x1f]{1,300}')
+_REF_ODLACZ = re.compile(r'(faktura|zakup|operacja|reczna|zamiana):[^\x00-\x1f]{1,300}|lista:\d{4}-\d{2}:[^\x00-\x1f]{1,80}')
+
+
+def _ref(v, pole):
+    if not isinstance(v, str) or not _REF.fullmatch(v):
+        raise ValueError(f'{pole}: dokument (faktura, dokument z rejestru, przelew albo płatność dodana ręcznie)')
+    return v
+
+
+def _podstawa_recznej(v, pole):
+    if v not in ('Faktura', 'Bez faktury'):
+        raise ValueError(f'{pole}: Faktura albo Bez faktury (wynagrodzenia wpisujesz listą płac)')
+    return v
+
+
+POLA_RECZNEJ = {'id': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa_recznej, 'kontrahent': _niepusty(200),
+                'nr_dok': _tekst(60), 'nr_wewn': _tekst(60), 'wystawienie': _data, 'sprzedaz': _data, 'termin': _data,
+                'realny': _data, 'netto': _kwota, 'stawka': _stawka, 'vat': _kwota_lub_pusta, 'ksiegowanie': _miesiac_lub_pusty,
+                'metoda': _tekst(60), 'ksiegowane': _tak_nie, 'w_cashflow': _tak_nie, 'komentarz': _tekst(170), 'oplacona': _data}
+# Zamiana planu na rzeczywistą (B-LACZ-06): numer dokumentu i poprawki danych planu
+POLA_ZAMIANY = {'nr_dok': _tekst(60), 'nr_wewn': _tekst(60), 'netto': _kwota, 'stawka': _stawka, 'kontrahent': _tekst(200),
+                'wystawienie': _data, 'termin': _data, 'realny': _data, 'ksiegowanie': _miesiac_lub_pusty, 'komentarz': _tekst(170),
+                'metoda': _tekst(60), 'ksiegowane': _tak_nie, 'w_cashflow': _tak_nie}
+BRAKI_RECZNEJ = {'rodzaj': 'rodzaj (wpływ albo obciążenie)', 'podstawa': 'podstawę', 'kontrahent': 'kontrahenta',
+                 'wystawienie': 'dzień wystawienia', 'netto': 'kwotę'}
+MAKS_CZESCI = 50     # komórek w jednym połączeniu (podział jednej płatności, B-LACZ-03)
+MAKS_LISTA = 100     # osób na jednej liście płac
+
+
+def _sprawdz_laczenie(op: str, d: dict) -> dict:
+    """Pakiet 5: połącz, odłącz, ręczna płatność rzeczywista, zamiana planu, lista płac. Odwołania (dokument, komórka,
+    plan) sprawdza serwer próbą na modelu."""
+    if op == 'polacz':
+        cz = d.get('czesci')
+        if not isinstance(cz, list) or not 0 < len(cz) <= MAKS_CZESCI:
+            raise ValueError(f'Połączenie: wybierz od 1 do {MAKS_CZESCI} komórek budżetu.')
+        czesci = []
+        for c in cz:
+            if not isinstance(c, dict) or set(c) - {'wiersz', 'miesiac', 'kwota'}:
+                raise ValueError('Połączenie: każda część to wiersz, miesiąc i kwota.')
+            czesci.append({'wiersz': _niepusty(80)(c.get('wiersz'), 'wiersz'), 'miesiac': _miesiac(c.get('miesiac'), 'miesiąc'),
+                           'kwota': _kwota(c.get('kwota'), 'kwota części')})
+        if len({(c['wiersz'], c['miesiac']) for c in czesci}) != len(czesci):
+            raise ValueError('Połączenie: ta sama komórka wybrana dwa razy. Zostaw jedną i wpisz w niej całą kwotę.')
+        wynik = {'op': op, 'dokument': _ref(d.get('dokument'), 'Połączenie'), 'czesci': czesci}
+        if d.get('reszta') not in (None, '', 'zostaw', 'usun'):
+            raise ValueError('Reszta planu: zostaw albo usuń.')
+        if d.get('reszta'):
+            wynik['reszta'] = d['reszta']
+        return wynik
+    if op == 'odlacz':
+        ref = d.get('dokument')
+        if not isinstance(ref, str) or not _REF_ODLACZ.fullmatch(ref):
+            raise ValueError('Odłączenie: brak dokumentu')
+        return {'op': op, 'dokument': ref}
+    if op == 'rzeczywista':
+        o = d.get('obiekt')
+        if not isinstance(o, dict) or not isinstance(o.get('id'), str) or not o['id']:
+            raise ValueError('Płatność rzeczywista: brak identyfikatora')
+        if d.get('usun'):
+            return {'op': op, 'obiekt': {'id': _niepusty(80)(o['id'], 'id')}, 'usun': True}
+        obiekt = _pola(o, POLA_RECZNEJ, 'płatność rzeczywista')
+        for k in ('rodzaj', 'podstawa', 'kontrahent', 'wystawienie', 'netto'):
+            if obiekt.get(k) in (None, ''):
+                raise ValueError(f"Płatność rzeczywista: podaj {BRAKI_RECZNEJ[k]}.")
+        return {'op': op, 'obiekt': obiekt, 'usun': False}
+    if op == 'zamien':
+        wynik = {'op': op, 'plan': _niepusty(120)(d.get('plan'), 'plan')}
+        wynik['obiekt'] = _pola(d.get('obiekt') or {}, POLA_ZAMIANY, 'zamiana na rzeczywistą')
+        return wynik
+    # lista płac (decyzja Mata 12): kwoty z listy płac od biura per osoba (wiersz umowy albo wiersz wynagrodzenia)
+    wynik = {'op': op, 'miesiac': _miesiac(d.get('miesiac'), 'Lista płac za miesiąc')}
+    poz = d.get('pozycje')
+    if not isinstance(poz, list) or not 0 < len(poz) <= MAKS_LISTA:
+        raise ValueError(f'Lista płac: od 1 do {MAKS_LISTA} osób.')
+    pozycje = []
+    for x in poz:
+        if not isinstance(x, dict) or set(x) - {'wiersz', 'osoba', 'us', 'zus'}:
+            raise ValueError('Lista płac: każda pozycja to wiersz i kwoty dla osoby, PIT i ZUS.')
+        y = {'wiersz': _niepusty(80)(x.get('wiersz'), 'wiersz')}
+        if not d.get('usun'):
+            y.update({k: _kwota(x.get(k) or 0, {'osoba': 'Wypłata', 'us': 'PIT', 'zus': 'ZUS'}[k]) for k in ('osoba', 'us', 'zus')})
+        pozycje.append(y)
+    if len({x['wiersz'] for x in pozycje}) != len(pozycje):
+        raise ValueError('Lista płac: ta sama osoba dwa razy.')
+    wynik['pozycje'] = pozycje
+    if d.get('usun'):
+        wynik['usun'] = True
+    return wynik
 
 
 def sprawdz_zakres(od, do):
@@ -417,6 +517,8 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         return wynik
     if len(json.dumps(d)) > (8000 if op in ('arkusz', 'wiersz', 'platnosc', 'komorka', 'decyzja_planu') else 120000):
         raise ValueError('za duży wpis')
+    if op in ('polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac'):
+        return _sprawdz_laczenie(op, d)
     if op in ('arkusz', 'wiersz', 'platnosc'):
         o = d.get('obiekt')
         if not isinstance(o, dict) or not isinstance(o.get('id'), str) or not o['id']:

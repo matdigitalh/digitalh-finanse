@@ -7,10 +7,10 @@ Cofnięcie wpisu (także całej serii) przywraca stan sprzed niego."""
 import json
 
 # Listy z zapisanymi widokami (klucz ekranu w zdarzeniu „widok”)
-EKRANY = ('platnosci', 'bank', 'faktury', 'naleznosci', 'zakupy', 'wplaty', 'do_weryfikacji', 'wydatki')
+EKRANY = ('platnosci', 'bank', 'faktury', 'naleznosci', 'zakupy', 'wplaty', 'do_weryfikacji', 'wydatki', 'do_polaczenia')
 # Co można przenieść do Do weryfikacji: rodzaj obiektu → czym jest ref
 OBIEKTY = {'operacja': 'klucz operacji z banku', 'faktura': 'numer faktury', 'zakup': 'numer ewidencyjny dokumentu z rejestru',
-           'platnosc': 'identyfikator płatności budżetu'}
+           'platnosc': 'identyfikator płatności budżetu', 'reczna': 'płatność dodana ręcznie (pakiet 5)'}
 
 
 def zbuduj(con, wpisy: list[dict]) -> dict:

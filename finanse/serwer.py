@@ -13,8 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, podatki, rentownosc, wynik, zapytania,
-               zapytania_budzet, zapytania_listy, zmiany)
+from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, laczenie, odbudowa, podatki, rentownosc, wynik,
+               zapytania, zapytania_budzet, zapytania_listy, zmiany)
 from .importy import podsumowanie as importy_podsumowanie, reczny
 
 mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
@@ -63,16 +63,25 @@ def _sprawdz_bud(con, d):
     podatki.sprawdz_bud(d)   # arkusz systemowy „Opłaty urzędowe” zmienia tylko system (pakiet 8)
     for o in (d['operacje'] if d['op'] == 'seria' else [d]):
         if o['op'] == 'decyzja_planu' and o['decyzja'] == 'zaplacone':   # PIT i ZUS umowy dopiero po wypłacie dla osoby
-            r = con.execute('SELECT p.spinacz, s.etap FROM bud_platnosc p LEFT JOIN bud_stan s ON s.platnosc = p.spinacz'
-                            ' WHERE p.id = ?', (o['platnosc'],)).fetchone()
+            r = con.execute('SELECT p.spinacz, p.typ, w.podstawa, w.lista_plac, s.etap FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'
+                            ' LEFT JOIN bud_stan s ON s.platnosc = p.spinacz WHERE p.id = ?', (o['platnosc'],)).fetchone()
+            if r and r['typ'] == 'plan' and (r['podstawa'].startswith('Umowa') or r['lista_plac']):   # decyzja Mata 12
+                raise ValueError('Plan wynagrodzenia zamkniesz listą płac (Budżet, Lista płac): kwoty od biura zastąpią estymację, '
+                                 'a przelew z banku oznaczy opłacenie.')
             if r and r['spinacz'] and r['etap'] != 'Opłacona':
                 raise ValueError('PIT i ZUS oznaczysz jako zapłacone dopiero, gdy wypłata dla osoby jest opłacona.')
-    budzet.sprawdz_wpis(d, zmiany.wczytaj()[0], dzis=dzis)
+        if o['op'] == 'polacz':   # pakiet 5: dokument już w budżecie jako płatność z BS (po numerze albo przelewie)
+            r = con.execute('SELECT stan, platnosci FROM bud_laczenie WHERE ref = ?', (o['dokument'],)).fetchone()
+            if r and r['stan'] == 'w_budzecie':
+                raise ValueError('Ten dokument jest już w budżecie jako płatność z Budget Studio (ten sam numer albo przelew). '
+                                 'Nie łącz go drugi raz; popraw go w Budget Studio albo w arkuszu.')
+    budzet.sprawdz_wpis(d, zmiany.wczytaj()[0], dzis=dzis, dokumenty=laczenie.Dokumenty(con))
 
 
 # Pozycja przenoszona do Do weryfikacji musi istnieć w bazie (pakiet 7)
 OBIEKTY_SQL = {'operacja': 'SELECT 1 FROM operacje WHERE klucz = ?', 'faktura': 'SELECT 1 FROM faktury WHERE numer = ?',
-               'zakup': 'SELECT 1 FROM zakupy WHERE nr_ewid = ?', 'platnosc': 'SELECT 1 FROM bud_platnosc WHERE id = ?'}
+               'zakup': 'SELECT 1 FROM zakupy WHERE nr_ewid = ?', 'platnosc': 'SELECT 1 FROM bud_platnosc WHERE id = ?',
+               'reczna': 'SELECT 1 FROM bud_reczne WHERE id = ?'}
 
 
 def _sprawdz_odwolania(con, typ, dane):
@@ -193,6 +202,13 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania_listy.podglad_zakresu(con, q.get('spec', ''), q.get('miesieczny') == '1')
             elif sciezka == 'budzet/kafle':
                 dane = zapytania_budzet.kafle(con)
+            elif sciezka == 'laczenie/dokument':   # pakiet 5: karta dokumentu i ekran łączenia (podpowiedzi, wyszukiwarka)
+                dane = laczenie.karta(con, q.get('ref', ''), q.get('q', ''))
+            elif sciezka == 'lista-plac':
+                dane = laczenie.lista_plac(con, q.get('miesiac') or None)
+            elif sciezka == 'ostrzezenia':   # pakiet 5: ostrzeżenia kosztu pracy (pulpit, Do weryfikacji)
+                lista_ = laczenie.ostrzezenia(con)
+                dane = {'ostrzezenia': lista_, 'liczba': len(lista_), 'do_polaczenia': laczenie.ile_do_polaczenia(con)}
             elif sciezka == 'budzet/rozjazdy':
                 dane = zapytania_budzet.rozjazdy(con)
             elif sciezka == 'budzet/historia':

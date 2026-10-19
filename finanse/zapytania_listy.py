@@ -164,6 +164,9 @@ def lista(con, ekran: str, q: dict) -> dict:
         w = zapytania.wplaty(con, stan=q.get('stan') or 'nieznana', daty=_daty_z(q, zapytania.DATY_WPLAT), **wsp)
     elif ekran == 'do_weryfikacji':
         return do_weryfikacji(con, q)
+    elif ekran == 'do_polaczenia':   # pakiet 5: dokumenty rzeczywiste niepołączone z budżetem (laczenie.py)
+        from . import laczenie
+        return laczenie.lista(con, q)
     elif ekran == 'wydatki':
         w = zapytania.wydatki(con, rodzaj=q.get('rodzaj'), klient=q.get('klient'), dokument=q.get('dokument'), zrodlo=q.get('zrodlo'),
                               od=q.get('od'), do=q.get('do'), daty=_daty_z(q, zapytania.DATY_WYDATKOW), **wsp)
@@ -208,6 +211,10 @@ WIDOKI_STARTOWE = {
         {'id': 'bez_platnosci', 'nazwa': 'Dokumenty bez płatności', 'ik': 'dokument', 'parametry': {'stan': 'bez płatności w banku'}},
     ],
     'wplaty': [{'id': 'do_polaczenia', 'nazwa': 'Do połączenia', 'ik': 'rozlacz', 'parametry': {}}],
+    'do_polaczenia': [   # pakiet 5: rzeczywiste do połączenia z budżetem
+        {'id': 'wszystkie', 'nazwa': 'Do połączenia', 'ik': 'rozlacz', 'parametry': {}},
+        {'id': 'pewne', 'nazwa': 'Z pewną podpowiedzią', 'ik': 'ptaszek', 'parametry': {'pewnosc': 'wysoka'}},
+        {'id': 'bez_podpowiedzi', 'nazwa': 'Bez podpowiedzi', 'ik': 'przekreslony', 'parametry': {'pewnosc': 'brak'}}],
     'do_weryfikacji': [{'id': 'wszystkie', 'nazwa': 'Do weryfikacji', 'ik': 'weryfikuj', 'parametry': {}}],
     'wydatki': [
         {'id': 'wszystkie', 'nazwa': 'Wszystkie wydatki', 'ik': 'dol', 'parametry': {}},
