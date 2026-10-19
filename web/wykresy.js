@@ -326,5 +326,200 @@ const Wykresy = (() => {
     rysuj();
   }
 
-  return { slupki, linia, ranking, kolor, pelna };
+
+  // ---------- Wykres cash flow jak w BS ----------
+  // Słupki wpływów (zielone, w górę) i obciążeń (karmazynowe, w dół): pełna część to dokumenty i bank, jaśniejsza to plany.
+  // Kreskowany słupek obok: saldo okresu. Linia: saldo narastające z wypełnieniem (zielone nad zerem, różowe pod zerem).
+  // Pionowa pomarańczowa linia: okres bieżący (dzień stanu). Etykiety okresów u góry, oś kwot po lewej.
+  // opcje: { okresy, wysokosc, serie?: {wplywy, obciazenia, saldo, narastajaco}, kolumny?: () => [{x, w}] (pozycje kolumn
+  //   tabeli arkusza względem ramki), osY?: bool, etykiety?: bool, naKlik?(i), opis }
+  let licznikBs = 0;
+  function liczbaOs(gr) {
+    const z = Math.round(gr / 100), a = Math.abs(z);
+    return `${z < 0 ? '-' : ''}${String(a).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}`;
+  }
+  // Gładka linia przez punkty (monotoniczna, bez przestrzeleń poza wartości).
+  function gladka(pkt) {
+    if (pkt.length < 3) return pkt.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join('');
+    const n = pkt.length, dx = [], dy = [], m = [];
+    for (let i = 0; i < n - 1; i++) { dx.push(pkt[i + 1][0] - pkt[i][0]); dy.push((pkt[i + 1][1] - pkt[i][1]) / (dx[i] || 1)); }
+    m.push(dy[0]);
+    for (let i = 1; i < n - 1; i++) m.push(dy[i - 1] * dy[i] <= 0 ? 0 : (dy[i - 1] + dy[i]) / 2);
+    m.push(dy[n - 2]);
+    let d = `M${pkt[0][0]},${pkt[0][1]}`;
+    for (let i = 0; i < n - 1; i++) {
+      const h = dx[i] / 3;
+      d += `C${pkt[i][0] + h},${pkt[i][1] + m[i] * h} ${pkt[i + 1][0] - h},${pkt[i + 1][1] - m[i + 1] * h} ${pkt[i + 1][0]},${pkt[i + 1][1]}`;
+    }
+    return d;
+  }
+
+  function bs(ramka, opcje) {
+    ramka.classList.add('wyk');
+    const nr = ++licznikBs;
+    const svg = ramka.querySelector('svg') || el('svg', { role: 'img', 'aria-label': opcje.opis || 'wykres cash flow' }, ramka);
+    const pp = podpowiedz(ramka);
+    function rysuj() {
+      const o = opcje.okresy || [], n = o.length;
+      const serie = { wplywy: true, obciazenia: true, saldo: true, narastajaco: true, ...(opcje.serie || {}) };
+      const W = ramka.clientWidth || 600, H = opcje.wysokosc || 240;
+      const osY = opcje.osY !== false, etyk = opcje.etykiety !== false;
+      const m = { l: osY ? 52 : 4, r: 10, t: etyk ? 26 : 10, b: 10 };
+      svg.replaceChildren();
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('width', W); svg.setAttribute('height', H);
+      if (!n) return;
+      const kol = opcje.kolumny ? opcje.kolumny() : null;
+      const krok = (W - m.l - m.r) / n;
+      const cx = i => kol ? kol[i].x + kol[i].w / 2 : m.l + krok * (i + .5);
+      const szer = i => kol ? kol[i].w : krok;
+      let min = 0, max = 0;
+      for (const x of o) {
+        if (serie.wplywy) max = Math.max(max, x.wplywy);
+        if (serie.obciazenia) min = Math.min(min, x.obciazenia);
+        if (serie.saldo) { max = Math.max(max, x.saldo); min = Math.min(min, x.saldo); }
+        if (serie.narastajaco) { max = Math.max(max, x.narastajaco); min = Math.min(min, x.narastajaco); }
+      }
+      const tiki = podzialki(min, max, 4);
+      const lo = tiki[0], hi = tiki[tiki.length - 1];
+      const y = v => m.t + (hi - v) / (hi - lo || 1) * (H - m.t - m.b);
+      const k = c => kolor(c);
+      const defs = el('defs', {}, svg);
+      const kres = (id, c) => { const pt = el('pattern', { id, width: 4, height: 4, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+        el('rect', { width: 4, height: 4, fill: c, 'fill-opacity': .18 }, pt); el('line', { x1: 0, y1: 0, x2: 0, y2: 4, stroke: c, 'stroke-width': 2.2 }, pt); };
+      kres(`bs-k-plus-${nr}`, k('--wyk-plus')); kres(`bs-k-minus-${nr}`, k('--wyk-minus'));
+      const grad = (id, c, gora) => { const g = el('linearGradient', { id, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+        el('stop', { offset: '0%', 'stop-color': c, 'stop-opacity': gora ? .22 : .02 }, g); el('stop', { offset: '100%', 'stop-color': c, 'stop-opacity': gora ? .02 : .22 }, g); };
+      grad(`bs-g-plus-${nr}`, k('--wyk-plus'), true); grad(`bs-g-minus-${nr}`, k('--wyk-minus'), false);
+      const gs = (id, c1, c2) => { const g = el('linearGradient', { id, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+        el('stop', { offset: '0%', 'stop-color': c1 }, g); el('stop', { offset: '100%', 'stop-color': c2 }, g); };
+      gs(`bs-s-plus-${nr}`, k('--wyk-plus'), k('--wyk-plus-2')); gs(`bs-s-minus-${nr}`, k('--wyk-minus-2'), k('--wyk-minus'));
+      const y0 = y(0);
+      const cg = el('clipPath', { id: `bs-c-gora-${nr}` }, defs); el('rect', { x: 0, y: 0, width: W, height: Math.max(0, y0) }, cg);
+      const cd = el('clipPath', { id: `bs-c-dol-${nr}` }, defs); el('rect', { x: 0, y: y0, width: W, height: Math.max(0, H - y0) }, cd);
+      // siatka i oś
+      const siatka = el('g', { class: 'siatka' }, svg);
+      const lewy = kol ? kol[0].x - 4 : osY ? m.l : 0, prawy = kol ? kol[n - 1].x + kol[n - 1].w : W - m.r;
+      for (const t of tiki) {
+        el('line', { x1: lewy, x2: prawy, y1: y(t), y2: y(t), class: t === 0 ? 'zero' : 'przerywana' }, siatka);
+        if (osY) { const tx = el('text', { x: lewy - 4, y: y(t) + 3, 'text-anchor': 'end' }, siatka); tx.textContent = `${liczbaOs(t)} -`; }
+      }
+      if (etyk) {
+        const co = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((W - m.l) / 64))));
+        o.forEach((x, i) => { if (i % co) return; const tx = el('text', { x: cx(i), y: 10, 'text-anchor': 'middle', class: 'os' }, svg); tx.textContent = x.etykieta; });
+      }
+      // słupki
+      const g = el('g', {}, svg);
+      const bw = Math.max(2, Math.min(18, szer(0) * (kol ? .26 : .3)));
+      const slupek = (x, v1, v2, fill, op = 1) => { if (Math.abs(y(v1) - y(v2)) < .5) return;
+        el('rect', { x, y: Math.min(y(v1), y(v2)), width: bw, height: Math.abs(y(v1) - y(v2)), fill, 'fill-opacity': op }, g); };
+      o.forEach((x, i) => {
+        const c = cx(i);
+        if (serie.saldo && x.saldo) slupek(c - bw - 1, 0, x.saldo, `url(#bs-k-${x.saldo > 0 ? 'plus' : 'minus'}-${nr})`);
+        const xs = serie.saldo ? c + 1 : c - bw / 2;
+        if (serie.wplywy && x.wplywy) {
+          const rz = x.wplywy - (x.wplywy_plan || 0);
+          slupek(xs, 0, rz, `url(#bs-s-plus-${nr})`); slupek(xs, rz, x.wplywy, k('--wyk-plus'), .45);
+        }
+        if (serie.obciazenia && x.obciazenia) {
+          const rz = x.obciazenia - (x.obciazenia_plan || 0);
+          slupek(xs, 0, rz, `url(#bs-s-minus-${nr})`); slupek(xs, rz, x.obciazenia, k('--wyk-minus'), .45);
+        }
+      });
+      // linia salda narastającego z polem
+      if (serie.narastajaco) {
+        const pkt = o.map((x, i) => [cx(i), y(x.narastajaco)]);
+        const d = gladka(pkt);
+        const pole = `${d}L${pkt[n - 1][0]},${y0}L${pkt[0][0]},${y0}Z`;
+        el('path', { d: pole, fill: `url(#bs-g-plus-${nr})`, 'clip-path': `url(#bs-c-gora-${nr})` }, svg);
+        el('path', { d: pole, fill: `url(#bs-g-minus-${nr})`, 'clip-path': `url(#bs-c-dol-${nr})` }, svg);
+        el('path', { d, fill: 'none', stroke: k('--wyk-linia'), 'stroke-width': 1.3 }, svg);
+        if (n <= 60) pkt.forEach(p => el('circle', { cx: p[0], cy: p[1], r: 2, fill: k('--wyk-linia') }, svg));
+      }
+      // dziś
+      const bi = o.findIndex(x => x.biezacy);
+      if (bi >= 0) {
+        el('line', { x1: cx(bi), x2: cx(bi), y1: etyk ? 14 : m.t, y2: H - 2, stroke: k('--dzis'), 'stroke-width': 2 }, svg);
+        if (serie.narastajaco) el('circle', { cx: cx(bi), cy: y(o[bi].narastajaco), r: 3.5, fill: k('--dzis'), stroke: k('--tlo'), 'stroke-width': 1 }, svg);
+      }
+      // strefy podpowiedzi
+      const strefy = el('g', { class: 'strefy' }, svg);
+      o.forEach((x, i) => {
+        const r = el('rect', { x: cx(i) - szer(i) / 2, y: m.t, width: szer(i), height: H - m.t - m.b, fill: 'transparent', class: opcje.naKlik ? 'klik' : '' }, strefy);
+        r.addEventListener('pointerenter', () => {
+          r.classList.add('aktywna');
+          pp.pokaz(x.etykieta, [
+            { nazwa: 'Saldo narastająco', wartosc: pelna(x.narastajaco) },
+            { nazwa: 'Saldo okresu', wartosc: pelna(x.saldo) },
+            { nazwa: 'Wpływy', wartosc: pelna(x.wplywy), kolor: k('--wyk-plus'), suma: true },
+            { nazwa: 'Obciążenia', wartosc: pelna(x.obciazenia), kolor: k('--wyk-minus') },
+            ...(x.wplywy_plan || x.obciazenia_plan ? [{ nazwa: 'w tym plany', wartosc: pelna((x.wplywy_plan || 0) + (x.obciazenia_plan || 0)) }] : [])], cx(i), m.t + 30);
+        });
+        r.addEventListener('pointerleave', () => { r.classList.remove('aktywna'); pp.ukryj(); });
+        if (opcje.naKlik) r.addEventListener('click', () => opcje.naKlik(i));
+      });
+    }
+    rysuj();
+    if (!ramka.dataset.obserwowany) { ramka.dataset.obserwowany = '1'; new ResizeObserver(() => { if (ramka.isConnected) rysuj(); }).observe(ramka); }
+    return { rysuj, ustaw(nowe) { Object.assign(opcje, nowe); rysuj(); } };
+  }
+
+  // ---------- Minimapa zakresu z suwakiem (BS: wykres panoramiczny) ----------
+  // Miniatura salda narastającego dla całego zakresu, pomarańczowa ramka wybiera wycinek (przeciąganie środka przesuwa,
+  // krawędzi zmienia szerokość, najwyżej `maks` okresów). Daty wycinka nad początkiem i pod końcem ramki.
+  // opcje: { wartosci, etykiety, okno: [od, do] (indeksy włącznie), maks, naZmiane([od, do]) }
+  function minimapa(ramka, opcje) {
+    ramka.classList.add('minimapa');
+    ramka.innerHTML = '<div class="daty-gora"><span></span></div><div class="tor"><svg aria-hidden="true"></svg><div class="okno" role="slider" tabindex="0" aria-label="Wycinek zakresu"><span class="uchwyt l"></span><span class="uchwyt p"></span></div></div><div class="daty"><span></span></div>';
+    const svg = ramka.querySelector('svg'), okno = ramka.querySelector('.okno');
+    const gora = ramka.querySelector('.daty-gora span'), dol = ramka.querySelector('.daty span');
+    const n = opcje.wartosci.length, maks = opcje.maks || 120;
+    let [a, b] = opcje.okno;
+    function pokazOkno() {
+      const W = ramka.clientWidth || 600;
+      okno.style.left = `${a / n * 100}%`; okno.style.width = `${(b - a + 1) / n * 100}%`;
+      gora.textContent = opcje.etykiety[a] || ''; dol.textContent = opcje.etykiety[b] || '';
+      gora.style.marginLeft = `${Math.min(W - 80, a / n * W)}px`;
+      dol.style.marginLeft = `${Math.max(0, Math.min(W - 80, (b + 1) / n * W - 60))}px`;
+      okno.setAttribute('aria-valuetext', `${opcje.etykiety[a]} do ${opcje.etykiety[b]}`);
+    }
+    function rysuj() {
+      const W = ramka.clientWidth || 600, H = 32;
+      svg.replaceChildren(); svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      const v = opcje.wartosci, lo = Math.min(0, ...v), hi = Math.max(0, ...v);
+      const y = x => 3 + (hi - x) / (hi - lo || 1) * (H - 6);
+      const pkt = v.map((x, i) => [(i + .5) / n * W, y(x)]);
+      const d = gladka(pkt);
+      el('path', { d: `${d}L${pkt[n - 1][0]},${y(0)}L${pkt[0][0]},${y(0)}Z`, fill: kolor('--wyk-plus'), 'fill-opacity': .14 }, svg);
+      el('path', { d, fill: 'none', stroke: kolor('--wyk-linia'), 'stroke-width': 1 }, svg);
+      pokazOkno();
+    }
+    let start = null;
+    const ruch = e => {
+      if (!start) return;
+      const W = ramka.clientWidth || 600, d = Math.round((e.clientX - start.x) / (W / n));
+      if (start.tryb === 'srodek') { const dl = start.b - start.a; a = Math.max(0, Math.min(n - 1 - dl, start.a + d)); b = a + dl; }
+      else if (start.tryb === 'l') a = Math.max(0, Math.max(start.b - maks + 1, Math.min(start.b, start.a + d)));
+      else b = Math.min(n - 1, Math.min(start.a + maks - 1, Math.max(start.a, start.b + d)));
+      pokazOkno();
+    };
+    const koniec = () => { if (!start) return; const zmiana = start.a !== a || start.b !== b; start = null; if (zmiana) opcje.naZmiane([a, b]); };
+    okno.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      okno.setPointerCapture(e.pointerId);
+      start = { x: e.clientX, a, b, tryb: e.target.classList.contains('l') ? 'l' : e.target.classList.contains('p') ? 'p' : 'srodek' };
+    });
+    okno.addEventListener('pointermove', ruch);
+    okno.addEventListener('pointerup', koniec);
+    okno.addEventListener('pointercancel', koniec);
+    okno.addEventListener('keydown', e => {
+      const dl = b - a;
+      if (e.key === 'ArrowLeft' && a > 0) { a--; b = a + dl; } else if (e.key === 'ArrowRight' && b < n - 1) { a++; b = a + dl; } else return;
+      e.preventDefault(); pokazOkno(); opcje.naZmiane([a, b]);
+    });
+    rysuj();
+    new ResizeObserver(() => { if (ramka.isConnected) rysuj(); }).observe(ramka);
+    return { ustaw(o2) { [a, b] = o2; pokazOkno(); } };
+  }
+
+  return { slupki, linia, ranking, bs, minimapa, kolor, pelna };
 })();

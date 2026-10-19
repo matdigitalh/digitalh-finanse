@@ -47,11 +47,11 @@ Object.assign(POMOC, {
     skad: 'Import z eksportu BS kontra wpłaty, wydatki i faktury w apce.',
     jak: 'Koszty pracy, VAT i podatek dochodowy porównujemy sumą w miesiącu płatności, bo BS trzyma koszt pracodawcy w jednej kwocie.',
     zrob: 'Przejrzyj największe kwoty. Do końca 2026 poprawki robisz w BS; od 2027 plany są w apce.' },
-  cashflow: { tytul: 'Prognoza gotówki', krotko: 'Saldo dziś plus to, co ma wpłynąć i wypłynąć w 13 tygodni.',
-    co: 'Dwa scenariusze: ostrożny (bez należności już po terminie i bez planów po terminie) i pełny (z nimi, za 7 dni).',
-    skad: 'Saldo z ING, należności z Fakturowni z terminem przesuniętym o średnie spóźnienie nabywcy, plany przychodów i kosztów z budżetu.',
-    jak: 'Gdy w miesiącu brak planu kosztów, prognoza dolicza szacunek kosztów pracy i stałych ze średniej 6 miesięcy.',
-    zrob: 'Patrz na najniższy punkt scenariusza ostrożnego. Plany po terminie rozstrzygnij, żeby nie wisiały.' },
+  cashflow: { tytul: 'Cash flow', krotko: 'Saldo gotówki w okresach (dzień, tydzień, miesiąc): co wpłynie, co wypłynie i ile zostanie.',
+    co: 'Tabela okresów: saldo narastająco, saldo okresu, wpływy, obciążenia; zielona ramka to najwyższe saldo, czerwona najniższe. Pod nią miniatura całego zakresu z ramką do wyboru wycinka, wykres i lista płatności wycinka.',
+    skad: 'Przed dniem stanu: przepływy z banku ING (rachunek główny i online). Po nim prognoza: należności z Fakturowni w terminie przesuniętym o średnie spóźnienie nabywcy, plany przychodów i kosztów z budżetu, a gdy w miesiącu brak planu kosztów, szacunek kosztów pracy i stałych ze średniej 6 miesięcy.',
+    jak: 'Scenariusz ostrożny pomija należności i plany już po terminie; pełny liczy je za 7 dni. Saldo startowe: gotówka z banku na koniec dnia przed zakresem, chyba że wpiszesz własne. Tydzień od wtorku do poniedziałku, jak w Budget Studio.',
+    zrob: 'Patrz na MIN w lewym kafelku: to poziom bezpieczeństwa. Plany po terminie rozstrzygnij, żeby nie wisiały. Przeciągnij ramkę na miniaturze, żeby obejrzeć inny wycinek.' },
 });
 
 // ---------- Drzewo arkuszy ----------
@@ -73,79 +73,36 @@ Object.assign(WIDOKI, {
       <div class="drzewo">${foldery}</div>`;
   },
 
-  // ---------- Widok arkusza ----------
+  // ---------- Widok arkusza jak w BS: zakładki Arkusz / Płatności / Cash flow / Zarządzaj ----------
   async 'budzet/arkusz'(p) {
     const d = await api('budzet/arkusz', { id: p.id });
-    const a = d.arkusz, m = d.miesiace;
-    const kom = (w, x) => {
-      const k = w.komorki[x];
-      if (!k) return `<td class="liczba-kol pusta${d.planowanie ? ' klik' : ''}" data-w="${esc(w.id)}" data-m="${x}">–</td>`;
-      return `<td class="liczba-kol komorka ${k.stan}" data-p="${k.platnosci.join(',')}" data-w="${esc(w.id)}" data-m="${x}" title="${k.platnosci.length} płatności">${zl(k.netto, false)}</td>`;
-    };
-    const wiersze = d.wiersze.map(w => `<tr data-w="${w.id}">${d.planowanie ? `<td><input type="checkbox" data-zazn="${w.id}" aria-label="Zaznacz wiersz"></td>` : ''}
-      <td>${esc(w.podstawa)}</td><td class="liczba-kol">${w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : '-'}</td>
-      <td title="${esc(w.dzien_wystawienia)}">${esc(w.dzien_opis)}</td><td>${esc(w.dni_na_platnosc)}</td><td>${esc(w.metoda)}</td>
-      <td>${esc(w.kontrahent)}</td><td class="szary">${esc(w.sekcja || '–')}</td><td>${esc(w.komentarz)}</td>
-      <td>${w.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>'}</td>
-      ${m.map(x => kom(w, x)).join('')}</tr>`).join('');
-    const sumy = (pole, nazwa, klasa) => `<tr class="${klasa}"><td colspan="${d.planowanie ? 10 : 9}">${nazwa}</td>${d.podsumowanie.map(s => `<td class="liczba-kol ${s[pole] < 0 ? 'minus' : s[pole] > 0 ? 'plus' : ''}">${zl(s[pole], false)}</td>`).join('')}</tr>`;
+    const a = d.arkusz;
+    const zakl = ['arkusz', 'platnosci', 'cashflow'].includes(p.zakladka) ? p.zakladka : 'arkusz';
+    const nazwyZakl = { arkusz: 'Arkusz', platnosci: 'Płatności', cashflow: 'Cash flow' };
     setTimeout(() => {
-      Wykresy.slupki($('#ark-wyk'), { kategorie: m.map(mies), etykietyPelne: m.map(miesPelny), wysokosc: 220, opis: 'Arkusz miesięcznie',
-        sumaStosu: {}, serie: [
-          { klucz: 'w', nazwa: 'Wpływy', kolor: Wykresy.kolor('--plus'), wartosci: d.podsumowanie.map(s => s.wplywy) },
-          { klucz: 'o', nazwa: 'Obciążenia', kolor: Wykresy.kolor('--minus'), wartosci: d.podsumowanie.map(s => s.obciazenia) },
-          { klucz: 'n', nazwa: 'Narastająco', typ: 'linia', kolor: Wykresy.kolor('--s1'), wartosci: d.podsumowanie.map(s => s.narastajaco) }] });
-      const wiersz = id => d.wiersze.find(w => w.id === id);
-      document.querySelectorAll('td.komorka').forEach(td => td.onclick = e => { e.stopPropagation();
-        kartaPlatnosci(td.dataset.p.split(','), d, { w: wiersz(td.dataset.w), m: td.dataset.m }); });
-      if (d.planowanie) {
-        document.querySelectorAll('td.pusta.klik').forEach(td => td.onclick = e => { e.stopPropagation(); kartaKomorki(wiersz(td.dataset.w), td.dataset.m); });
-        $('#dodaj-wiersz').onclick = e => { e.stopPropagation(); kartaWiersza(null, d); };
-        document.querySelectorAll('tr[data-w] td:not(.komorka):not(.pusta):not(:first-child)').forEach(td => td.onclick = e => {
-          e.stopPropagation(); kartaWiersza(d.wiersze.find(w => w.id === td.parentElement.dataset.w), d); });
-        document.querySelectorAll('[data-akcja]').forEach(b => b.onclick = e => { e.stopPropagation(); akcjaNaWierszach(b.dataset.akcja, d); });
-      }
+      document.querySelectorAll('[data-zakl]').forEach(b => b.onclick = () => {
+        if (b.dataset.zakl === 'zarzadzaj') return menuZarzadzaj(b, d);
+        location.hash = `#/budzet/arkusz?id=${encodeURIComponent(a.id)}${b.dataset.zakl === 'arkusz' ? '' : '&zakladka=' + b.dataset.zakl}`;
+      });
     });
-    return `<div class="naglowek-strony"><div><h1>${esc(a.nazwa)}</h1>
-        <div class="okruszki"><a href="#/budzet/arkusze">Arkusze</a> / ${esc(a.folder)} / ${esc(a.kategoria)} · ${mies(a.od)} – ${mies(a.do)} · źródło: ${esc(a.zrodlo)}</div></div>
-        <a class="przycisk" href="/api/eksport/arkusz?id=${encodeURIComponent(a.id)}">Excel</a></div>
-      <div class="karta-wyk"><h3>Arkusz miesięcznie ${pytajnik('budzet')}</h3><div class="pod">wpływy i obciążenia netto, linia: saldo narastająco</div><div id="ark-wyk"></div></div>
-      ${d.planowanie ? `<div class="akcje">
-        <button class="glowny" id="dodaj-wiersz">Dodaj wiersz</button>
-        <span class="szary">Zaznaczone:</span><button data-akcja="duplikuj">Duplikuj</button><button data-akcja="przenies">Przenieś do arkusza</button>
-        <button data-akcja="scal">Scal</button><button data-akcja="podziel">Podziel</button><button data-akcja="usun">Usuń</button></div>
-        <p class="notka">Kliknij pustą komórkę, żeby wpisać kwotę planu; kliknij wiersz (opis), żeby zmienić jego ustawienia. Plany liczą się z kwoty komórki i ustawień wiersza.</p>`
-        : '<p class="notka">Tryb podglądu: plany z Budget Studio. Edycję włącza przełącznik w Budżet, Ustawienia (planowanie w apce od 2027).</p>'}
-      <div class="legenda-stany"><span class="komorka oplacona">opłacone (bank)</span><span class="komorka planowana">plan</span>
-        <span class="komorka po-terminie">po terminie</span><span class="komorka wg-bs">opłacone tylko wg BS</span></div>
-      <div class="tabela-ramka arkusz"><table><thead><tr>${d.planowanie ? '<th></th>' : ''}<th>Podstawa płatności</th><th class="liczba-kol">VAT</th><th>Dzień wystaw.</th>
-        <th>Dni na płatność</th><th>Metoda</th><th>Kontrahent</th><th>Sekcja</th><th>Komentarz</th><th>Rodzaj</th>
-        ${m.map(x => `<th class="liczba-kol">${mies(x)}</th>`).join('')}</tr></thead>
-        <tbody>${wiersze}</tbody><tfoot>${sumy('wplywy', 'Wpływy', '')}${sumy('obciazenia', 'Obciążenia', '')}${sumy('saldo', 'Saldo miesiąca', 'suma')}${sumy('narastajaco', 'Narastająco', 'suma')}</tfoot></table></div>`;
+    const naglowek = `<h1>${ik('pinezka', 'ik-tytul')}${esc(a.nazwa)}<span title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}">${ik('folderOko', 'ik-tytul szary')}</span></h1>
+      <div class="pigulki"><span class="pigulka">${ik('warstwy')}${nazwyZakl[zakl]} / Widok główny</span>
+        <span class="szary">${esc(a.folder)} / ${esc(a.kategoria)} · ${mies(a.od)} - ${mies(a.do)} · źródło: ${esc(a.zrodlo)}</span></div>
+      <div class="zakladki" role="tablist">
+        <button role="tab" data-zakl="arkusz" aria-selected="${zakl === 'arkusz'}">${ik('arkusz')}Arkusz</button>
+        <button role="tab" data-zakl="platnosci" aria-selected="${zakl === 'platnosci'}">${ik('fale')}Płatności</button>
+        <button role="tab" data-zakl="cashflow" aria-selected="${zakl === 'cashflow'}">${ik('fale')}Cash flow</button>
+        <button role="tab" data-zakl="zarzadzaj" aria-selected="false" data-karta>${ik('zebatka')}Zarządzaj</button></div>
+      ${banerOsieroconych(0)}`;
+    if (zakl === 'cashflow') return naglowek + await widokCashflow(p, { arkusz: a.id, ark: a });
+    if (zakl === 'platnosci') return naglowek + await listaPlanu({ ...p, lista: p.lista || 'wszystkie' }, { arkusz: a.id });
+    return naglowek + arkuszTabela(d, p);
   },
 
   // ---------- Listy płatności planu (jak w BS) ----------
   async 'platnosci/plan'(p) {
     const d = await api('budzet/lista', p);
-    const kol = [
-      { id: 'rodzaj', naglowek: 'Rodzaj', html: x => x.rodzaj === 1 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>' },
-      { naglowek: 'Etap', html: x => chipEtap(x.etap) },
-      { naglowek: 'Kontrahent', wartosc: x => x.w_kontrahent },
-      { naglowek: 'Podstawa', wartosc: x => x.podstawa_platnosci, klasa: x => x.skladowa === 'us' || x.skladowa === 'zus' ? 'szary' : '' },
-      { naglowek: 'Tytuł', wartosc: x => x.tytul, klasa: () => 'szary' },
-      { naglowek: 'Arkusz', wartosc: x => x.arkusz },
-      { naglowek: 'Miesiąc', wartosc: x => mies(x.miesiac) },
-      { naglowek: 'Termin', wartosc: x => dataPl(x.termin_efektywny) },
-      { id: 'kwota', naglowek: 'Brutto PLN', liczba: true, wartosc: x => zl(x.brutto * x.rodzaj, false), klasa: x => x.rodzaj === 1 ? 'plus' : 'minus' },
-      { naglowek: 'Uwagi', wartosc: x => x.uwaga_stanu || x.decyzja, klasa: () => 'szary' },
-    ];
-    return `<h1>${esc(d.nazwa)}</h1><div class="okruszki">Płatności / Plan z budżetu, stan na ${dataPl(d.dzien_stanu)}</div>
-      <div class="filtry">${filtr('lista', 'Lista', Object.entries(d.listy), d.lista)}
-        ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystko'], ['1', 'Wpływy'], ['-1', 'Obciążenia']], p.rodzaj)}</div>
-      <p class="notka">Etap wynika z banku i Fakturowni, nie z kliknięcia: „Opłacona” dopiero, gdy jest wpłata albo przelew. ${d.razem} pozycji, saldo ${zl(d.suma)}.</p>
-      ${tabela({ kolumny: kol, dane: d.wiersze, poczatek: (d.strona - 1) * d.ile + 1, onWiersz: x => kartaPlatnosci([x.id], null),
-        stopkaSum: { rodzaj: `suma wszystkich ${d.razem} pozycji`, kwota: zl(d.suma, false) } })}
-      ${stopka(d, p)}`;
+    return `<h1>${esc(d.nazwa)}</h1><div class="okruszki">Połączone z budżetem / ${esc(d.nazwa)}</div>${await listaPlanu(p, { dane: d })}`;
   },
 
   async 'budzet/rozjazdy'() {
@@ -198,44 +155,8 @@ Object.assign(WIDOKI, {
         <p><a href="#/rentownosc/rent-klienci">Przejdź do rentowności klientów</a> · uzupełnione: ${k.klienci.length - k.bez_estymaty} z ${k.klienci.length}</p></div>`;
   },
 
-  // ---------- Cash flow ----------
-  async cashflow(p) {
-    const d = await api('cashflow');
-    if (d.brak_danych) return '<h1>Cash flow</h1><div class="pusto">Brak danych z banku.</div>';
-    const dni = p.widok === 'dni';
-    setTimeout(() => {
-      if (dni) {
-        Wykresy.linia($('#cf-wyk'), { punkty: d.dni.map(x => ({ x: x.data, y: x.ostrozny, pelny: x.pelny })), nazwa: 'Saldo, scenariusz ostrożny',
-          kolor: Wykresy.kolor('--s1'), wysokosc: 260, opis: 'Saldo dzień po dniu', etykietaX: x => MIESIACE[+x.slice(5, 7) - 1].slice(0, 3),
-          etykietaPelna: x => dataPl(x), dodatkowe: q => [{ nazwa: 'scenariusz pełny', wartosc: Wykresy.pelna(q.pelny), kolor: Wykresy.kolor('--s2') }] });
-      } else {
-        Wykresy.slupki($('#cf-wyk'), { kategorie: d.tygodnie.map(t => t.od.slice(8, 10) + '.' + t.od.slice(5, 7)),
-          etykietyPelne: d.tygodnie.map(t => `${dataPl(t.od)} – ${dataPl(t.do)}`), wysokosc: 260, opis: 'Prognoza 13 tygodni',
-          serie: [{ klucz: 'w', nazwa: 'Wpływy', kolor: Wykresy.kolor('--plus'), wartosci: d.tygodnie.map(t => t.wplywy) },
-            { klucz: 'o', nazwa: 'Wydatki', kolor: Wykresy.kolor('--minus'), wartosci: d.tygodnie.map(t => t.wydatki) },
-            { klucz: 'so', nazwa: 'Saldo ostrożne', typ: 'linia', kolor: Wykresy.kolor('--s1'), wartosci: d.tygodnie.map(t => t.saldo_ostrozny) },
-            { klucz: 'sp', nazwa: 'Saldo pełne', typ: 'linia', przerywana: true, kolor: Wykresy.kolor('--s2'), wartosci: d.tygodnie.map(t => t.saldo_pelny) }] });
-      }
-      document.querySelectorAll('tr[data-t]').forEach(tr => tr.onclick = () => tr.nextElementSibling.classList.toggle('ukryty'));
-      document.querySelectorAll('tr[data-pp]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaPlatnosci([tr.dataset.pp], null); });
-    });
-    const tyg = d.tygodnie.map((t, i) => `<tr data-t="${i}" class="klikalny"><td>${dataPl(t.od)} – ${dataPl(t.do)}</td><td class="liczba-kol plus">${zl(t.wplywy, false)}</td>
-      <td class="liczba-kol minus">${zl(t.wydatki, false)}</td><td class="liczba-kol szary">${t.tylko_pelny ? zl(t.tylko_pelny, false) : ''}</td>
-      <td class="liczba-kol ${t.saldo_ostrozny < 0 ? 'minus' : ''}"><b>${zl(t.saldo_ostrozny, false)}</b></td><td class="liczba-kol szary">${zl(t.saldo_pelny, false)}</td></tr>
-      <tr class="ukryty pozycje"><td colspan="6">${t.pozycje.map(x => `<div><span>${dataPl(x.data)}</span> <b class="${x.kwota < 0 ? 'minus' : 'plus'}">${zl(x.kwota)}</b> ${esc(x.opis)} <span class="szary">(${esc(x.rodzaj)}${x.scenariusz === 'pelny' ? ', tylko pełny' : ''})</span></div>`).join('') || '<span class="szary">brak pozycji</span>'}</td></tr>`).join('');
-    return `<div class="naglowek-strony"><div><h1>Cash flow ${pytajnik('cashflow')}</h1><div class="okruszki">Prognoza od ${dataPl(d.dzien_stanu)} (ostatni dzień eksportu ING)</div></div>
-        <a class="przycisk" href="/api/eksport/cashflow">Excel</a></div>
-      <div class="kafle"><div class="kafel"><div class="tytul">Saldo startowe</div><div class="wartosc">${zl(d.saldo_start)}</div><div class="dop">rachunek główny i online</div></div>
-        <div class="kafel"><div class="tytul">Najniższy punkt (ostrożny)</div><div class="wartosc ${d.minimum_ostrozny.saldo < 0 ? 'minus' : ''}">${zl(d.minimum_ostrozny.saldo)}</div><div class="dop">${dataPl(d.minimum_ostrozny.data)}</div></div>
-        <div class="kafel"><div class="tytul">Za 13 tygodni</div><div class="wartosc">${zl(d.koniec.ostrozny)}</div><div class="dop">ostrożny; pełny ${zl(d.koniec.pelny)}</div></div>
-        <div class="kafel"><div class="tytul">Plany po terminie</div><div class="wartosc ${d.po_terminie.length ? 'minus' : ''}">${d.po_terminie.length}</div><div class="dop">tylko w scenariuszu pełnym, do decyzji</div></div></div>
-      <div class="filtry">${filtr('widok', 'Widok', [['', '13 tygodni'], ['dni', 'Dzień po dniu']], p.widok || '')}</div>
-      <div class="karta-wyk"><h3>${dni ? 'Saldo dzień po dniu' : 'Wpływy, wydatki i saldo w tygodniach'}</h3><div class="pod">${dni ? 'linia: scenariusz ostrożny; w podpowiedzi także pełny' : 'linie: saldo na koniec tygodnia, ciągła ostrożny, przerywana pełny'}</div><div id="cf-wyk"></div></div>
-      <div class="tabela-ramka niska"><table><thead><tr><th>Tydzień</th><th class="liczba-kol">Wpływy</th><th class="liczba-kol">Wydatki</th><th class="liczba-kol">Tylko pełny</th>
-        <th class="liczba-kol">Saldo ostrożne</th><th class="liczba-kol">Saldo pełne</th></tr></thead><tbody>${tyg}</tbody></table></div>
-      ${d.po_terminie.length ? `<h2 class="sekcja">Plany po terminie</h2><div class="tabela-ramka niska"><table><tbody>${d.po_terminie.map(x => `<tr data-pp="${esc(x.platnosc)}" class="klikalny"><td>${dataPl(x.termin)}</td><td>${esc(x.opis)}</td><td class="liczba-kol minus">${zl(x.kwota, false)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-      <p class="notka">Kliknij tydzień, żeby rozwinąć pozycje. Należności liczone w dniu terminu przesuniętym o średnie spóźnienie nabywcy.</p>`;
-  },
+  // ---------- Cash flow (widok jak w BS, kod niżej: widokCashflow) ----------
+  async cashflow(p) { return widokCashflow(p); },
 
   // ---------- Rentowność klientów i arkuszy ----------
   async 'rentownosc/rent-klienci'(p) {
@@ -260,15 +181,15 @@ Object.assign(WIDOKI, {
     const lista = await api('rentownosc/arkusze');
     const kol = [
       { naglowek: 'Folder', wartosc: x => x.folder }, { naglowek: 'Arkusz', wartosc: x => x.nazwa },
-      { naglowek: 'Plan przychód', liczba: true, wartosc: x => tys(x.plan_przychod) }, { naglowek: 'Wykonanie przychód', liczba: true, wartosc: x => tys(x.wyk_przychod) },
+      { naglowek: 'Plan przychód', liczba: true, wartosc: x => tys(x.plan_przychod), sortKlucz: x => x.plan_przychod }, { naglowek: 'Wykonanie przychód', liczba: true, wartosc: x => tys(x.wyk_przychod), sortKlucz: x => x.wyk_przychod },
       { naglowek: 'Realizacja', liczba: true, wartosc: x => procent(x.realizacja_proc) },
       { naglowek: 'Plan koszt', liczba: true, wartosc: x => tys(-x.plan_koszt), klasa: () => 'minus' }, { naglowek: 'Wykonanie koszt', liczba: true, wartosc: x => tys(-x.wyk_koszt), klasa: () => 'minus' },
-      { naglowek: 'Saldo planu', liczba: true, wartosc: x => tys(x.plan_saldo) },
+      { naglowek: 'Saldo planu', liczba: true, wartosc: x => tys(x.plan_saldo), sortKlucz: x => x.plan_saldo },
       { naglowek: 'Po terminie', liczba: true, wartosc: x => x.po_terminie || '', klasa: x => x.po_terminie ? 'minus' : '' },
     ];
     return `<h1>Arkusze: plan i wykonanie</h1><div class="okruszki">Rentowność / budżet</div>
       <p class="notka">Plan: wszystkie aktualne pozycje arkusza (netto). Wykonanie: pozycje opłacone według banku (przychód przez fakturę, koszt przez przelew).</p>
-      ${tabela({ kolumny: kol, dane: lista, poczatek: 1, onWiersz: x => { location.hash = `#/budzet/arkusz?id=${x.id}`; } })}`;
+      ${tabela({ kolumny: kol, dane: lista, poczatek: 1, sortLokalny: true, onWiersz: x => { location.hash = `#/budzet/arkusz?id=${x.id}`; } })}`;
   },
 
   async eksport() {
@@ -667,4 +588,473 @@ async function kartaUmowy(u) {
     rodzaj: $('#u-rodzaj').value, do: $('#u-do').value, przedluzenie: !!$('#u-przedl').value, wypowiedzenie_mies: $('#u-okres').value,
     koniec_miesiaca: !!$('#u-km').value, wartosc_mies: String(naGrosze($('#u-wartosc').value || '0') || 0), alert_dni: $('#u-alert').value, uwagi: $('#u-uwagi').value });
   if (u) $('#u-usun').onclick = () => zmiana('umowa', { id: u.id, usun: true });
+}
+
+// ---------- Cash flow jak w Budget Studio ----------
+// Zapisane widoki (zakres liczony od dnia stanu przy każdym otwarciu), pasek filtrów, panel „Wygląd i filtry”,
+// tabela okresów z SUM/MAX/MIN, minimapa z ramką wycinka, wykres i lista płatności wycinka. Wszystkie liczby z serwera
+// (GET /api/cashflow/okresy); tu tylko wycinek, wyszukiwarka, sortowanie i strony listy.
+const WIDOKI_CF = [
+  { id: '2tyg', nazwa: '2 tyg. w przód', ik: 'kalendarz', granulacja: 'dzien', dni: 13 },
+  { id: '13tyg', nazwa: '13 tyg. w przód', ik: 'kalendarz', granulacja: 'tydzien', dni: 90 },
+  { id: '6mies', nazwa: '6 mies. w przód', ik: 'kalendarz', granulacja: 'tydzien', mies: 6 },
+  { id: '12mies', nazwa: '12 mies. w przód', ik: 'kalendarz', granulacja: 'miesiac', mies: 12 },
+  { id: 'rok', nazwa: 'Ten rok: historia i prognoza', ik: 'fale', granulacja: 'miesiac', rok: true },
+  { id: 'dni', nazwa: 'Dzień po dniu (30 dni)', ik: 'fale', granulacja: 'dzien', dni: 29 },
+];
+const GRANULACJE = { dzien: 'Dzień', tydzien: 'Tydzień', miesiac: 'Miesiąc' };
+const TYPY_CF = { plan: 'Plany z budżetu', faktura: 'Należności z faktur', bank: 'Przepływy z banku', szacunek: 'Szacunek kosztów' };
+const SERIE_CF = { wplywy: 'Wpływy', obciazenia: 'Obciążenia', saldo: 'Saldo okresu', narastajaco: 'Saldo narastające' };
+const KOLUMNY_CF = [
+  ['rodzaj', 'Rodzaj'], ['podstawa', 'Podstawa<br>płatności'], ['kontrahent', 'Kontrahent'], ['tytul', 'Tytuł'], ['nr_dok', 'Numer<br>dokumentu'],
+  ['netto', 'Netto PLN<br>(wartość)'], ['brutto', 'Brutto PLN<br>(wartość)'], ['vat', 'VAT PLN<br>(wartość)'], ['stawka', 'Stawka<br>VAT'],
+  ['wystawienie', 'Dzień<br>wystawienia'], ['data', 'Dzień realnej<br>płatności'], ['przesuniecie', 'Przesunięcie<br>płatności'],
+  ['arkusz', 'Arkusz budżetu'], ['miesiac', 'Miesiąc<br>budżetowy'], ['metoda', 'Metoda<br>płatności'], ['waluta', 'Waluta'], ['etap', 'Etap']];
+const KOLUMNY_CF_DOMYSLNE = KOLUMNY_CF.map(k => k[0]).filter(k => k !== 'etap');
+const KROPKA_TYPU = { plan: 'niebieska', faktura: 'zolta', bank: 'zielona', szacunek: 'szara' };
+const MAKS_PUNKTOW = 120;
+let cfPanel = false;   // panel „Wygląd i filtry” zostaje otwarty po Zastosuj (jak w BS)
+
+const plusMies = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+function zakresWidoku(v, stan) {
+  if (v.rok) { const k = `${stan.slice(0, 4)}-12-31`, pol = plusMies(stan, 6); return { od: `${stan.slice(0, 4)}-01-01`, do: pol > k ? pol : k }; }
+  return { od: stan, do: v.dni ? plusDni(stan, v.dni) : plusMies(stan, v.mies) };
+}
+const zlSaldo = s => { const t = String(s ?? '').replace(/[\s ]/g, '').replace(',', '.'); const m = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(t);
+  return m ? (m[1] ? -1 : 1) * ((+m[2]) * 100 + +((m[3] || '') + '00').slice(0, 2)) : NaN; };
+function kolumnyCf() {
+  try { const z = JSON.parse(localStorage.getItem('finanse-cf-kolumny') || 'null'); if (Array.isArray(z) && z.length) return z; } catch (e) { /* wygoda, nie stan */ }
+  return KOLUMNY_CF_DOMYSLNE;
+}
+
+function kartaSumCf(okresy, maks, mini) {
+  if (!okresy.length) return '';
+  const zakres = okresy.length === 1 ? okresy[0].etykieta : `${okresy[0].etykieta.split(' – ')[0]} - ${okresy[okresy.length - 1].etykieta.split(' – ').pop()}`;
+  const kl = v => v < 0 ? 'minus' : 'plus';
+  const sum = okresy[okresy.length - 1].narastajaco;
+  return `<div class="cf-karta"><div class="zakres">${esc(zakres)}</div><dl>
+    <dt>SUM</dt><dd class="${kl(sum)}" title="saldo narastające na koniec wycinka">${zl(sum, false)}</dd>
+    <dt>MAX</dt><dd class="${kl(maks.narastajaco)}" title="${esc(maks.etykieta)}">${zl(maks.narastajaco, false)}</dd>
+    <dt>MIN</dt><dd class="${kl(mini.narastajaco)}" title="${esc(mini.etykieta)}">${zl(mini.narastajaco, false)}</dd></dl></div>`;
+}
+
+function tabelaOkresowCf(okresy) {
+  if (!okresy.length) return '';
+  const mx = okresy.reduce((a, x) => x.narastajaco > a.narastajaco ? x : a), mn = okresy.reduce((a, x) => x.narastajaco < a.narastajaco ? x : a);
+  const kl = v => v < 0 ? 'minus' : v > 0 ? 'plus' : 'zero';
+  const wiersz = (nazwa, znak, pole, klasa = '', ramki = false) => `<tr class="${klasa}"><td><span class="znak-w">${znak}</span>${nazwa}</td>${okresy.map(o => {
+    const v = o[pole], r = ramki ? (o === mx ? ' max' : o === mn ? ' min' : '') : '';
+    return `<td class="${klasa ? '' : kl(v)}">${r ? `<span class="ramka${r}" title="${r === ' max' ? 'najwyższe saldo' : 'najniższe saldo'}">${zl(v, false)}</span>` : zl(v, false)}</td>`;
+  }).join('')}</tr>`;
+  return `<div class="cf-tabela"><table><thead><tr><th></th>${okresy.map(o => `<th>${o.biezacy ? `<span class="biezacy" title="okres dnia stanu">${esc(o.etykieta)}</span>` : esc(o.etykieta)}</th>`).join('')}</tr></thead>
+    <tbody>${wiersz('Saldo narastająco', '+', 'narastajaco', '', true)}${wiersz('Saldo okresu', '=', 'saldo')}
+    <tr class="oddziel w-wplywy"><td><span class="znak-w">↗</span>Wpływy</td>${okresy.map(o => `<td>${zl(o.wplywy, false)}</td>`).join('')}</tr>
+    ${wiersz('Obciążenia', '↘', 'obciazenia', 'w-obciazenia')}</tbody></table></div>`;
+}
+
+function komorkaCf(x, k) {
+  const z = v => v == null ? '' : zl(v, false);
+  return {
+    rodzaj: chipZnak(x.kwota), podstawa: esc(x.podstawa || ''), kontrahent: esc(x.kontrahent || ''), tytul: esc(x.tytul || ''), nr_dok: esc(x.nr_dok || '-'),
+    netto: z(x.netto), brutto: z(x.kwota), vat: z(x.vat), stawka: x.stawka != null ? `${x.stawka}%` : '-', wystawienie: dataPl(x.wystawienie),
+    data: dataPl(x.data), przesuniecie: `${x.przesuniecie || 0} dni`, arkusz: esc(x.arkusz || '-'), miesiac: x.miesiac ? mies(x.miesiac) : '',
+    metoda: esc(x.metoda || ''), waluta: esc(x.waluta || 'PLN'), etap: esc(x.etap || ''),
+  }[k];
+}
+const SORT_CF = { rodzaj: x => x.kwota > 0 ? 1 : 0, netto: x => x.netto ?? 0, brutto: x => x.kwota, vat: x => x.vat ?? 0, stawka: x => x.stawka ?? -1,
+  przesuniecie: x => x.przesuniecie || 0 };
+const LICZBOWE_CF = ['netto', 'brutto', 'vat', 'stawka', 'przesuniecie'];
+
+async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
+  const stan = STAN?.naleznosci?.dzien_stanu || STAN?.bank_do;
+  const widok = WIDOKI_CF.find(v => v.id === p.widok) || WIDOKI_CF[1];
+  const bazowy = arkusz ? { granulacja: 'miesiac', od: stan, do: ark && `${ark.do}-28` > stan ? plusMies(`${ark.do}-01`, 1) : plusMies(stan, 6) } : { granulacja: widok.granulacja, ...zakresWidoku(widok, stan) };
+  const ef = { granulacja: p.granulacja || bazowy.granulacja, od: p.od || bazowy.od, do: p.do || bazowy.do, rodzaj: p.rodzaj || '',
+    saldo_start: p.saldo ?? '', scenariusz: p.scenariusz || 'ostrozny' };
+  const d = await api('cashflow/okresy', { ...ef, arkusz: arkusz || '' });
+  if (d.brak_danych) return '<h1>Cash flow</h1><div class="pusto">Brak danych z banku.</div>';
+  const typy = (p.typ || '').split(',').filter(Boolean);
+  const serie = p.serie ? Object.fromEntries(Object.keys(SERIE_CF).map(k => [k, p.serie.split(',').includes(k)])) : {};
+  const zmienione = ['granulacja', 'od', 'do', 'rodzaj', 'saldo', 'scenariusz', 'typ', 'serie'].filter(k => p[k] != null && p[k] !== '');
+  const n = d.okresy.length;
+  const bi = Math.max(0, d.okresy.findIndex(o => o.biezacy));
+  let okno = n <= MAKS_PUNKTOW ? [0, n - 1] : [Math.max(0, Math.min(n - MAKS_PUNKTOW, bi - 4)), Math.max(0, Math.min(n - MAKS_PUNKTOW, bi - 4)) + MAKS_PUNKTOW - 1];
+  const caly = d.okresy, maxC = caly[d.max.okres], minC = caly[d.min.okres];
+  const poTerminie = d.pozycje.filter(z => z.etap === 'Po terminie').length;
+  const pasujacyZakres = WIDOKI_CF.find(v => { const z = zakresWidoku(v, stan); return z.od === ef.od && z.do === ef.do; });
+  let lista = { q: '', strona: 1, ile: 100, sort: 'data', kier: 'rosnaco' };
+
+  const rysujWycinek = () => {
+    const [a, b] = okno, wyc = caly.slice(a, b + 1);
+    const mx = wyc.reduce((x, y) => y.narastajaco > x.narastajaco ? y : x), mn = wyc.reduce((x, y) => y.narastajaco < x.narastajaco ? y : x);
+    $('#cf-karta-dol').innerHTML = kartaSumCf(wyc, mx, mn);
+    $('#cf-tabela').innerHTML = tabelaOkresowCf(wyc);
+    $('#cf-powieksz').disabled = n > MAKS_PUNKTOW || (a === 0 && b === n - 1);
+    WYK.ustaw({ okresy: wyc });
+    rysujListe();
+  };
+  let WYK = null;
+  const rysujListe = () => {
+    const [a, b] = okno, q = lista.q.trim().toLowerCase();
+    let poz = d.pozycje.filter(z => z.okres >= a && z.okres <= b && (!typy.length || typy.includes(z.typ)));
+    if (q) poz = poz.filter(z => `${z.kontrahent} ${z.tytul} ${z.nr_dok} ${z.arkusz} ${z.opis}`.toLowerCase().includes(q));
+    const f = SORT_CF[lista.sort] || (x => x[lista.sort] ?? '');
+    const znak = lista.kier === 'rosnaco' ? 1 : -1;
+    poz.sort((x, y) => { const u = f(x), v = f(y); return znak * (typeof u === 'number' ? u - v : String(u).localeCompare(String(v), 'pl')); });
+    const kol = kolumnyCf();
+    const razem = poz.length, ost = Math.max(1, Math.ceil(razem / lista.ile));
+    lista.strona = Math.min(lista.strona, ost);
+    const od = (lista.strona - 1) * lista.ile, strona = poz.slice(od, od + lista.ile);
+    const th = kol.map(k => `<th class="sort${LICZBOWE_CF.includes(k) ? ' liczba-kol' : ''}" data-k="${k}"${lista.sort === k ? ` data-kierunek="${lista.kier}"` : ''}>${KOLUMNY_CF.find(x => x[0] === k)[1]}</th>`).join('');
+    const tr = strona.map((x, i) => `<tr data-i="${od + i}" class="${x.typ === 'plan' || x.typ === 'szacunek' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.kwota > 0 ? ' wiersz-plus' : ''}" title="${esc(x.opis)}">
+      <td class="lp">${od + i + 1}.</td><td class="kr"><span class="kropka ${x.etap === 'Po terminie' ? 'czerwona' : KROPKA_TYPU[x.typ]}" title="${esc(TYPY_CF[x.typ])}${x.etap ? ', ' + esc(x.etap.toLowerCase()) : ''}"></span></td>
+      ${kol.map(k => `<td class="${LICZBOWE_CF.includes(k) ? 'liczba-kol' : ''}">${komorkaCf(x, k)}</td>`).join('')}</tr>`).join('');
+    $('#cf-lista').innerHTML = razem ? `<div class="tabela-ramka niska"><table><thead><tr><th class="lp"></th><th></th>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
+      : '<div class="pusto">Brak płatności w tym wycinku.</div>';
+    $('#cf-info').textContent = `Wyświetlono ${razem ? od + 1 : 0}-${Math.min(od + lista.ile, razem)} z ${razem}`;
+    $('#cf-poprz').disabled = lista.strona <= 1;
+    $('#cf-nast').disabled = lista.strona >= ost;
+    $('#cf-lista').querySelectorAll('th.sort').forEach(h => h.onclick = () => {
+      lista.kier = lista.sort === h.dataset.k && lista.kier === 'rosnaco' ? 'malejaco' : 'rosnaco'; lista.sort = h.dataset.k; rysujListe(); });
+    $('#cf-lista').querySelectorAll('tbody tr').forEach(r => r.onclick = e => {
+      e.stopPropagation();
+      const x = poz[r.dataset.i];
+      if (x.typ === 'plan') kartaPlatnosci([x.zrodlo], null);
+      else if (x.typ === 'faktura') location.hash = `#/platnosci/faktury?q=${encodeURIComponent(x.nr_dok)}`;
+      else if (x.typ === 'bank') location.hash = `#/platnosci/bank?q=${encodeURIComponent(x.kontrahent || x.tytul)}&od=${x.data}&do=${x.data}`;
+    });
+  };
+
+  setTimeout(() => {
+    if (!$('#cf-wyk')) return;
+    WYK = Wykresy.bs($('#cf-wyk'), { okresy: caly.slice(okno[0], okno[1] + 1), wysokosc: 220, serie, opis: 'Cash flow: wpływy, obciążenia i saldo' });
+    const mapa = Wykresy.minimapa($('#cf-mapa'), { wartosci: caly.map(o => o.narastajaco), etykiety: caly.map(o => o.etykieta), okno, maks: MAKS_PUNKTOW,
+      naZmiane: o2 => { okno = o2; lista.strona = 1; rysujWycinek(); } });
+    $('#cf-powieksz').onclick = () => { okno = [0, n - 1]; mapa.ustaw(okno); rysujWycinek(); };
+    rysujWycinek();
+    $('#cf-ile').onchange = e => { lista.ile = +e.target.value; lista.strona = 1; rysujListe(); };
+    $('#cf-poprz').onclick = () => { lista.strona--; rysujListe(); };
+    $('#cf-nast').onclick = () => { lista.strona++; rysujListe(); };
+    let t;
+    $('#cf-szukaj').oninput = e => { clearTimeout(t); t = setTimeout(() => { lista.q = e.target.value; lista.strona = 1; rysujListe(); }, 200); };
+    // pasek filtrów: działa od razu, jak filtry podręczne w BS
+    document.querySelectorAll('[data-cf]').forEach(el => el.onchange = () => {
+      const k = el.dataset.cf;
+      if (k === 'zakres') {
+        if (el.value === 'wlasny') { cfPanel = true; return otworzPanelCf(); }
+        const v = WIDOKI_CF.find(x => x.id === el.value);
+        if (v) return ustawParametry(zakresWidoku(v, stan));
+      }
+      ustawParametry({ [k]: el.value });
+    });
+    const saldo = $('#cf-saldo');
+    saldo.onchange = () => {
+      if (!saldo.value.trim()) return ustawParametry({ saldo: '' });
+      const g = zlSaldo(saldo.value);
+      if (isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
+      ustawParametry({ saldo: String(g) });
+    };
+    $('#cf-saldo-wyczysc').onclick = () => ustawParametry({ saldo: '' });
+    const przyw = $('#cf-przywroc');
+    if (przyw) przyw.onclick = () => { location.hash = arkusz ? `#/budzet/arkusz?id=${encodeURIComponent(arkusz)}&zakladka=cashflow` : `#/cashflow?widok=${widok.id}`; };
+    $('#cf-filtry').onclick = e => { e.stopPropagation(); cfPanel = !cfPanel; cfPanel ? otworzPanelCf() : zamknijPanelCf(); };
+    const menu = $('#cf-menu');
+    if (menu) menu.onclick = e => {
+      e.stopPropagation();
+      const m = document.createElement('div');
+      m.className = 'zarzadzaj-menu';
+      m.innerHTML = `<a href="/api/eksport/cashflow">${ik('plik')}Eksport do Excela (prognoza 13 tygodni)</a>
+        <a href="#/cashflow?widok=${widok.id}">${ik('przywroc')}Usuń zastosowane filtry</a>`;
+      const r = menu.getBoundingClientRect();
+      m.style.left = `${r.left}px`; m.style.top = `${r.bottom + window.scrollY + 4}px`;
+      document.body.appendChild(m);
+      setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }));
+    };
+    if (cfPanel) otworzPanelCf();
+  });
+
+  function otworzPanelCf() {
+    const panel = $('#panel-filtrow');
+    const szkic = { granulacja: ef.granulacja, saldo: p.saldo ?? '', scenariusz: ef.scenariusz, rodzaj: ef.rodzaj, od: ef.od, do: ef.do,
+      typ: typy.length ? typy : Object.keys(TYPY_CF), serie: Object.keys(SERIE_CF).filter(k => serie[k] !== false), kolumny: kolumnyCf() };
+    const sekcja = (klucz, etykieta, wartosc, html, zm) => `<details${zm ? ' class="zmienione"' : ''}><summary>${etykieta}: <b>${esc(wartosc)}</b></summary><div class="zawartosc">${html}</div></details>`;
+    const radio = (nazwa, opcje, wart) => Object.entries(opcje).map(([v, t]) => `<label><input type="radio" name="pf-${nazwa}" value="${v}"${String(wart) === v ? ' checked' : ''}>${esc(t)}</label>`).join('');
+    const pola = (nazwa, opcje, wybrane) => Object.entries(opcje).map(([v, t]) => `<label><input type="checkbox" name="pf-${nazwa}" value="${v}"${wybrane.includes(v) ? ' checked' : ''}>${t.replace('<br>', ' ')}</label>`).join('');
+    panel.innerHTML = `<div class="gora"><button class="zamknij" aria-label="Zamknij filtry">×</button><h2>Wygląd i filtry</h2>
+        ${arkusz ? '' : `<label class="etyk">Zapisane widoki</label><select id="pf-widok">${WIDOKI_CF.map(v => `<option value="${v.id}"${v.id === widok.id ? ' selected' : ''}>${esc(v.nazwa)}</option>`).join('')}</select>`}</div>
+      <div class="srodek">
+        <div class="grupa">Wygląd</div>
+        ${sekcja('granulacja', 'Granulacja', GRANULACJE[szkic.granulacja], radio('granulacja', GRANULACJE, szkic.granulacja), p.granulacja)}
+        ${sekcja('saldo', 'Saldo startowe', szkic.saldo !== '' ? zl(+szkic.saldo) : 'z banku', `<input type="text" id="pf-saldo" inputmode="decimal" placeholder="z banku: ${esc(zl(d.saldo_start, false))}" value="${szkic.saldo !== '' ? esc(zlWpis(+szkic.saldo)) : ''}"><span class="szary">Puste: gotówka z banku na koniec dnia przed zakresem.</span>`, p.saldo)}
+        ${sekcja('scenariusz', 'Scenariusz', szkic.scenariusz === 'pelny' ? 'pełny' : 'ostrożny', radio('scenariusz', { ostrozny: 'ostrożny: bez zaległości', pelny: 'pełny: zaległości za 7 dni' }, szkic.scenariusz), p.scenariusz)}
+        ${sekcja('serie', 'Serie wykresu', szkic.serie.length === 4 ? 'Wszystkie' : `${szkic.serie.length} z 4`, pola('serie', SERIE_CF, szkic.serie), p.serie)}
+        ${sekcja('kolumny', 'Widoczne kolumny', `${szkic.kolumny.length} z ${KOLUMNY_CF.length}`, pola('kolumny', Object.fromEntries(KOLUMNY_CF), szkic.kolumny), false)}
+        <div class="grupa">Cechy</div>
+        ${sekcja('rodzaj', 'Rodzaj', { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }[szkic.rodzaj], radio('rodzaj', { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }, szkic.rodzaj), p.rodzaj)}
+        ${sekcja('typ', 'Pochodzenie', szkic.typ.length === 4 ? 'Wszystko' : `${szkic.typ.length} z 4`, pola('typ', TYPY_CF, szkic.typ), p.typ)}
+        <div class="grupa">Daty</div>
+        ${sekcja('daty', 'Dzień realnej płatności', `${dataPl(szkic.od)} - ${dataPl(szkic.do)}`, `<label>od <input type="date" id="pf-od" value="${esc(szkic.od)}"></label><label>do <input type="date" id="pf-do" value="${esc(szkic.do)}"></label>`, p.od || p.do)}
+      </div>
+      <div class="dol"><button class="przycisk" id="pf-zastosuj">Zastosuj</button><button class="anuluj" id="pf-anuluj">Anuluj</button></div>`;
+    panel.hidden = false;
+    document.body.classList.add('filtry-otwarte');
+    const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('zamknij')}Zamknij filtry <span class="kropka-fil"></span>`;
+    $('.zamknij', panel).onclick = () => { cfPanel = false; zamknijPanelCf(); };
+    $('#pf-anuluj').onclick = () => { cfPanel = false; zamknijPanelCf(); };
+    const pw = $('#pf-widok');
+    if (pw) pw.onchange = () => { location.hash = `#/cashflow?widok=${pw.value}`; };
+    $('#pf-zastosuj').onclick = () => {
+      const wart = n2 => panel.querySelector(`input[name="pf-${n2}"]:checked`)?.value ?? '';
+      const zazn = n2 => [...panel.querySelectorAll(`input[name="pf-${n2}"]:checked`)].map(x => x.value);
+      const kol = zazn('kolumny');
+      try { localStorage.setItem('finanse-cf-kolumny', JSON.stringify(kol.length ? kol : KOLUMNY_CF_DOMYSLNE)); } catch (e) { /* wygoda */ }
+      const s = $('#pf-saldo').value.trim(), g = s ? zlSaldo(s) : '';
+      if (s && isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
+      const od = $('#pf-od').value, doo = $('#pf-do').value;
+      if (!od || !doo || od > doo) return komunikat('Zakres dat: początek nie może być po końcu.', true);
+      const t = zazn('typ'), se = zazn('serie');
+      ustawParametry({ granulacja: wart('granulacja') === bazowy.granulacja ? '' : wart('granulacja'), saldo: s ? String(g) : '',
+        scenariusz: wart('scenariusz') === 'ostrozny' ? '' : wart('scenariusz'), rodzaj: wart('rodzaj'),
+        typ: t.length === 4 ? '' : t.join(','), serie: se.length === 4 ? '' : se.join(','),
+        od: od === bazowy.od ? '' : od, do: doo === bazowy.do ? '' : doo });
+      if (JSON.stringify(kol) !== JSON.stringify(kolumnyCf())) rysujListe();
+    };
+  }
+
+  const opcjeZakresu = [...(arkusz ? [] : WIDOKI_CF.map(v => [v.id, v.nazwa])), ['wlasny', pasujacyZakres && !arkusz ? 'Własny zakres…' : `${dataPl(ef.od)} - ${dataPl(ef.do)}`]];
+  const wybranyZakres = !arkusz && pasujacyZakres ? pasujacyZakres.id : 'wlasny';
+  const pasekFiltrow = `<div class="filtry">
+      <label>Dzień realnej płatności<select data-cf="zakres">${opcjeZakresu.map(([v, t]) => `<option value="${v}"${v === wybranyZakres ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+      <label>Granulacja<select data-cf="granulacja">${Object.entries(GRANULACJE).map(([v, t]) => `<option value="${v}"${v === ef.granulacja ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>Rodzaj<select data-cf="rodzaj"><option value="">Wszystko</option><option value="1"${ef.rodzaj === '1' ? ' selected' : ''}>Wpływy</option><option value="-1"${ef.rodzaj === '-1' ? ' selected' : ''}>Obciążenia</option></select></label>
+      <label class="pole-saldo">Saldo startowe<input id="cf-saldo" inputmode="decimal" value="${p.saldo != null && p.saldo !== '' ? esc(zlWpis(+p.saldo)) : ''}" placeholder="${esc(zl(d.saldo_start, false))}" title="${d.zrodlo_salda === 'ręcznie' ? 'wpisane ręcznie' : 'z banku: gotówka na koniec dnia przed zakresem'}">
+        <button id="cf-saldo-wyczysc" type="button" aria-label="Wyczyść saldo startowe">${ik('zamknij')}</button></label>
+      <button class="przycisk miekki" id="cf-filtry" type="button">${ik('filtr')}Wygląd i filtry ${zmienione.length ? '<span class="kropka-fil"></span>' : ''}</button>
+      ${d.scenariusz === 'pelny' ? '<span class="pigulka miekka">scenariusz pełny</span>' : ''}
+    </div>`;
+  const naglowek = arkusz ? '' : `<h1>Cash flow ${pytajnik('cashflow')}</h1>
+    <div class="pigulki"><span class="pigulka">${ik('warstwy')}${esc(widok.nazwa)}</span>
+      ${zmienione.length ? `<button class="pigulka przywroc" id="cf-przywroc">${ik('przywroc')}Przywróć</button>` : ''}
+      <button class="przycisk-ikona" id="cf-menu" aria-label="Więcej">${ik('kropki')}</button>
+      <span class="szary">dzień stanu ${dataPl(d.dzien_stanu)}, saldo z ING ${zl(d.saldo_ing)}</span></div>`;
+  return `${naglowek}${pasekFiltrow}
+    <div class="cf-uklad">${kartaSumCf(caly, maxC, minC)}<div id="cf-tabela"></div></div>
+    <div class="cf-mapa-uklad"><button class="przycisk" id="cf-powieksz">Powiększ zakres ↔</button><div id="cf-mapa"></div></div>
+    <div class="cf-uklad"><div id="cf-karta-dol"></div><div id="cf-wyk"></div></div>
+    <div class="cf-lista-naglowek"><h2 class="sekcja">Płatności w wycinku</h2>
+      <span class="legenda-stany"><span><span class="kropka niebieska"></span>plan</span><span><span class="kropka zolta"></span>faktura czeka</span>
+        <span><span class="kropka czerwona"></span>po terminie</span><span><span class="kropka zielona"></span>bank</span><span><span class="kropka szara"></span>szacunek</span></span>
+      ${poTerminie ? `<a class="cf-uwaga" href="#/platnosci/plan?lista=po_terminie"><span class="kropka czerwona"></span>${poTerminie} po terminie do decyzji</a>` : ''}</div>
+    <div id="cf-lista"></div>
+    <div class="stopka">
+      <label>Max widocznych <select id="cf-ile">${[50, 100, 200, 500].map(x => `<option${x === 100 ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
+      <button id="cf-poprz" aria-label="Poprzednia strona">↑</button><span id="cf-info"></span><button id="cf-nast" aria-label="Następna strona">↓</button>
+      <input class="szukaj" id="cf-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj kontrahenta, tytuł, numer dokumentu">
+    </div>`;
+}
+
+function zamknijPanelCf() {
+  $('#panel-filtrow').hidden = true;
+  document.body.classList.remove('filtry-otwarte');
+  const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('filtr')}Wygląd i filtry`;
+}
+
+// ---------- Lista płatności planu w stylu BS (menu Płatności i zakładka Płatności arkusza) ----------
+const KROPKA_ETAPU = { 'Po terminie': 'czerwona', 'Opłacona': 'zielona', 'Planowana': 'niebieska', 'Wystawiona': 'zolta', 'Częściowo opłacona': 'zolta' };
+async function listaPlanu(p, { arkusz = null, dane = null } = {}) {
+  const d = dane || await api('budzet/lista', { ...p, arkusz: arkusz || '' });
+  const z = v => v == null ? '' : zl(v, false);
+  const kol = [
+    { id: 'rodzaj', naglowek: 'Rodzaj', html: x => chipZnak(x.rodzaj) },
+    { naglowek: 'Etap<br>płatności', html: x => chipEtap(x.etap) },
+    { naglowek: 'Podstawa<br>płatności', wartosc: x => x.podstawa_platnosci, klasa: x => x.skladowa === 'us' || x.skladowa === 'zus' ? 'szary' : '' },
+    { naglowek: 'Kontrahent', wartosc: x => x.w_kontrahent },
+    { naglowek: 'Tytuł', wartosc: x => x.tytul || (x.typ === 'plan' ? 'Przedmiot transakcji' : '') },
+    { naglowek: 'Numer<br>dokumentu', wartosc: x => x.nr_dok || '-' },
+    { naglowek: 'Netto PLN<br>(wartość)', liczba: true, wartosc: x => z(x.netto * x.rodzaj) },
+    { id: 'kwota', naglowek: 'Brutto PLN<br>(wartość)', liczba: true, wartosc: x => z(x.brutto * x.rodzaj) },
+    { naglowek: 'VAT PLN<br>(wartość)', liczba: true, wartosc: x => z((x.vat || 0) * x.rodzaj) },
+    { naglowek: 'Stawka<br>VAT', liczba: true, wartosc: x => x.stawka != null ? `${x.stawka}%` : '-' },
+    { naglowek: 'Dzień<br>wystawienia', wartosc: x => dataPl(x.wystawienie) },
+    { naglowek: 'Dzień<br>płatności', wartosc: x => dataPl(x.termin_efektywny) },
+    { naglowek: 'Miesiąc<br>budżetowy', wartosc: x => mies(x.miesiac) },
+    ...(arkusz ? [] : [{ naglowek: 'Arkusz budżetu', wartosc: x => x.arkusz }]),
+    { naglowek: 'Uwagi', wartosc: x => x.uwaga_stanu || x.decyzja, klasa: () => 'szary' },
+  ];
+  return `<div class="filtry">${arkusz ? '' : filtr('lista', 'Lista', Object.entries(d.listy), d.lista)}
+      ${filtr('rodzaj', 'Rodzaj', [['', 'Wszystko'], ['1', 'Wpływy'], ['-1', 'Obciążenia']], p.rodzaj)}</div>
+    <p class="notka">Etap wynika z banku i Fakturowni, nie z kliknięcia: „Opłacona” dopiero, gdy jest wpłata albo przelew. ${d.razem} pozycji, saldo brutto ${zl(d.suma)}, stan na ${dataPl(d.dzien_stanu)}.</p>
+    ${tabela({ kolumny: kol, dane: d.wiersze, poczatek: (d.strona - 1) * d.ile + 1, onWiersz: x => kartaPlatnosci([x.id], null),
+      kropka: x => `<span class="kropka ${x.aktualnosc === 'Nieaktualna' ? 'czerwona' : KROPKA_ETAPU[x.etap] || 'szara'}" title="${esc(x.etap || '')}${x.aktualnosc === 'Nieaktualna' ? ', nieaktualna' : ''}"></span>`,
+      wierszKlasa: x => `${x.typ === 'plan' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.rodzaj === 1 ? ' wiersz-plus' : ''}`,
+      stopkaSum: { rodzaj: `suma ${d.razem} pozycji`, kwota: zl(d.suma, false) } })}
+    ${stopka(d, p)}`;
+}
+
+// ---------- Arkusz budżetu: tabela jak w BS (wygląd; edycja jak dotąd: karta komórki, wiersza i płatności) ----------
+const suwak = wl => `<span class="suwak${wl ? ' wl' : ''}" role="img" aria-label="${wl ? 'tak' : 'nie'}"></span>`;
+const dniOpis = v => v === '' || v == null ? '' : /^\d+$/.test(String(v)) ? (+v === 0 ? 'Natychmiast' : `${v} dni`) : String(v);
+const KOL_UST = [
+  ['podstawa', 'Podstawa płatności', w => esc(w.podstawa), '', w => w.podstawa],
+  ['vat', 'VAT', w => w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : '-', 'liczba-kol', w => stawkaStd(w.stawka_vat) ?? -1],
+  ['dzien', 'Dzień wystaw.', w => esc(w.dzien_opis), '', w => w.dzien_opis],
+  ['dni', 'Dni na płatność', w => esc(dniOpis(w.dni_na_platnosc)), 'liczba-kol', w => parseInt(w.dni_na_platnosc, 10) || 0],
+  ['metoda', 'Metoda płatn.', w => esc(w.metoda || ''), '', w => w.metoda || ''],
+  ['split', 'Split Pay.', w => suwak(w.split), 'przel', w => +w.split],
+  ['ksiegowane', 'Księgowane', w => suwak(w.ksiegowane), 'przel', w => +w.ksiegowane],
+  ['w_cashflow', 'W cash flow', w => suwak(w.w_cashflow), 'przel', w => +w.w_cashflow],
+];
+const KOL_OPIS = [
+  ['przedmiot', 'Przedmiot transakcji', w => esc(w.przedmiot || 'Przedmiot transakcji'), 'sep', w => w.przedmiot || ''],
+  ['kontrahent', 'Kontrahent', w => esc(w.kontrahent || ''), '', w => w.kontrahent || ''],
+  ['sekcja', 'Sekcja', w => esc(w.sekcja || '-'), 'szary', w => w.sekcja || ''],
+  ['komentarz', 'Komentarz', w => esc(w.komentarz || ''), '', w => w.komentarz || ''],
+  ['rodzaj', 'Rodzaj', w => chipZnak(w.rodzaj), '', w => w.rodzaj],
+];
+const GRUPY_ARK = { '': 'Nie grupuj', rodzaj: 'Rodzaj', kontrahent: 'Kontrahent', przedmiot: 'Przedmiot transakcji', podstawa: 'Podstawa płatności',
+  vat: 'Stawka VAT', dzien: 'Dzień wystawienia', dni: 'Dni na płatność', metoda: 'Metoda płatności', ksiegowane: 'Księgowane', w_cashflow: 'W cash flow' };
+const etykietaGrupy = (k, w) => ({ rodzaj: w.rodzaj === 1 ? 'wpływy' : 'obciążenia', vat: w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : 'bez VAT',
+  dzien: w.dzien_opis, dni: dniOpis(w.dni_na_platnosc) || '-', ksiegowane: w.ksiegowane ? 'Księgowane' : 'Nieksięgowane',
+  w_cashflow: w.w_cashflow ? 'W cash flow' : 'Poza cash flow', sekcja: w.sekcja || 'bez sekcji' }[k] ?? (w[k] || '-'));
+const miesNag = m => { const t = mies(m); return t.charAt(0).toUpperCase() + t.slice(1); };
+
+function arkuszTabela(d, p) {
+  const m = d.miesiace, ust = p.ustawienia === '1', sekcje = p.sekcje === '1', grupuj = GRUPY_ARK[p.grupuj] ? p.grupuj || '' : '';
+  const stanM = (STAN?.naleznosci?.dzien_stanu || '').slice(0, 7);
+  const kolumny = [...(ust ? KOL_UST : []), ...KOL_OPIS];
+  const nOpis = 1 + (d.planowanie ? 1 : 0) + kolumny.length;
+  let wiersze = [...d.wiersze];
+  const ks = kolumny.find(k => k[0] === p.sortuj);
+  if (ks) {
+    const znak = p.kolejnosc === 'malejaco' ? -1 : 1;
+    wiersze.sort((a, b) => { const x = ks[4](a), y = ks[4](b); return znak * (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pl')); });
+  }
+  const suma = w => Object.values(w.komorki).reduce((s, k) => s + k.netto, 0);
+  const kom = (w, x) => {
+    const k = w.komorki[x];
+    if (!k) return `<td class="liczba-kol pusta${d.planowanie ? ' klik' : ''}" data-w="${esc(w.id)}" data-m="${x}">-</td>`;
+    const kl = ['komorka', k.rzeczywiste ? '' : 'plany', k.stan === 'po-terminie' ? 'po-terminie' : '', k.stan === 'wg-bs' ? 'wg-bs' : '', k.netto < 0 ? 'minus' : k.netto > 0 ? 'plus' : ''].filter(Boolean).join(' ');
+    const kropka = k.nieaktualne || k.stan === 'po-terminie' ? '<span class="kropka czerwona" title="wymaga uwagi"></span>' : k.stan === 'oplacona' ? '<span class="kropka zielona" title="opłacone"></span>' : '';
+    const tytul = `${k.platnosci.length} ${k.platnosci.length === 1 ? 'płatność' : 'płatności'}${k.rzeczywiste ? `, w tym rzeczywiste: ${k.rzeczywiste}` : ', tylko plany'}`;
+    return `<td class="liczba-kol ${kl}" data-p="${k.platnosci.join(',')}" data-w="${esc(w.id)}" data-m="${x}" title="${tytul}"><span class="kom">${kropka}${zl(k.netto, false)}</span></td>`;
+  };
+  let lp = 0;
+  const wiersz = w => `<tr data-w="${esc(w.id)}"><td class="lp">${++lp}.</td>${d.planowanie ? `<td class="kr"><input type="checkbox" data-zazn="${esc(w.id)}" aria-label="Zaznacz wiersz"></td>` : ''}
+    ${kolumny.map(k => `<td class="opis-kom ${k[3] || ''}${k[0] === 'podstawa' || k[0] === 'dzien' ? ' ust' : ''}">${k[2](w)}</td>`).join('')}
+    ${m.map(x => kom(w, x)).join('')}<td class="liczba-kol sep ${suma(w) < 0 ? 'minus' : 'plus'}">${zl(suma(w), false)}</td></tr>`;
+  const naglowekGrupy = (etyk, ws, wciecie = false) => {
+    const s = x => ws.reduce((a, w) => a + (w.komorki[x]?.netto || 0), 0);
+    const r = ws.reduce((a, w) => a + suma(w), 0);
+    return `<tr class="grupa"><td colspan="${nOpis}">${wciecie ? '&nbsp;&nbsp;&nbsp;· ' : ''}${esc(etyk)} <span class="szary">(${ws.length})</span></td>
+      ${m.map(x => `<td class="liczba-kol ${s(x) < 0 ? 'minus' : s(x) > 0 ? 'plus' : 'szary'}">${s(x) ? zl(s(x), false) : '-'}</td>`).join('')}<td class="liczba-kol sep">${zl(r, false)}</td></tr>`;
+  };
+  const grupy = (ws, klucz) => { const g = new Map(); ws.forEach(w => { const e = etykietaGrupy(klucz, w); (g.get(e) || g.set(e, []).get(e)).push(w); }); return [...g]; };
+  let tbody = '';
+  if (sekcje) {
+    for (const [sek, ws] of grupy(wiersze, 'sekcja')) {
+      tbody += naglowekGrupy(sek, ws);
+      tbody += grupuj ? grupy(ws, grupuj).map(([e, xs]) => naglowekGrupy(e, xs, true) + xs.map(wiersz).join('')).join('') : ws.map(wiersz).join('');
+    }
+  } else if (grupuj) tbody = grupy(wiersze, grupuj).map(([e, ws]) => naglowekGrupy(e, ws) + ws.map(wiersz).join('')).join('');
+  else tbody = wiersze.map(wiersz).join('');
+  const sumaCala = d.podsumowanie.reduce((a, x) => a + x.saldo, 0);
+  const wp = d.podsumowanie.reduce((a, x) => a + x.wplywy, 0), ob = d.podsumowanie.reduce((a, x) => a + x.obciazenia, 0);
+  const pusteOpis = `<th colspan="${nOpis}"></th>`;
+  const thead = `<tr class="ark-wykres">${pusteOpis}<th colspan="${m.length + 1}"><div id="ark-wyk"></div></th></tr>
+    <tr class="ark-mies">${pusteOpis}${m.map(x => `<th class="${x === stanM ? 'biezacy' : ''}">${esc(miesNag(x))}</th>`).join('')}<th class="sep">Suma</th></tr>
+    <tr class="ark-suma pierwszy"><th class="etyk" colspan="${nOpis}">=</th>${d.podsumowanie.map(s => `<th>${zl(s.saldo, false)}</th>`).join('')}<th class="sep">${zl(sumaCala, false)}</th></tr>
+    <tr class="ark-suma"><th class="etyk" colspan="${nOpis}"><span class="plus">↗</span><br><span class="minus">↘</span></th>${d.podsumowanie.map(s => `<th><span class="plus">${zl(s.wplywy, false)}</span><br><span class="minus">${zl(s.obciazenia, false)}</span></th>`).join('')}
+      <th class="sep"><span class="plus">${zl(wp, false)}</span><br><span class="minus">${zl(ob, false)}</span></th></tr>
+    <tr class="ark-kol"><th class="lp"></th>${d.planowanie ? '<th></th>' : ''}${kolumny.map(k => `<th class="sort${k[3] === 'liczba-kol' ? ' liczba-kol' : ''}${k[3] === 'sep' ? ' sep' : ''}" data-sort="${k[0]}"${p.sortuj === k[0] ? ` data-kierunek="${p.kolejnosc === 'malejaco' ? 'malejaco' : 'rosnaco'}"` : ''}>${k[1]}</th>`).join('')}
+      ${m.map(() => '<th></th>').join('')}<th class="sep"></th></tr>`;
+  let wybrana = null;
+  setTimeout(() => {
+    const tab = $('#ark-tabela');
+    if (!tab) return;
+    const naglowkiMies = () => [...tab.querySelectorAll('tr.ark-mies th:not([colspan])')].slice(0, m.length);
+    Wykresy.bs($('#ark-wyk'), { wysokosc: 118, opis: 'Arkusz miesięcznie: wpływy, obciążenia i saldo narastające',
+      okresy: d.podsumowanie.map(s => ({ etykieta: mies(s.miesiac), wplywy: s.wplywy, obciazenia: s.obciazenia, saldo: s.saldo, narastajaco: s.narastajaco, biezacy: s.miesiac === stanM })),
+      kolumny: () => { const r0 = $('#ark-wyk').getBoundingClientRect(); return naglowkiMies().map(th => { const r = th.getBoundingClientRect(); return { x: r.left - r0.left, w: r.width }; }); } });
+    const wiersz = id => d.wiersze.find(w => w.id === id);
+    const pokazWiersz = w => {
+      tab.querySelectorAll('tr.zaznaczony').forEach(x => x.classList.remove('zaznaczony'));
+      tab.querySelector(`tr[data-w="${CSS.escape(w.id)}"]`)?.classList.add('zaznaczony');
+      $('#ark-zazn').innerHTML = `<span>${w.rodzaj === 1 ? '<b class="plus">↗</b>' : '<b class="minus">↘</b>'} ${esc(w.podstawa)}</span><span>${w.podstawa.startsWith('Faktura') ? stawka(w.stawka_vat) : 'bez VAT'}</span>
+        <span>${esc(w.dzien_opis)}</span><span>${esc(dniOpis(w.dni_na_platnosc))}</span><span>${esc(w.metoda || '')}</span>
+        <span>split ${suwak(w.split)}</span><span>K ${suwak(w.ksiegowane)}</span><span>CF ${suwak(w.w_cashflow)}</span>
+        <span>${esc(w.przedmiot || 'Przedmiot transakcji')}</span><span>${esc(w.kontrahent || '')}</span><span>${esc(w.sekcja || '-')}</span>`;
+    };
+    const wybierz = td => {
+      tab.querySelectorAll('.wybrana').forEach(x => x.classList.remove('wybrana'));
+      td.classList.add('wybrana'); wybrana = td;
+      pokazWiersz(wiersz(td.dataset.w));
+      $('#ark-karta').disabled = !td.classList.contains('komorka');
+    };
+    tab.querySelectorAll('td.komorka').forEach(td => td.onclick = e => { e.stopPropagation(); wybierz(td);
+      kartaPlatnosci(td.dataset.p.split(','), d, { w: wiersz(td.dataset.w), m: td.dataset.m }); });
+    tab.querySelectorAll('td.pusta').forEach(td => td.onclick = e => { e.stopPropagation(); wybierz(td);
+      if (d.planowanie) kartaKomorki(wiersz(td.dataset.w), td.dataset.m); });
+    tab.querySelectorAll('tr[data-w] td.opis-kom').forEach(td => td.onclick = e => {
+      e.stopPropagation(); const w = wiersz(td.parentElement.dataset.w); pokazWiersz(w); if (d.planowanie) kartaWiersza(w, d); });
+    $('#ark-karta').onclick = e => { e.stopPropagation(); if (wybrana?.classList.contains('komorka')) wybrana.click(); };
+    tab.querySelectorAll('th.sort').forEach(h => h.onclick = () => ustawParametry({ sortuj: h.dataset.sort,
+      kolejnosc: p.sortuj === h.dataset.sort && p.kolejnosc !== 'malejaco' ? 'malejaco' : 'rosnaco' }));
+    $('#ark-grupuj').onchange = e => ustawParametry({ grupuj: e.target.value });
+    $('#ark-sekcje').onchange = e => ustawParametry({ sekcje: e.target.checked ? '1' : '' });
+    $('#ark-ustawienia').onchange = e => ustawParametry({ ustawienia: e.target.checked ? '1' : '' });
+    // wyszukiwarka arkusza: nie ukrywa wierszy, podświetla komórki z frazą (A-ARK-12)
+    let trafienia = [], nr = -1;
+    const szukaj = $('#ark-szukaj');
+    szukaj.oninput = () => {
+      const q = szukaj.value.trim().toLowerCase();
+      tab.querySelectorAll('.podswietl').forEach(x => x.classList.remove('podswietl'));
+      trafienia = q ? [...tab.querySelectorAll('tbody td')].filter(td => td.textContent.toLowerCase().includes(q)) : [];
+      trafienia.forEach(td => td.classList.add('podswietl'));
+      nr = -1;
+    };
+    const skocz = krok => { if (!trafienia.length) return; nr = (nr + krok + trafienia.length) % trafienia.length; trafienia[nr].scrollIntoView({ block: 'center', inline: 'center' }); };
+    $('#ark-szukaj-gora').onclick = () => skocz(-1);
+    $('#ark-szukaj-dol').onclick = () => skocz(1);
+    document.addEventListener('keydown', function f(e) {
+      if (!document.body.contains(szukaj)) return document.removeEventListener('keydown', f);
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); szukaj.focus(); }
+    });
+    if (d.planowanie) {
+      $('#dodaj-wiersz').onclick = e => { e.stopPropagation(); kartaWiersza(null, d); };
+      document.querySelectorAll('[data-akcja]').forEach(b => b.onclick = e => { e.stopPropagation(); akcjaNaWierszach(b.dataset.akcja, d); });
+    }
+    if (d.wiersze[0]) pokazWiersz(d.wiersze[0]);
+  });
+  return `<div class="ark-pasek">
+      <label class="pole-grupuj">Grupuj wiersze wg<select id="ark-grupuj">${Object.entries(GRUPY_ARK).map(([v, t]) => `<option value="${v}"${v === grupuj ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label class="przelacznik"><input type="checkbox" id="ark-sekcje"${sekcje ? ' checked' : ''}><span class="suwak"></span>Sekcje</label>
+      <label class="przelacznik"><input type="checkbox" id="ark-ustawienia"${ust ? ' checked' : ''}><span class="suwak"></span>Ustawienia planowanych płatności</label>
+      <span class="prawo"></span>
+      ${d.planowanie ? `<button class="przycisk glowny" id="dodaj-wiersz">Dodaj wiersz ${ik('plus')}</button>` : ''}
+      <button class="przycisk" id="ark-karta" disabled data-karta>Otwórz kartę płatności</button></div>
+    ${d.planowanie ? `<div class="akcje"><span class="szary">Zaznaczone wiersze:</span><button data-akcja="duplikuj">Duplikuj</button><button data-akcja="przenies">Przenieś do arkusza</button>
+        <button data-akcja="scal">Scal</button><button data-akcja="podziel">Podziel</button><button data-akcja="usun">Usuń</button></div>`
+      : '<p class="notka">Tryb podglądu: plany z Budget Studio. Edycję włącza przełącznik w Ustawieniach budżetu.</p>'}
+    <div class="legenda-stany"><span><i class="plany"></i>tylko plany</span><span><i class="rzecz"></i>rzeczywiste</span><span><i class="po"></i>po terminie</span>
+      <span><i class="wg-bs"></i>opłacone tylko wg BS</span><span><span class="kropka czerwona"></span>wymaga uwagi</span><span><span class="kropka zielona"></span>opłacone</span></div>
+    <div class="tabela-ramka arkusz" id="ark-tabela"><table class="ark"><thead>${thead}</thead><tbody>${tbody || `<tr><td colspan="${nOpis + m.length + 1}" class="pusto">Arkusz nie ma wierszy.</td></tr>`}</tbody></table></div>
+    <div class="stopka"><span class="zaznaczony" id="ark-zazn"></span>
+      <button id="ark-szukaj-gora" aria-label="Poprzednie trafienie">↑</button><button id="ark-szukaj-dol" aria-label="Następne trafienie">↓</button>
+      <input class="szukaj" id="ark-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj w arkuszu"></div>`;
+}
+
+function menuZarzadzaj(przycisk, d) {
+  document.querySelectorAll('.zarzadzaj-menu').forEach(x => x.remove());
+  const m = document.createElement('div');
+  m.className = 'zarzadzaj-menu';
+  m.innerHTML = `<a href="/api/eksport/arkusz?id=${encodeURIComponent(d.arkusz.id)}">${ik('plik')}Eksport arkusza do Excela</a>
+    ${d.planowanie ? `<button data-m="wiersz">${ik('plus')}Dodaj wiersz</button>` : ''}
+    <a href="#/budzet/historia">${ik('historia')}Historia zmian planów</a>
+    <div class="opis">Zmiana nazwy, zakresu miesięcy i folderu arkusza: jeszcze nie w apce.</div>`;
+  const r = przycisk.getBoundingClientRect();
+  m.style.left = `${r.left}px`; m.style.top = `${r.bottom + window.scrollY + 2}px`;
+  document.body.appendChild(m);
+  const b = m.querySelector('[data-m="wiersz"]');
+  if (b) b.onclick = e => { e.stopPropagation(); m.remove(); kartaWiersza(null, d); };
+  setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }));
 }

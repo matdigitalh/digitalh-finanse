@@ -62,9 +62,12 @@ def arkusz(con, aid: str) -> dict:
     kwoty_komorek = {(r['wiersz'], r['miesiac']): r['kwota'] for r in con.execute(
         'SELECT k.* FROM bud_komorka k JOIN bud_wiersz w ON w.id = k.wiersz WHERE w.arkusz = ?', (aid,))}
     komorki = {}
-    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, s.etap FROM bud_platnosc p'
+    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, s.etap, s.aktualnosc FROM bud_platnosc p'
                          ' JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
-        k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': [], 'kwoty': {}})
+        k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': [], 'kwoty': {}, 'rzeczywiste': 0,
+                                                              'nieaktualne': 0})
+        k['rzeczywiste'] += r['typ'] != 'plan'   # do koloru komórki jak w BS: tło planów, kropka nieaktualnych
+        k['nieaktualne'] += bool(r['aktualna'] and r['aktualnosc'] == 'Nieaktualna')
         if r['aktualna']:
             k['netto'] += r['netto'] * r['rodzaj']
             k['kwoty'][r['id']] = r['netto']   # do akcji na wierszach (kopie, podział) liczonych po stronie serwera
@@ -79,6 +82,7 @@ def arkusz(con, aid: str) -> dict:
                 stan = ('po-terminie' if 'Po terminie' in etapy else 'oplacona' if etapy <= {'Opłacona', 'Nieaktualna'}
                         else 'wg-bs' if 'Opłacona wg BS' in etapy else 'planowana')
                 w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan,
+                                   'rzeczywiste': k['rzeczywiste'], 'nieaktualne': k['nieaktualne'],
                                    'kwota': kwoty_komorek.get((w['id'], m))}   # kwota wpisana w apce (plany z niej liczone)
         w['plan'] = json.loads(w['plan']) if w['plan'] else None
         w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None

@@ -122,6 +122,13 @@ class TestCashflowOkresy(unittest.TestCase):
                 self.assertEqual((x[klucz]['ile'], x[klucz]['kwota']), (lista['razem'], lista['suma']), (nazwa, klucz))
         self.assertEqual(k['po_terminie']['wplywy']['ile'], 2)
 
+    def test_komorki_arkusza_do_kolorow_bs(self):
+        aid = self.con.execute("SELECT id FROM bud_arkusz WHERE nazwa = 'Obsługa stała Alfa'").fetchone()[0]
+        w = zapytania_budzet.arkusz(self.con, aid)['wiersze']
+        komorki = [k for x in w for k in x['komorki'].values()]
+        self.assertTrue(all({'rzeczywiste', 'nieaktualne'} <= set(k) for k in komorki))
+        self.assertTrue(any(k['rzeczywiste'] == 0 for k in komorki))   # same plany: niebieskie tło jak w BS
+
     def test_lista_arkusza(self):
         aid = self.con.execute("SELECT id FROM bud_arkusz WHERE nazwa = 'Obsługa stała Alfa'").fetchone()[0]
         w = zapytania_budzet.lista(self.con, 'wszystkie', arkusz=aid)

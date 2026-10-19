@@ -6,12 +6,40 @@ const MIESIACE = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 
 
 const IKONY = {
   pulpit: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
-  budzet: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M3 14h18M9 4v16"/>',
+  budzet: '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 10h18M3 14.5h18M9 5v14"/>',
   platnosci: '<circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.6-.6-3-1.6M12 6v2M12 16v2"/>',
   cashflow: '<path d="M3 8c3-3 6 3 9 0s6 3 9 0M3 13c3-3 6 3 9 0s6 3 9 0M3 18c3-3 6 3 9 0s6 3 9 0"/>',
-  rentownosc: '<path d="M5 20V11M10 20V5M15 20v-7M20 20v-4M3 20h18"/>',
+  rentownosc: '<path d="M6 20V11M11 20V5M16 20v-8M3 20h18"/>',
   eksport: '<path d="M12 4v11M7 10l5 5 5-5M4 19h16"/>',
 };
+
+// Drobne ikony interfejsu (obrys, 24 × 24), wstawiane funkcją ik().
+const IK = {
+  gora: '<path d="M7 17 17 7M9 7h8v8"/>', dol: '<path d="M7 7l10 10M17 9v8H9"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', lupa: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
+  warstwy: '<path d="M12 3 2 8l10 5 10-5z"/><path d="m2 13 10 5 10-5"/>', przywroc: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/>',
+  kropki: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  filtr: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  kalendarz: '<rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  kalendarzX: '<rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4M9.5 13l5 4M14.5 13l-5 4"/>',
+  kalendarzK: '<rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4M9 14.5h6"/>',
+  przekreslony: '<path d="M4 4l16 16M9 5h9v9M5 9v10h10"/>', plusKolko: '<circle cx="12" cy="12" r="8.5"/><path d="M12 8.5v7M8.5 12h7"/>',
+  przelew: '<path d="M4 8h13l-3-3M20 16H7l3 3"/>', ptaszek: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  rozlacz: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1M4 4l16 16"/>',
+  weryfikuj: '<path d="M4 7h11M4 12h7M4 17h9M15 15l2 2 4-4"/>', bank: '<path d="M3 9.5 12 4l9 5.5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+  dokument: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>', folder: '<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  folderOko: '<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><circle cx="12" cy="13.5" r="1.6"/>',
+  pinezka: '<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/>', arkusz: '<rect x="3.5" y="4.5" width="17" height="15" rx="1"/><path d="M3.5 9.5h17M9 4.5v15"/>',
+  zebatka: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  fale: '<path d="M3 9c3-3 6 3 9 0s6 3 9 0M3 15c3-3 6 3 9 0s6 3 9 0"/>', wykres: '<path d="M6 20V11M11 20V5M16 20v-8M3 20h18"/>',
+  plik: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>', historia: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5M12 8v4l3 2"/>',
+  osoby: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 2.5 5"/>', zamknij: '<path d="m6 6 12 12M18 6 6 18"/>',
+  oko: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.5"/>',
+  strzalkaP: '<path d="M5 12h14M13 6l6 6-6 6"/>', siatka: '<rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/>',
+  rowne: '<path d="M5 9h14M5 15h14"/>', ksiazka: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v15H5.5A1.5 1.5 0 0 0 4 20.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v15h5.5a1.5 1.5 0 0 1 1.5 1.5z"/>',
+};
+const ik = (nazwa, klasa = '') => `<svg class="ik${klasa ? ' ' + klasa : ''}" viewBox="0 0 24 24" aria-hidden="true">${IK[nazwa] || ''}</svg>`;
 
 const MENU = [
   { id: 'pulpit', nazwa: 'Pulpit' },
@@ -22,53 +50,58 @@ const MENU = [
   { id: 'eksport', nazwa: 'Eksport' },
 ];
 
-// Podstrony w wysuwanym panelu, jak w Budget Studio. etap = kiedy powstanie.
+// Podstrony w wysuwanym panelu, jak w Budget Studio (grupa, ikona, licznik). Budżet ma osobny panel z drzewem arkuszy.
 const PODSTRONY = {
   platnosci: [
-    { grupa: 'Plan z budżetu' },
-    { nazwa: 'Wszystkie płatności', hash: '#/platnosci/plan?lista=wszystkie' },
-    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/plan?lista=nieoplacone' },
-    { nazwa: 'Nadal niewystawione', hash: '#/platnosci/plan?lista=niewystawione' },
-    { nazwa: 'Po terminie (plan)', hash: '#/platnosci/plan?lista=po_terminie' },
-    { nazwa: 'Do wystawienia (2 tyg.)', hash: '#/platnosci/plan?lista=do_wystawienia' },
-    { nazwa: 'Do zapłacenia (2 tyg.)', hash: '#/platnosci/plan?lista=do_zaplacenia' },
-    { nazwa: 'Zapłacone (ostatnie 2 tyg.)', hash: '#/platnosci/plan?lista=zaplacone' },
     { grupa: 'Płatności oczekujące' },
-    { nazwa: 'Do połączenia', hash: '#/platnosci/do-polaczenia', licznik: 'do_polaczenia' },
-    { nazwa: 'Do weryfikacji', hash: '#/platnosci/do-weryfikacji', licznik: 'do_weryfikacji' },
+    { nazwa: 'Do połączenia', hash: '#/platnosci/do-polaczenia', licznik: 'do_polaczenia', ik: 'rozlacz' },
+    { nazwa: 'Do weryfikacji', hash: '#/platnosci/do-weryfikacji', licznik: 'do_weryfikacji', ik: 'weryfikuj' },
+    { grupa: 'Połączone z budżetem', ik: 'link' },
+    { nazwa: 'Wszystkie płatności', hash: '#/platnosci/plan?lista=wszystkie', ik: 'fale' },
+    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/plan?lista=nieoplacone', ik: 'kalendarzX', kafel: 'nieoplacone' },
+    { nazwa: 'Nadal niewystawione', hash: '#/platnosci/plan?lista=niewystawione', ik: 'kalendarzK', kafel: 'niewystawione' },
+    { nazwa: 'Po terminie płatności', hash: '#/platnosci/plan?lista=po_terminie', ik: 'przekreslony', kafel: 'po_terminie' },
+    { nazwa: 'Do wystawienia (najbliższe 2 tyg.)', hash: '#/platnosci/plan?lista=do_wystawienia', ik: 'plusKolko', kafel: 'do_wystawienia' },
+    { nazwa: 'Do zapłacenia (najbliższe 2 tyg.)', hash: '#/platnosci/plan?lista=do_zaplacenia', ik: 'przelew', kafel: 'do_zaplacenia' },
+    { nazwa: 'Zapłacone (ostatnie 2 tyg.)', hash: '#/platnosci/plan?lista=zaplacone', ik: 'ptaszek', kafel: 'zaplacone' },
     { grupa: 'Bank ING' },
-    { nazwa: 'Wszystkie operacje', hash: '#/platnosci/bank' },
-    { nazwa: 'Wpływy', hash: '#/platnosci/bank?kierunek=wplywy&wewnetrzne=bez' },
-    { nazwa: 'Obciążenia', hash: '#/platnosci/bank?kierunek=obciazenia&wewnetrzne=bez' },
-    { nazwa: 'Ruch wewnętrzny i VAT', hash: '#/platnosci/bank?wewnetrzne=tylko' },
+    { nazwa: 'Wszystkie operacje', hash: '#/platnosci/bank', ik: 'bank' },
+    { nazwa: 'Wpływy', hash: '#/platnosci/bank?kierunek=wplywy&wewnetrzne=bez', ik: 'gora' },
+    { nazwa: 'Obciążenia', hash: '#/platnosci/bank?kierunek=obciazenia&wewnetrzne=bez', ik: 'dol' },
+    { nazwa: 'Ruch wewnętrzny i VAT', hash: '#/platnosci/bank?wewnetrzne=tylko', ik: 'przelew' },
     { grupa: 'Dokumenty' },
-    { nazwa: 'Faktury sprzedażowe', hash: '#/platnosci/faktury' },
-    { nazwa: 'Nadal nieopłacone', hash: '#/platnosci/naleznosci' },
-    { nazwa: 'Po terminie płatności', hash: '#/platnosci/naleznosci?po_terminie=1' },
-    { nazwa: 'Rejestr zakupów (biuro)', hash: '#/platnosci/zakupy' },
-    { nazwa: 'Dokumenty bez płatności', hash: '#/platnosci/zakupy?stan=bez%20p%C5%82atno%C5%9Bci%20w%20banku' },
+    { nazwa: 'Faktury sprzedażowe', hash: '#/platnosci/faktury', ik: 'dokument' },
+    { nazwa: 'Należności nieopłacone', hash: '#/platnosci/naleznosci', ik: 'kalendarzX' },
+    { nazwa: 'Należności po terminie', hash: '#/platnosci/naleznosci?po_terminie=1', ik: 'przekreslony' },
+    { nazwa: 'Rejestr zakupów (biuro)', hash: '#/platnosci/zakupy', ik: 'dokument' },
+    { nazwa: 'Dokumenty bez płatności', hash: '#/platnosci/zakupy?stan=bez%20p%C5%82atno%C5%9Bci%20w%20banku', ik: 'dokument' },
     { grupa: 'Dane' },
-    { nazwa: 'Historia importów', hash: '#/platnosci/importy' },
-    { nazwa: 'Wyniki z biura (RZiS)', hash: '#/platnosci/wyniki-biura' },
+    { nazwa: 'Historia importów', hash: '#/platnosci/importy', ik: 'historia' },
+    { nazwa: 'Wyniki z biura (RZiS)', hash: '#/platnosci/wyniki-biura', ik: 'plik' },
   ],
-  budzet: [{ grupa: 'Budżet' }, { nazwa: 'Arkusze budżetu', hash: '#/budzet/arkusze' },
-    { nazwa: 'Rozjazdy z Budget Studio', hash: '#/budzet/rozjazdy' }, { nazwa: 'Historia zmian planów', hash: '#/budzet/historia' },
-    { nazwa: 'Umowy z klientami', hash: '#/budzet/umowy' }, { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia' },
-    { grupa: 'Foldery klientów' }, { nazwa: 'Klienci', hash: '#/budzet' },
-    { grupa: 'Wydatki z banku' }, { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki' },
-    { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany' },
-    { nazwa: 'Nieprzypisane wg kontrahenta', hash: '#/budzet/nieprzypisane' },
-    { nazwa: 'Konta reklamowe', hash: '#/budzet/konta' },
-    { nazwa: 'Koszty klientów', hash: '#/budzet/wydatki?rodzaj=przenoszony' },
-    { nazwa: 'Bez dokumentu w rejestrze', hash: '#/budzet/wydatki?dokument=bez%20dokumentu' },
-    { grupa: 'Ustawienia' }, { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly' }],
-  cashflow: [{ grupa: 'Prognoza' }, { nazwa: '13 tygodni w przód', hash: '#/cashflow' }, { nazwa: 'Dzień po dniu', hash: '#/cashflow?widok=dni' }],
-  rentownosc: [{ grupa: 'Zapisane widoki' }, { nazwa: 'Wynik zarządczy', hash: '#/rentownosc' },
-    { nazwa: 'Obroty wg klientów', hash: '#/rentownosc/klienci' }, { nazwa: 'Koszty wg kategorii', hash: '#/rentownosc/koszty' },
-    { nazwa: 'Podatek VAT', hash: '#/rentownosc/vat' },
-    { grupa: 'Klienci i arkusze' }, { nazwa: 'Rentowność klientów', hash: '#/rentownosc/rent-klienci' },
-    { nazwa: 'Arkusze: plan i wykonanie', hash: '#/rentownosc/arkusze' }],
-  eksport: [{ grupa: 'Eksport' }, { nazwa: 'Excel', hash: '#/eksport' }],
+  budzet: [
+    { grupa: 'Budżet' },
+    { nazwa: 'Wszystkie arkusze', hash: '#/budzet/arkusze', ik: 'arkusz' },
+    { nazwa: 'Klienci (foldery)', hash: '#/budzet', ik: 'folder' },
+    { nazwa: 'Umowy z klientami', hash: '#/budzet/umowy', ik: 'dokument' },
+    { nazwa: 'Rozjazdy z Budget Studio', hash: '#/budzet/rozjazdy', ik: 'weryfikuj' },
+    { nazwa: 'Historia zmian planów', hash: '#/budzet/historia', ik: 'historia' },
+    { grupa: 'Wydatki z banku' },
+    { nazwa: 'Wszystkie wydatki', hash: '#/budzet/wydatki', ik: 'dol' },
+    { nazwa: 'Nieprzypisane', hash: '#/budzet/wydatki?rodzaj=nieprzypisany', ik: 'przekreslony' },
+    { nazwa: 'Nieprzypisane wg kontrahenta', hash: '#/budzet/nieprzypisane', ik: 'osoby' },
+    { nazwa: 'Koszty klientów', hash: '#/budzet/wydatki?rodzaj=przenoszony', ik: 'folder' },
+    { nazwa: 'Bez dokumentu w rejestrze', hash: '#/budzet/wydatki?dokument=bez%20dokumentu', ik: 'plik' },
+    { nazwa: 'Konta reklamowe', hash: '#/budzet/konta', ik: 'wykres' },
+    { grupa: 'Ustawienia' },
+    { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly', ik: 'zebatka' },
+    { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia', ik: 'zebatka' }],
+  cashflow: [{ grupa: 'Zapisane widoki', ik: 'oko' }],   // pozycje z WIDOKI_CF (budzet.js)
+  rentownosc: [{ grupa: 'Zapisane widoki', ik: 'oko' }, { nazwa: 'Wynik zarządczy', hash: '#/rentownosc', ik: 'wykres' },
+    { nazwa: 'Obroty wg klientów', hash: '#/rentownosc/klienci', ik: 'osoby' }, { nazwa: 'Koszty wg kategorii', hash: '#/rentownosc/koszty', ik: 'siatka' },
+    { nazwa: 'Podatek VAT', hash: '#/rentownosc/vat', ik: 'przekreslony' },
+    { grupa: 'Klienci i arkusze' }, { nazwa: 'Rentowność klientów', hash: '#/rentownosc/rent-klienci', ik: 'folder' },
+    { nazwa: 'Arkusze: plan i wykonanie', hash: '#/rentownosc/arkusze', ik: 'arkusz' }],
 };
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -83,6 +116,15 @@ function zl(gr, waluta = true) {
   const a = Math.abs(Math.trunc(gr));
   const calosc = String(Math.floor(a / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return `${znak}${calosc},${String(a % 100).padStart(2, '0')}${waluta ? ' zł' : ''}`;
+}
+
+// Kwota skrócona jak na kaflach BS: 60k, -9k, 1,2 mln; zero jako 0,00.
+function skrot(gr) {
+  if (!gr) return '0,00';
+  const z = gr / 100, a = Math.abs(z);
+  if (a >= 1e6) return `${(z / 1e6).toFixed(1).replace('.', ',')} mln`;
+  if (a >= 1000) return `${Math.round(z / 1000)}k`;
+  return zl(gr, false);
 }
 
 function dataPl(iso) {
@@ -161,64 +203,130 @@ function ustawParametry(nowe) {
 
 function zbudujMenu() {
   const ul = $('#menu');
-  ul.innerHTML = MENU.map(m => `<li><button data-id="${m.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IKONY[m.id]}</svg><span class="etykieta">${m.nazwa}</span></button></li>`).join('');
+  ul.innerHTML = MENU.map(m => `<li><button data-id="${m.id}" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IKONY[m.id]}</svg><span class="etykieta">${m.nazwa}</span></button></li>`).join('');
   ul.addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;
     const id = b.dataset.id;
-    if (id === 'pulpit') { zamknijWysuw(); location.hash = '#/pulpit'; return; }
+    if (id === 'pulpit' || id === 'eksport') { zamknijWysuw(); location.hash = `#/${id}`; return; }
+    if (!$('#wysuw').hidden && $('#wysuw').dataset.sekcja === id) return zamknijWysuw();
     otworzWysuw(id);
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('#wysuw') && !e.target.closest('#menu')) zamknijWysuw();
-    if (!e.target.closest('#karta') && !e.target.closest('tbody')) $('#karta').hidden = true;
+    if (!e.target.closest('#karta') && !e.target.closest('tbody') && !e.target.closest('[data-karta]')) $('#karta').hidden = true;
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { zamknijWysuw(); $('#karta').hidden = true; $('#pomoc').hidden = true; } });
   $('#przycisk-pomocy').onclick = () => otworzPomoc('dane');
 }
 
-function otworzWysuw(id) {
-  const w = $('#wysuw');
-  const nazwa = MENU.find(m => m.id === id).nazwa;
-  w.innerHTML = `<h2>${nazwa}</h2>` + (PODSTRONY[id] || []).map(p => {
-    if (p.grupa) return `<h3>${esc(p.grupa)}</h3>`;
-    if (p.etap) return `<a class="nieaktywny">${esc(p.nazwa)} <span class="etap">etap ${p.etap}</span></a>`;
-    const n = p.licznik && STAN?.naleznosci ? STAN.naleznosci[p.licznik] : 0;
-    return `<a href="${p.hash}">${esc(p.nazwa)}${n ? ` <span class="liczba">${n}</span>` : ''}</a>`;
-  }).join('');
-  w.hidden = false;
-  document.body.classList.add('wysuw-otwarty');
-  w.querySelectorAll('a[href]').forEach(a => a.addEventListener('click', zamknijWysuw));
+// Pozycja panelu: ikona, nazwa, licznik (Do połączenia) albo liczba płatności z kafli pulpitu.
+function pozycjaWysuwu(p, kafle) {
+  const n = p.licznik && STAN?.naleznosci ? STAN.naleznosci[p.licznik] : 0;
+  const k = p.kafel && kafle?.[p.kafel] ? kafle[p.kafel].wplywy.ile + kafle[p.kafel].obciazenia.ile : 0;
+  const aktywna = location.hash === p.hash ? ' aktywna' : '';
+  return `<a class="poz${aktywna}" href="${p.hash}">${p.ik ? ik(p.ik) : ''}<span>${esc(p.nazwa)}</span>${n ? ` <span class="licznik">${n}</span>` : k ? ` <span class="licznik szary">${k}</span>` : ''}</a>`;
 }
 
-function zamknijWysuw() { $('#wysuw').hidden = true; document.body.classList.remove('wysuw-otwarty'); }
+function listaWysuwu(pozycje, kafle) {
+  let html = '', otwarta = false;
+  for (const p of pozycje) {
+    if (p.grupa) { html += `${otwarta ? '</div>' : ''}<h3><span>${esc(p.grupa)}</span>${p.ik ? ik(p.ik, 'szary') : ''}</h3><div class="grupa-wysuw">`; otwarta = true; }
+    else html += pozycjaWysuwu(p, kafle);
+  }
+  return html + (otwarta ? '</div>' : '');
+}
+
+let KAFLE = null;   // liczby płatności list planu (pulpit i menu Płatności), odświeżane przy pulpicie
+async function otworzWysuw(id) {
+  const w = $('#wysuw');
+  const nazwa = id === 'budzet' ? 'Arkusze budżetu' : MENU.find(m => m.id === id).nazwa;
+  w.dataset.sekcja = id;
+  document.querySelectorAll('#menu button').forEach(b => b.setAttribute('aria-expanded', String(b.dataset.id === id)));
+  const naglowek = (przycisk = '') => `<div class="wysuw-naglowek"><h2>${esc(nazwa)}</h2>${przycisk}</div>`;
+  w.hidden = false;
+  document.body.classList.add('wysuw-otwarty');
+  if (id === 'budzet') {
+    w.innerHTML = `${naglowek()}<div class="pusto-wysuw">Wczytuję arkusze…</div>`;
+    const d = await api('budzet/drzewo').catch(() => null);
+    if (w.dataset.sekcja !== 'budzet') return;
+    const drzewo = (q = '') => {
+      const f = q.trim().toLowerCase();
+      const pasuje = t => !f || String(t).toLowerCase().includes(f);
+      const html = (d?.foldery || []).map(fo => {
+        const kat = Object.entries(fo.kategorie).map(([k, ark]) => {
+          const a = ark.filter(x => pasuje(x.nazwa) || pasuje(k) || pasuje(fo.folder));
+          return a.length ? `<div class="kat-wysuw">${esc(k)}</div>${a.map(x => `<a class="ark-wysuw" href="#/budzet/arkusz?id=${encodeURIComponent(x.id)}">${esc(x.nazwa)}</a>`).join('')}` : '';
+        }).join('');
+        return kat ? `<div class="folder-wysuw">${ik('folder')}${esc(fo.folder)}</div>${kat}` : '';
+      }).join('');
+      return html || '<div class="pusto-wysuw">Brak arkuszy dla tej frazy.</div>';
+    };
+    w.innerHTML = `${naglowek(d?.planowanie ? `<button class="przycisk glowny" id="wysuw-dodaj-arkusz">Dodaj ${ik('plus')}</button>` : '')}
+      <input class="szukaj-wysuw" id="wysuw-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj arkusz">
+      <div id="wysuw-drzewo">${drzewo()}</div>
+      <div class="stopka-wysuw"><a href="#/budzet/arkusze">Zobacz wszystkie arkusze →</a></div>
+      ${listaWysuwu(PODSTRONY.budzet)}`;
+    $('#wysuw-szukaj').oninput = e => { $('#wysuw-drzewo').innerHTML = drzewo(e.target.value); };
+    const dod = $('#wysuw-dodaj-arkusz');
+    if (dod) dod.onclick = e => { e.stopPropagation(); zamknijWysuw(); kartaArkusza(null, d); };
+  } else if (id === 'cashflow') {
+    w.innerHTML = naglowek() + listaWysuwu([...PODSTRONY.cashflow, ...WIDOKI_CF.map(v => ({ nazwa: v.nazwa, hash: `#/cashflow?widok=${v.id}`, ik: v.ik }))]);
+  } else if (id === 'platnosci') {
+    w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci, KAFLE);
+    if (!KAFLE) api('budzet/kafle').then(k => { KAFLE = k.listy; if (w.dataset.sekcja === 'platnosci') w.innerHTML = naglowek() + listaWysuwu(PODSTRONY.platnosci, KAFLE); podepnijWysuw(); }).catch(() => {});
+  } else {
+    w.innerHTML = naglowek() + listaWysuwu(PODSTRONY[id] || []);
+  }
+  podepnijWysuw();
+}
+
+function podepnijWysuw() { $('#wysuw').querySelectorAll('a[href]').forEach(a => a.addEventListener('click', zamknijWysuw)); }
+
+function zamknijWysuw() {
+  $('#wysuw').hidden = true;
+  $('#wysuw').dataset.sekcja = '';
+  document.body.classList.remove('wysuw-otwarty');
+  document.querySelectorAll('#menu button').forEach(b => b.setAttribute('aria-expanded', 'false'));
+}
 
 function zaznaczMenu(sekcja) {
   document.querySelectorAll('#menu button').forEach(b => b.setAttribute('aria-current', String(b.dataset.id === sekcja)));
 }
 
-// ---------- tabela w stylu listy płatności ----------
+// ---------- Wspólna tabela w stylu BS ----------
+// Fioletowe nagłówki z linią, numer wiersza, liczby do prawej, kolor wg znaku, piguły, strzałka sortowania.
+// Kolumna: {id?, naglowek, wartosc(x) | html(x), liczba?, klasa?(x), sort? (po stronie serwera), sortKlucz?(x) (lokalnie)}.
+// Opcje: wierszKlasa(x) (tło planu, po terminie, wpływ), kropka(x) (kropka statusu przed wierszem),
+// sortLokalny: sortowanie danych tej strony bez serwera (dla list bez stronicowania).
 // Każda tabela dostaje własny identyfikator, a zdarzenia podpinamy tylko w niej (dwie tabele na ekranie się nie mieszają).
 let licznikTabel = 0;
-function tabela({ kolumny, dane, poczatek, onWiersz, stopkaSum, sortuj, kierunek }) {
+function tabela(o) {
+  const { kolumny, dane, poczatek = 1, onWiersz, stopkaSum, sortuj, kierunek, wierszKlasa, kropka, sortLokalny } = o;
   if (!dane.length) return '<div class="pusto">Brak pozycji dla tych filtrów.</div>';
-  const id = `tabela-${++licznikTabel}`;
+  const id = o.id || `tabela-${++licznikTabel}`;
+  const sortowalna = k => k.sort || (sortLokalny && (k.sortKlucz || k.wartosc));
+  const kluczSortu = k => k.sort || `l:${kolumny.indexOf(k)}`;
   const th = kolumny.map(k => {
-    const s = k.sort ? ` class="sort${k.liczba ? ' liczba-kol' : ''}" data-sort="${k.sort}"${sortuj === k.sort ? ` data-kierunek="${kierunek}"` : ''}` : (k.liczba ? ' class="liczba-kol"' : '');
-    return `<th${s}>${k.naglowek}</th>`;
+    const kl = [sortowalna(k) ? 'sort' : '', k.liczba ? 'liczba-kol' : ''].filter(Boolean).join(' ');
+    return `<th${kl ? ` class="${kl}"` : ''}${sortowalna(k) ? ` data-sort="${esc(kluczSortu(k))}"${sortuj === kluczSortu(k) ? ` data-kierunek="${kierunek}"` : ''}` : ''}>${k.naglowek}</th>`;
   }).join('');
-  const tr = dane.map((w, i) => `<tr data-i="${i}" title="Źródło: ${esc(w.plik)}, wiersz ${w.wiersz}"><td class="lp">${poczatek + i}.</td>${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol ' : ''}${k.klasa ? k.klasa(w) : ''}">${k.html ? k.html(w) : esc(k.wartosc(w))}</td>`).join('')}</tr>`).join('');
-  const tf = stopkaSum ? `<tfoot><tr><td></td>${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol' : ''}">${stopkaSum[k.id] ?? ''}</td>`).join('')}</tr></tfoot>` : '';
+  const tr = dane.map((w, i) => `<tr data-i="${i}" class="${wierszKlasa ? wierszKlasa(w) : ''}"${w.plik ? ` title="Źródło: ${esc(w.plik)}, wiersz ${w.wiersz}"` : ''}><td class="lp">${poczatek + i}.</td>${kropka ? `<td class="kr">${kropka(w)}</td>` : ''}${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol ' : ''}${k.klasa ? k.klasa(w) : ''}">${k.html ? k.html(w) : esc(k.wartosc(w))}</td>`).join('')}</tr>`).join('');
+  const tf = stopkaSum ? `<tfoot><tr><td></td>${kropka ? '<td></td>' : ''}${kolumny.map(k => `<td class="${k.liczba ? 'liczba-kol' : ''}">${stopkaSum[k.id] ?? ''}</td>`).join('')}</tr></tfoot>` : '';
   setTimeout(() => {
     const t = document.getElementById(id);
     if (!t) return;
     if (onWiersz) t.querySelectorAll('tbody tr[data-i]').forEach(r => r.addEventListener('click', () => onWiersz(dane[r.dataset.i])));
     t.querySelectorAll('th.sort').forEach(h => h.addEventListener('click', () => {
       const nowy = sortuj === h.dataset.sort && kierunek === 'malejaco' ? 'rosnaco' : 'malejaco';
-      ustawParametry({ sortuj: h.dataset.sort, kolejnosc: nowy, strona: 1 });
+      if (!h.dataset.sort.startsWith('l:')) return ustawParametry({ sortuj: h.dataset.sort, kolejnosc: nowy, strona: 1 });
+      const k = kolumny[+h.dataset.sort.slice(2)], f = k.sortKlucz || k.wartosc;
+      const znak = nowy === 'rosnaco' ? 1 : -1;
+      const posort = [...dane].sort((a, b) => { const x = f(a), y = f(b); return znak * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''), 'pl')); });
+      t.outerHTML = tabela({ ...o, id, dane: posort, sortuj: h.dataset.sort, kierunek: nowy });
     }));
   });
-  return `<div class="tabela-ramka" id="${id}"><table><thead><tr><th></th>${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
+  return `<div class="tabela-ramka${o.niska ? ' niska' : ''}" id="${id}"><table><thead><tr><th class="lp"></th>${kropka ? '<th></th>' : ''}${th}</tr></thead><tbody>${tr}</tbody>${tf}</table></div>`;
 }
 
 function stopka(wynik, parametry) {
@@ -228,7 +336,7 @@ function stopka(wynik, parametry) {
   const html = `<div class="stopka">
     <label>Max widocznych <select id="ile">${[50, 100, 200, 500].map(n => `<option${n === wynik.ile ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
     <button id="poprz" ${wynik.strona <= 1 ? 'disabled' : ''} aria-label="Poprzednia strona">↑</button>
-    <span>Wyświetlono ${od}–${doN} z ${wynik.razem}</span>
+    <span>Wyświetlono ${od}-${doN} z ${wynik.razem}</span>
     <button id="nast" ${wynik.strona >= ostatnia ? 'disabled' : ''} aria-label="Następna strona">↓</button>
     <input class="szukaj" id="szukaj" type="search" placeholder="Wyszukaj" value="${esc(parametry.q || '')}">
   </div>`;
@@ -273,31 +381,80 @@ const chipBank = x => {
 const STAN_WPLATY = { dopasowana: 'połączona z fakturą', nieznana: 'do połączenia', sprzed_eksportu: 'faktura sprzed eksportu',
   bez_faktury: 'nie dotyczy faktury', zwrot_zakupu: 'zwrot zakupu' };
 
-const chipKwota = kwota => kwota > 0 ? '<span class="chip plus">↗ wpływy</span>' : '<span class="chip minus">↘ obciążenia</span>';
+// Piguła Rodzaj jak w BS: zaokrąglona, ikona strzałki, zielona dla wpływów, czerwona dla obciążeń.
+const chipZnak = znak => znak > 0 ? `<span class="chip plus">${ik('gora')}wpływy</span>` : `<span class="chip minus">${ik('dol')}obciążenia</span>`;
+const chipKwota = kwota => chipZnak(kwota);
+
+// Kafle pulpitu jak w BS: lista planu, tytuł, ikona, kolor kafla, kropka statusu, klucz pomocy.
+const KAFLE_PULPITU = [
+  ['nieoplacone', 'Nadal nieopłacone (do aktualizacji)', 'kalendarzX', 'czerwony', 'czerwona', 'kafle_bs'],
+  ['niewystawione', 'Nadal niewystawione (do aktualizacji)', 'kalendarzK', 'niebieski', 'czerwona', 'kafle_bs'],
+  ['po_terminie', 'Po terminie płatności (oficjalnym)', 'przekreslony', 'czerwony', 'czerwona', 'kafle_bs'],
+  ['do_wystawienia', 'Do wystawienia (najbliższe 2 tyg.)', 'plusKolko', 'niebieski', '', 'kafle_bs'],
+  ['do_zaplacenia', 'Do zapłacenia (najbliższe 2 tyg.)', 'przelew', 'niebieski', 'czerwona', 'kafle_bs'],
+  ['zaplacone', 'Zapłacone (ostatnie 2 tyg.)', 'ptaszek', 'fiolet', 'zielona', 'kafle_bs'],
+];
+const plusDniIso = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 // ---------- widoki ----------
 const WIDOKI = {
   async pulpit() {
     const s = STAN;
-    const c = await api('controlling');
-    Promise.all([api('saldo-historia'), api('wynik')]).then(([h, d]) => {
+    const dzien = s.naleznosci?.dzien_stanu || s.bank_do;
+    const [c, k] = await Promise.all([api('controlling'), api('budzet/kafle').catch(() => null)]);
+    if (k) KAFLE = k.listy;
+    Promise.all([api('saldo-historia'), api('wynik'),
+      api('cashflow/okresy', { granulacja: 'tydzien', od: plusDniIso(dzien, -35), do: plusDniIso(dzien, 182) })]).then(([h, d, cf]) => {
       if (!$('#pulpit-gotowka')) return;
-      Wykresy.linia($('#pulpit-gotowka'), { punkty: h, nazwa: 'Gotówka', kolor: Wykresy.kolor('--s1'), wysokosc: 220, opis: 'Saldo gotówki',
+      Wykresy.bs($('#pulpit-cf'), { okresy: cf.okresy, wysokosc: 250, opis: 'Cash flow 6 miesięcy w przód, tygodniowo',
+        naKlik: () => { location.hash = '#/cashflow?widok=6mies'; } });
+      Wykresy.linia($('#pulpit-gotowka'), { punkty: h, nazwa: 'Gotówka', kolor: Wykresy.kolor('--s1'), wysokosc: 200, opis: 'Saldo gotówki',
         etykietaX: x => MIESIACE[+x.slice(5, 7) - 1].slice(0, 3), etykietaPelna: x => dataPl(x),
         dodatkowe: p => [{ nazwa: 'w tym rachunek główny', wartosc: Wykresy.pelna(p.glowny) }, { nazwa: 'w tym online', wartosc: Wykresy.pelna(p.online) }] });
       wykresWyniku('pulpit', d, { tylkoWynik: true });
     });
     setTimeout(() => {
       document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${Math.max(0, Math.min(100, x.dataset.w))}%`; });
+      document.querySelectorAll('.pasek-proporcji[data-w]').forEach(x => { x.style.width = `calc(74px + ${x.dataset.w} * (100% - 74px))`; });
       const b = $('#ustaw-cele'); if (b) b.onclick = e => { e.stopPropagation(); kartaCelow(c.cele); };
+      const pm = $('#pulpit-pomoc'); if (pm) pm.onclick = () => otworzPomoc('kafle_bs');
     });
-    if (c.brak_danych) return '<h1>Pulpit</h1><div class="pusto">Brak danych z banku.</div>';
+    const zakladki = `<div class="zakladki" role="tablist"><button role="tab" aria-selected="true">${ik('siatka')}Pulpit</button>
+      <button role="tab" aria-selected="false" id="ustaw-cele" data-karta>${ik('zebatka')}Cele</button>
+      <button role="tab" aria-selected="false" id="pulpit-pomoc">${ik('ksiazka')}Jak czytać pulpit</button></div>`;
+    if (c.brak_danych) return `<h1>Pulpit</h1>${zakladki}<div class="pusto">Brak danych z banku.</div>`;
     const r = c.rezerwa, o = c.obrot, m = c.marza, n = c.naleznosci, pz = c.porzadek;
     const mies1 = x => x == null ? 'brak' : `${String(x).replace('.', ',')} mies.`;
     const brakuje = r.nadwyzka < 0 ? `brakuje ${zl(-r.nadwyzka)}` : `ponad cel ${zl(r.nadwyzka)}`;
     const ndo = s.naleznosci?.do_weryfikacji || 0;
-    return `<div class="naglowek-strony"><div><h1>Pulpit</h1><div class="okruszki">Kontrolka finansów, stan na ${dataPl(c.dzien_stanu)} (ostatni dzień w eksporcie z ING)</div></div>
-        <button class="przycisk" id="ustaw-cele">Cele</button></div>
+    const npo = s.naleznosci?.do_polaczenia ?? pz.do_polaczenia;
+    const maks = Math.max(1, ...Object.values(KAFLE || {}).flatMap(x => [Math.abs(x.wplywy.kwota), Math.abs(x.obciazenia.kwota)]));
+    const linia = (lista, rodzaj, x, kropka) => {
+      const znak = rodzaj === 'wplywy' ? 1 : -1, pusta = !x.ile;
+      const kl = pusta ? 'zero' : znak > 0 ? 'plus' : 'minus';
+      return `<a class="linia-bs${pusta ? ' pusta' : ''}" href="#/platnosci/plan?lista=${lista}&rodzaj=${znak}" title="${esc(zl(x.kwota))}">
+        <i class="tlo-linii"></i><i class="pasek-proporcji" data-w="${pusta ? 0 : (Math.abs(x.kwota) / maks).toFixed(3)}"></i>
+        <b class="${kl}">${pusta ? '0,00' : skrot(x.kwota)}</b>${pusta ? '<span class="pusty"></span>' : kropka}
+        <small class="${kl}">${pusta ? 'Brak płatności' : `${x.ile} ${x.ile === 1 ? 'płatność' : x.ile < 5 ? 'płatności' : 'płatności'}`}</small>
+        <span class="strzalka ${znak > 0 ? 'plus' : 'minus'}" aria-hidden="true">${znak > 0 ? '↗' : '↘'}</span></a>`;
+    };
+    const kafel = ([lista, tytul, ikona, kolor, kropka, pomoc]) => {
+      const x = KAFLE?.[lista];
+      if (!x) return '';
+      const kr = kropka === 'zielona' ? '<span class="kropka zielona"></span>' : kropka ? '<span class="kropka czerwona"></span>' : '<span class="pusty"></span>';
+      return `<div class="kafel-bs ${kolor}"><div class="tytul">${ik(ikona)}${esc(tytul)} ${pytajnik(pomoc)}</div>
+        <div class="pudlo">${linia(lista, 'wplywy', x.wplywy, kr)}${linia(lista, 'obciazenia', x.obciazenia, kr)}</div></div>`;
+    };
+    return `<h1>Pulpit</h1>${zakladki}
+      <div class="baner">Płatności nieuwzględnione w należnościach, cash flow i rentowności:
+        <a href="#/platnosci/do-polaczenia" class="${npo ? '' : 'zero'}">${ik('rozlacz')}Do połączenia <span class="licznik">${npo}</span></a>
+        <a href="#/platnosci/do-weryfikacji" class="${ndo ? '' : 'zero'}">${ik('weryfikuj')}Do weryfikacji <span class="licznik">${ndo}</span></a>
+        <a href="#/budzet/wydatki?rodzaj=nieprzypisany" class="${pz.nieprzypisane ? '' : 'zero'}">${ik('przekreslony')}Wydatki bez rodzaju <span class="licznik">${pz.nieprzypisane}</span></a>
+        <span class="szary">stan na ${dataPl(c.dzien_stanu)}, ostatni dzień w eksporcie z ING</span></div>
+      <div class="kafle-bs">${KAFLE_PULPITU.map(kafel).join('')}</div>
+      <div class="naglowek-sekcji">${ik('kalendarz')}6 mies. w przód ${pytajnik('cf_pulpit')}</div>
+      <div class="wykres-pulpitu"><div id="pulpit-cf"></div></div>
+      <div class="naglowek-sekcji">${ik('wykres')}Kontroling ${pytajnik('porzadek')}</div>
       <div class="kontrolka">
         <a class="kafel-st ${r.status}" href="#/rentownosc/koszty">
           <div class="tytul">Rezerwa gotówki ${pytajnik('rezerwa')}</div>
@@ -325,16 +482,11 @@ const WIDOKI = {
           <div class="dop">należności razem ${zl(n.razem)}; zielono, gdy po 30 dniach jest najwyżej 15%</div>
         </a>
       </div>
-      <div class="porzadek">${pytajnik('porzadek')} <span>Porządek w danych:</span>
-        <a href="#/platnosci/do-polaczenia" class="${pz.do_polaczenia ? 'jest' : ''}">${pz.do_polaczenia} wpłat do połączenia</a>
-        <a href="#/platnosci/do-weryfikacji" class="${ndo ? 'jest' : ''}">${ndo} do weryfikacji</a>
-        <a href="#/budzet/wydatki?rodzaj=nieprzypisany" class="${pz.nieprzypisane ? 'jest' : ''}">${pz.nieprzypisane} nieprzypisanych wydatków (${zl(pz.nieprzypisane_kwota)})</a>
-      </div>
+      ${kafleNaleznosci(s.naleznosci, true)}
       <div class="wykresy-2">
         <div class="karta-wyk"><h3>Gotówka na rachunkach ${pytajnik('gotowka')}</h3><div class="pod">główny i online, koniec dnia; najedź, żeby zobaczyć dzień</div><div id="pulpit-gotowka"></div></div>
         <div class="karta-wyk"><h3>Wynik zarządczy miesięcznie ${pytajnik('wynik')}</h3><div class="pod">kliknij miesiąc, żeby zobaczyć jego wydatki</div><div id="pulpit-wynik"></div></div>
       </div>
-      ${kafleNaleznosci(s.naleznosci, true)}
       <p class="notka">Rachunki: główny ${zl(s.salda['główny']?.saldo_po || 0)}, online ${zl(s.salda.online?.saldo_po || 0)}, VAT ${zl(s.salda.VAT?.saldo_po || 0)} (VAT nie liczy się do gotówki).
         Dane: ${s.liczby.operacje} operacji w banku, ${s.liczby.faktury} faktur, ${s.liczby.zakupy} dokumentów kosztowych. <a href="#/platnosci/importy">Historia importów</a></p>`;
   },
@@ -362,6 +514,7 @@ const WIDOKI = {
         ${filtrData('od', 'Od', p.od)}${filtrData('do', 'Do', p.do)}
       </div>
       ${tabela({ kolumny: kol, dane: w.wiersze, poczatek: (w.strona - 1) * w.ile + 1, sortuj, kierunek,
+        wierszKlasa: x => x.kwota > 0 ? 'wiersz-plus' : '',
         stopkaSum: { kwota: `<span class="plus">${zl(w.wplywy, false)}</span><br><span class="minus">${zl(w.obciazenia, false)}</span>` },
         onWiersz: x => x.stan_wplaty ? kartaWplaty(x.id) : pokazKarte(x.kontrahent || x.opis, [
           ['Kwota', zl(x.kwota)], ['Rachunek', `${x.rachunek} (${x.nrb.slice(-4)})`], ['Data księgowania', dataPl(x.data_ksiegowania)],
@@ -666,18 +819,18 @@ Object.assign(WIDOKI, {
     const kol = [
       { naglowek: 'Klient', wartosc: x => x.klient },
       { naglowek: 'Faktur', liczba: true, wartosc: x => x.faktur },
-      { id: 'przychod', naglowek: 'Przychód netto', liczba: true, wartosc: x => zl(x.przychod, false) },
+      { id: 'przychod', naglowek: 'Przychód netto', liczba: true, wartosc: x => zl(x.przychod, false), sortKlucz: x => x.przychod },
       { naglowek: 'Wpłacono', liczba: true, wartosc: x => zl(x.wplaty, false), klasa: () => 'szary' },
       { naglowek: 'Należność', liczba: true, wartosc: x => x.naleznosc ? zl(x.naleznosc, false) : '', klasa: x => x.po_terminie ? 'minus' : '' },
       { id: 'koszty', naglowek: 'Koszty klienta', liczba: true, wartosc: x => x.koszty ? zl(-x.koszty, false) : '', klasa: () => 'minus' },
-      { id: 'marza', naglowek: 'Marża wstępna', liczba: true, wartosc: x => zl(x.marza, false) },
+      { id: 'marza', naglowek: 'Marża wstępna', liczba: true, wartosc: x => zl(x.marza, false), sortKlucz: x => x.marza },
       { naglowek: '%', liczba: true, wartosc: x => procent(x.marza_proc), klasa: x => x.marza_proc != null && x.marza_proc < 30 ? 'minus' : '' },
     ];
     const s = k => d.klienci.reduce((a, x) => a + (x[k] || 0), 0);
     return `<h1>Klienci</h1><div class="okruszki">Budżet / Foldery klientów</div>
       <div class="filtry">${filtr('rok', 'Rok', [['', 'Wszystko'], ...d.lata.map(r => [r, r])], d.rok || '')}</div>
       <p class="notka">Przychód z faktur (netto, wg daty sprzedaży). Koszty klienta to wydatki z banku przypisane do klienta: netto z dokumentu z rejestru biura, a bez dokumentu kwota z banku. Marża wstępna nie zawiera kosztów pracy zespołu, to etap 4. Czerwony procent: poniżej progu 30%.${d.przenoszone_bez_klienta.ile ? ` Koszty klientów bez wskazanego klienta: ${d.przenoszone_bez_klienta.ile} płatności, ${zl(d.przenoszone_bez_klienta.kwota)}.` : ''}</p>
-      ${tabela({ kolumny: kol, dane: d.klienci, poczatek: 1, stopkaSum: { przychod: zl(s('przychod'), false), koszty: zl(-s('koszty'), false), marza: zl(s('marza'), false) },
+      ${tabela({ kolumny: kol, dane: d.klienci, poczatek: 1, sortLokalny: true, stopkaSum: { przychod: zl(s('przychod'), false), koszty: zl(-s('koszty'), false), marza: zl(s('marza'), false) },
         onWiersz: x => { location.hash = `#/budzet/klient?nazwa=${encodeURIComponent(x.klient)}${d.rok ? '&rok=' + d.rok : ''}`; } })}`;
   },
 
@@ -902,6 +1055,16 @@ function kartaCelow(cele) {
 }
 
 const POMOC = {
+  kafle_bs: { tytul: 'Kafle płatności', krotko: 'Sześć list jak w Budget Studio: górna linia wpływy, dolna obciążenia; kwota brutto, liczba płatności i strzałka do listy.',
+    co: 'Nadal nieopłacone: przychody wystawione, a nie zapłacone. Nadal niewystawione: plany przychodów bez faktury, których miesiąc już trwa albo minął. Po terminie: plany i dokumenty po terminie płatności. Do wystawienia i Do zapłacenia: najbliższe 2 tygodnie. Zapłacone: ostatnie 2 tygodnie.',
+    skad: 'Plany z budżetu połączone z bankiem i Fakturownią (te same warunki co listy w menu Płatności).',
+    jak: 'Kwota skrócona (60k = ok. 60 tys. zł brutto); pełna kwota po najechaniu. Pasek w tle pokazuje wielkość kwoty na tle pozostałych kafli. Czerwona kropka: wymaga uwagi; zielony ptaszek: zapłacone.',
+    zrob: 'Kliknij linię, żeby otworzyć listę płatności tego rodzaju.' },
+  cf_pulpit: { tytul: 'Cash flow 6 miesięcy w przód', krotko: 'Tygodniowe wpływy i obciążenia z saldem narastającym, od 5 tygodni wstecz do pół roku w przód.',
+    co: 'Zielone słupki w górę to wpływy, czerwone w dół obciążenia, kreskowany słupek to saldo tygodnia, linia to saldo gotówki narastająco. Pomarańczowa linia: tydzień dnia stanu.',
+    skad: 'Przed dniem stanu przepływy z banku, po nim prognoza (należności z faktur i plany z budżetu, scenariusz ostrożny).',
+    jak: 'Tydzień od wtorku do poniedziałku, jak w Budget Studio. Jaśniejsza część słupka to plany, pełna to dokumenty i bank.',
+    zrob: 'Kliknij wykres, żeby otworzyć pełny ekran Cash flow.' },
   rezerwa: { tytul: 'Rezerwa gotówki', krotko: 'Na ile miesięcy kosztów wystarczy gotówka na rachunkach, gdyby wpłaty od klientów stanęły.',
     co: 'Gotówka na rachunku głównym i online podzielona przez średni miesięczny wypływ na koszty. Pokazuje, ile miesięcy agencja przetrwa bez żadnej wpłaty.',
     skad: 'Saldo z ostatniej operacji w eksporcie ING. Koszty: wydatki z banku z ostatnich 6 pełnych miesięcy, rodzaje: koszty klientów, praca, stałe, nieprzypisane i podatki. Bez VAT, podziału zysku, zwrotów i przelewów między własnymi rachunkami.',
@@ -1033,11 +1196,18 @@ function wBudowie(sekcja) {
   return `<h1>${esc(nazwa)}</h1><div class="okruszki">W budowie</div><p class="notka">Ten ekran powstanie w etapie ${etap}. Układ będzie taki jak w Budget Studio.</p>`;
 }
 
+let ostatniKlucz = '';
 async function pokaz() {
   const t = trasa();
   const klucz = t.podstrona ? `${t.sekcja}/${t.podstrona}` : t.sekcja;
   zaznaczMenu(t.sekcja);
   $('#karta').hidden = true;
+  // panel „Wygląd i filtry” należy do ekranu cash flow; inny ekran go zamyka
+  if (klucz !== ostatniKlucz && typeof cfPanel !== 'undefined') cfPanel = false;
+  ostatniKlucz = klucz;
+  zamknijWysuw();
+  $('#panel-filtrow').hidden = true;
+  document.body.classList.remove('filtry-otwarte');
   const widok = $('#widok');
   try {
     widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : wBudowie(t.sekcja);
