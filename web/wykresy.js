@@ -459,7 +459,7 @@ const Wykresy = (() => {
       });
     }
     rysuj();
-    if (!ramka.dataset.obserwowany) { ramka.dataset.obserwowany = '1'; new ResizeObserver(() => { if (ramka.isConnected) rysuj(); }).observe(ramka); }
+    if (!ramka.dataset.obserwowany) { ramka.dataset.obserwowany = '1'; new ResizeObserver(() => requestAnimationFrame(() => { if (ramka.isConnected) rysuj(); })).observe(ramka); }
     return { rysuj, ustaw(nowe) { Object.assign(opcje, nowe); rysuj(); } };
   }
 
@@ -517,7 +517,7 @@ const Wykresy = (() => {
       e.preventDefault(); pokazOkno(); opcje.naZmiane([a, b]);
     });
     rysuj();
-    new ResizeObserver(() => { if (ramka.isConnected) rysuj(); }).observe(ramka);
+    new ResizeObserver(() => requestAnimationFrame(() => { if (ramka.isConnected) rysuj(); })).observe(ramka);
     return { ustaw(o2) { [a, b] = o2; pokazOkno(); } };
   }
 

@@ -670,7 +670,7 @@ const LICZBOWE_CF = ['netto', 'brutto', 'vat', 'stawka', 'przesuniecie'];
 async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
   const stan = STAN?.naleznosci?.dzien_stanu || STAN?.bank_do;
   const widok = WIDOKI_CF.find(v => v.id === p.widok) || WIDOKI_CF[1];
-  const bazowy = arkusz ? { granulacja: 'miesiac', od: stan, do: ark && `${ark.do}-28` > stan ? plusMies(`${ark.do}-01`, 1) : plusMies(stan, 6) } : { granulacja: widok.granulacja, ...zakresWidoku(widok, stan) };
+  const bazowy = arkusz ? { granulacja: 'tydzien', od: stan, do: ark && `${ark.do}-28` > stan ? plusMies(`${ark.do}-01`, 1) : plusMies(stan, 6) } : { granulacja: widok.granulacja, ...zakresWidoku(widok, stan) };
   const ef = { granulacja: p.granulacja || bazowy.granulacja, od: p.od || bazowy.od, do: p.do || bazowy.do, rodzaj: p.rodzaj || '',
     saldo_start: p.saldo ?? '', scenariusz: p.scenariusz || 'ostrozny' };
   const d = await api('cashflow/okresy', { ...ef, arkusz: arkusz || '' });
