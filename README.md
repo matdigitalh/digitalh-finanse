@@ -425,3 +425,28 @@ opłacona poza bankiem) są dla nich nieaktywne z podpowiedzią (kwota od biura 
 
 Poza zakresem: typy dat „data dodania” i „data ostatniej edycji” (A-FIL-01; dane z importu ich nie mają), usuwanie i łączenie
 rzeczywistych z listy (pakiet 5), skrót Ctrl/Cmd+F (pakiet 11).
+
+## Pakiet 9: cash flow jak w BS, umowy w cash flow (2026-10-19)
+
+Serwer: `finanse/cashflow.py` (okresy, pozycje, lista wycinka, prognoza 13 tygodni), `finanse/umowy.py` (powiązanie umowy
+z budżetem). Ekran: `web/cashflow.js` (przeniesiony z `web/budzet.js`, ładowany po `listy.js`).
+
+- **Tryb domyślny jak w BS (decyzja 8):** po dniu stanu wyłącznie płatności budżetu z „W cash flow = tak”: plany
+  i rzeczywiste nieopłacone, na dniu realnej płatności, brutto; przed dniem stanu historia z banku. Szacunek kosztów
+  i należności z faktur spoza budżetu to opcje („Pochodzenie” w „Wygląd i filtry”), domyślnie wyłączone, wyróżnione.
+- **Etap i aktualność jak w BS:** filtr etapu (domyślnie bez opłaconych), statusu aktualności, podstawy, rodzaju i dat
+  (wystawienia, płatności, realnej, miesiąc księgowania; tryby z pakietu 7). Zaległość (nieopłacona, minął dzień realny)
+  zostaje na swoim dniu, scenariusz pełny liczy ją za 7 dni. Rzeczywista „Niewymagana” w BS (np. przyszły ZUS) jest
+  w cash flow (uwaga z pakietu 8, bez zmian w `laczenie.py`). Historia „z budżetu” pokazuje przeszłość jak BS.
+- **Umowy (decyzje 9 do 11):** umowa ma folder klienta i arkusze przychodowe (domyślnie wszystkie arkusze folderu
+  z wpływami; stary wpis z samym klientem dopasowany po nazwie przy odczycie). Pozycje „z umowy” po ostatnim planie
+  wpływu klienta (netto z umowy + VAT wg wiersza, termin koniec miesiąca + dni z wiersza, domyślnie 23% i 7 dni),
+  bez nich po końcu umowy na czas określony (plany zostają z ostrzeżeniem). Scenariusz „klienci odchodzą”.
+  API: `/api/umowy` (folder, arkusze, stan, ostatni dzień wypowiedzenia obu stron, odejście przy wypowiedzeniu dziś,
+  plany po końcu, klienci bez umowy), `/api/umowy?arkusz=`, pole `umowa` w `/api/budzet/arkusz`.
+- **Lista wycinka:** `GET /api/lista/cashflow` (silnik list z pakietu 7), zapisane widoki: zdarzenie `widok`, ekran `cashflow`.
+- **Odbiór na eksporcie BS z 14.10.2026:** tryb domyślny od dnia stanu: 16 z 17 miesięcy co do grosza; październik
+  różni się tylko etapem opłacenia (1 płatność opłacona w banku, w BS nieopłacona; 2 opłacone w BS po dniu stanu ING).
+
+Do dokończenia (stan pośredni): sprawdzenie ekranu w przeglądarce (panel, widoki, lista z akcjami, kafel scenariusza),
+formularz umowy z folderem i arkuszami w ekranie Umowy, opis końcowy w tej sekcji.

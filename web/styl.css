@@ -54,6 +54,7 @@
   --wyk-minus: rgb(222, 28, 80);
   --wyk-minus-2: rgb(180, 14, 62);
   --wyk-linia: rgb(29, 140, 78);
+  --wyk-umowa: rgb(123, 21, 187);   /* pakiet 9: pozycje z umowy w cash flow (kreskowane) */
   --siatka: rgb(222, 222, 228);
   /* paleta serii innych wykresów (kolejność stała) */
   --s1: rgb(123, 21, 187);
@@ -108,6 +109,7 @@
     --wyk-minus: rgb(240, 70, 110);
     --wyk-minus-2: rgb(200, 40, 80);
     --wyk-linia: rgb(86, 210, 140);
+    --wyk-umowa: rgb(198, 140, 240);
     --siatka: rgb(50, 48, 64);
     --s1: rgb(198, 140, 240);
     --s2: #E36D30;
@@ -152,6 +154,7 @@
   --wyk-minus: rgb(240, 70, 110);
   --wyk-minus-2: rgb(200, 40, 80);
   --wyk-linia: rgb(86, 210, 140);
+  --wyk-umowa: rgb(198, 140, 240);
   --siatka: rgb(50, 48, 64);
   --s1: rgb(198, 140, 240);
   --s2: #E36D30;
@@ -820,3 +823,30 @@ body.filtry-otwarte .pasek-zazn { right: 210px; }
 .panel-filtrow summary > span { flex: 1; min-width: 0; }
 .panel-filtrow summary > span b { white-space: normal; }
 .z-zaznaczaniem tbody td.lp { cursor: pointer; }
+
+/* ---------- Pakiet 9: cash flow jak w BS, umowy w cash flow ---------- */
+.kropka.fioletowa { background: var(--wyk-umowa); }
+.cf-uwagi { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: -4px 0 14px; }
+.cf-uwagi button.cf-uwaga { all: unset; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--minus); cursor: pointer; }
+.cf-uwagi button.cf-uwaga:hover, .cf-uwagi a.cf-uwaga:hover { text-decoration: underline; }
+.cf-uwagi a.cf-uwaga { color: var(--ostrzezenie); }
+.pigulka.ostrzezenie { background: var(--ostrzezenie-tlo); color: var(--ostrzezenie); }
+.znacznik-umowy { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 4px; border-radius: 50%;
+  background: var(--ostrzezenie-tlo); color: var(--ostrzezenie); font-size: 10px; font-weight: 700; vertical-align: 1px; }
+.cf-scenariusz { max-width: 560px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--linia); border-left: 3px solid var(--minus);
+  border-radius: 4px; background: var(--tlo); font-size: 12px; }
+.cf-scenariusz .naglowek-kafla { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--tekst); }
+.cf-scenariusz .kwota { margin: 4px 0 2px; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cf-scenariusz .kwota.minus { color: var(--minus); } .cf-scenariusz .kwota.plus { color: var(--plus); }
+.cf-scenariusz ul { margin: 8px 0 0; padding-left: 18px; color: var(--tekst-2); }
+.cf-legenda { margin: 2px 0 0 136px; }
+.cf-legenda i.l-rzecz { background: var(--wyk-plus); border-color: transparent; }
+.cf-legenda i.l-plan { background: var(--wyk-plus); opacity: .45; border-color: transparent; }
+.cf-legenda i.l-umowa { background: repeating-linear-gradient(135deg, var(--wyk-umowa) 0 2px, transparent 2px 4px); border-color: var(--wyk-umowa); }
+.cf-legenda i.l-szacunek { background: repeating-linear-gradient(135deg, var(--szary-seria) 0 2px, transparent 2px 4px); border-color: var(--szary-seria); }
+tr.wiersz-umowa td:not(.lp):not(.kr) { background-color: var(--fiolet-tlo); }
+tr.wiersz-szacunek td:not(.lp):not(.kr) { background-color: var(--tlo-2); color: var(--tekst-2); }
+.cf-karta .tytul-karty { font-size: 11px; font-weight: 600; color: var(--tekst); margin-bottom: 4px; }
+.umowa-arkusze { display: grid; gap: 4px; max-height: 180px; overflow: auto; padding: 6px 8px; border: 1px solid var(--linia); border-radius: 4px; }
+.umowa-arkusze label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+@media (max-width: 720px) { .cf-legenda { margin-left: 0; } }

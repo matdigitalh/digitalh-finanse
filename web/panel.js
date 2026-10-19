@@ -6,7 +6,7 @@
 // Sekcja: {grupa: 'Wygląd'} albo {klucz, etykieta, typ, wartosc, zmieniona, ...}:
 //   radio   opcje: {wartość: tekst}
 //   select  opcje: [[wartość, tekst]]
-//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę
+//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę; opis pod listą
 //   tekst   placeholder, opis
 //   zakres  wartosc: {od, do} (dwa pola dat)
 //   data    filtr daty BS (tryby: wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy);
@@ -81,7 +81,7 @@ function htmlSekcji(s) {
   if (s.typ === 'select') return `<select name="${n}">${s.opcje.map(([v, t]) => `<option value="${esc(v)}"${String(s.wartosc) === String(v) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
   if (s.typ === 'multi') return `${s.szukaj ? `<input type="text" class="pf-szukaj" placeholder="Wyszukaj" aria-label="Zawęź listę: ${esc(s.etykieta)}">` : ''}
     <div class="pf-akcje"><button type="button" data-pf="wszystkie">Zaznacz wszystkie</button><button type="button" data-pf="wyczysc">Wyczyść</button></div>
-    <div class="pf-lista">${s.opcje.map(([v, t]) => `<label data-t="${esc(String(t).toLowerCase())}"><input type="checkbox" name="${n}" value="${esc(v)}"${s.wartosc.includes(v) ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>`;
+    <div class="pf-lista">${s.opcje.map(([v, t]) => `<label data-t="${esc(String(t).toLowerCase())}"><input type="checkbox" name="${n}" value="${esc(v)}"${s.wartosc.includes(v) ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>${s.opis ? `<span class="szary">${esc(s.opis)}</span>` : ''}`;
   if (s.typ === 'tekst') return `<input type="text" name="${n}" inputmode="${s.inputmode || 'text'}" placeholder="${esc(s.placeholder || '')}" value="${esc(s.wartosc || '')}">${s.opis ? `<span class="szary">${esc(s.opis)}</span>` : ''}`;
   if (s.typ === 'zakres') return `<label>od <input type="date" name="${n}-od" value="${esc(s.wartosc.od || '')}"></label><label>do <input type="date" name="${n}-do" value="${esc(s.wartosc.do || '')}"></label>`;
   if (s.typ === 'kolumny') {
