@@ -12,6 +12,9 @@ const miesNag = m => { const t = mies(m); return t.charAt(0).toUpperCase() + t.s
 const jestFaktura = w => (w.podstawa || '').startsWith('Faktura');
 const DNI_OPCJE = [0, 7, 14, 21, 30, 60];
 const TEKST_PODGLADU = 'Edycja jest wyłączona, dopóki planowanie w apce jest wyłączone. Włączysz je w Budżet, Ustawienia budżetu.';
+// Arkusz systemowy Opłaty urzędowe (pakiet 8) jest zawsze tylko do odczytu, niezależnie od planowania.
+const TEKST_SYSTEMOWY = 'To arkusz systemowy: VAT i podatek dochodowy liczy apka. Kwotę od biura i dzień realny wpiszesz w Budżet, Podatki i ZUS.';
+const tekstPodgladu = (d = ARK?.d) => d?.systemowy ? TEKST_SYSTEMOWY : TEKST_PODGLADU;
 const NOWY = { rodzaj: -1, podstawa: 'Faktura (jedna)', stawka_vat: 23, dzien_wystawienia: 'Ostatni', dni_na_platnosc: 14, metoda: 'Konto firmowe',
   ksiegowane: true, w_cashflow: true, split: false, przedmiot: '', kontrahent: '', sekcja: '', komentarz: '' };
 
@@ -215,7 +218,7 @@ function arkuszTabela(d, p) {
       ${d.planowanie ? `<button class="przycisk" id="dodaj-wiersz" title="Pełny formularz wiersza (także umowy z kwotami od księgowej)">Dodaj wiersz ${ik('plus')}</button>` : ''}
       <button class="przycisk" id="ark-karta" disabled data-karta title="Cmd+Enter albo Cmd+dwuklik na komórce">Otwórz kartę płatności</button></div>
     ${d.planowanie ? '<p class="notka ark-podpowiedz">Klik zaznacza komórkę, strzałki i Tab przesuwają zaznaczenie. Wpisz kwotę albo naciśnij Enter, żeby edytować; Cmd+Enter otwiera kartę płatności, Cmd+C i Cmd+V kopiują i wklejają (także blok z Excela), Cmd+Z cofa ostatnią zmianę.</p>'
-      : `<p class="notka">${TEKST_PODGLADU} Do tego czasu plany pochodzą z Budget Studio, tylko do odczytu.</p>`}
+      : d.systemowy ? '' : `<p class="notka">${TEKST_PODGLADU} Do tego czasu plany pochodzą z Budget Studio, tylko do odczytu.</p>`}
     <div class="legenda-stany"><span><i class="plany"></i>tylko plany</span><span><i class="rzecz"></i>rzeczywiste</span><span><i class="mieszana"></i>plany i rzeczywiste</span><span><i class="po"></i>rzeczywiste po terminie</span>
       <span><i class="wg-bs"></i>opłacone tylko wg BS</span><span><span class="kropka czerwona"></span>nieaktualna, wymaga uwagi</span><span><span class="kropka zielona"></span>jest opłacona</span></div>
     <div class="tabela-ramka arkusz" id="ark-tabela"><table class="ark"><thead>${thead}</thead><tbody>${tbody || `<tr><td colspan="${nOpis + m.length + 1}" class="pusto">Arkusz nie ma wierszy.</td></tr>`}</tbody></table></div>
@@ -533,7 +536,7 @@ function umiescPrzy(el, td, minSzer = 0) {
 
 function edytuj(znak) {
   const { w: wid, k } = ARK.sel;
-  if (!ARK.d.planowanie) return komunikat(TEKST_PODGLADU, true);
+  if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   const td = tdW(wid, k), w = wid === '__nowy' ? null : wierszArk(wid);
   if (!td) return;
   const typ = k.startsWith('m:') ? 'kwota' : KOL[k].typ;
@@ -638,13 +641,13 @@ function zapiszPole(w, pole, wartosc) {
 }
 
 function przelacz(w, k) {
-  if (!ARK.d.planowanie) return komunikat(TEKST_PODGLADU, true);
+  if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   if (k === 'ksiegowane' && w && UMOWY[w.podstawa]) return komunikat('Umowa jest zawsze księgowana (koszt i podatki liczy księgowa), więc tego przełącznika nie zmienisz.', true);
   zapiszPole(w, KOL[k].pole, !(w ? w[KOL[k].pole] : NOWY[KOL[k].pole]));
 }
 
 function zmienRodzaj(w) {
-  if (!ARK.d.planowanie) return komunikat(TEKST_PODGLADU, true);
+  if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   if (w?.ma_rzeczywiste) return komunikat('Wiersz ma już płatność rzeczywistą, więc rodzaju (wpływ albo obciążenie) nie zmienisz. Zduplikuj wiersz i zmień rodzaj w kopii.', true);
   if (w && UMOWY[w.podstawa]) return komunikat('Umowa to zawsze obciążenie (koszt), więc rodzaju nie zmienisz.', true);
   zapiszPole(w, 'rodzaj', -(w ? w.rodzaj : NOWY.rodzaj));
@@ -653,7 +656,7 @@ function zmienRodzaj(w) {
 // Delete i Backspace: jedna komórka = edycja od pustej wartości (Enter czyści); zakres komórek miesięcy = wyczyszczenie
 // wszystkich jedną serią (cofniesz ją Cmd+Z).
 function wyczysc() {
-  if (!ARK.d.planowanie) return komunikat(TEKST_PODGLADU, true);
+  if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   const kom = komorkiZakresu();
   if (kom.length === 1) {
     const x = kom[0];
@@ -816,7 +819,7 @@ function edytujDzien(td, w) {
 
 // ---------- Wklejanie bloku (Excel, inna część arkusza): jedna seria, wszystko albo nic ----------
 function wklej(blok) {
-  if (!ARK.d.planowanie) throw new Error(TEKST_PODGLADU.replace(/\.$/, ''));
+  if (!ARK.d.planowanie) throw new Error(tekstPodgladu().replace(/\.$/, ''));
   const z = zakresArk();
   let dane = blok;
   if (blok.length === 1 && blok[0].length === 1 && (z.r1 > z.r0 || z.c1 > z.c0)) {   // jedna wartość na zaznaczony zakres
@@ -878,7 +881,7 @@ function otworzKarte() {
   if (!ARK.sel) return;
   const w = wierszArk(ARK.sel.w);
   if (!w) return;
-  if (!ARK.sel.k.startsWith('m:')) return ARK.d.planowanie ? kartaWiersza(w, ARK.d) : komunikat(TEKST_PODGLADU, true);
+  if (!ARK.sel.k.startsWith('m:')) return ARK.d.planowanie ? kartaWiersza(w, ARK.d) : komunikat(tekstPodgladu(), true);
   const m = ARK.sel.k.slice(2);
   if (!w.komorki[m]) return ARK.d.planowanie ? edytuj(null) : komunikat('Ta komórka jest pusta.', true);
   kartaKomorkiArk(w.id, m);
@@ -1051,7 +1054,7 @@ function menuZarzadzaj(przycisk, d) {
   document.querySelectorAll('.zarzadzaj-menu').forEach(x => x.remove());
   const m = document.createElement('div');
   m.className = 'zarzadzaj-menu';
-  const wyl = d.planowanie ? '' : ` disabled title="${esc(TEKST_PODGLADU)}"`;
+  const wyl = d.planowanie ? '' : ` disabled title="${esc(tekstPodgladu(d))}"`;
   const maRz = d.wiersze.some(w => w.ma_rzeczywiste);
   m.innerHTML = `<button data-m="nazwa"${wyl}>${ik('dokument')}Zmień nazwę</button>
     <button data-m="zakres"${wyl}>${ik('kalendarz')}Zmodyfikuj czas trwania</button>

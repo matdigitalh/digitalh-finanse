@@ -162,6 +162,21 @@ class Baza(unittest.TestCase):
 
 
 class TestArkuszSystemowy(Baza):
+    def test_arkusz_systemowy_tylko_do_odczytu_w_interfejsie(self):
+        """Po scaleniu z pakietem 3: przy włączonym planowaniu arkusz systemowy jest dalej tylko do odczytu (bez edycji
+        komórek, wiersza „Dodaj +” i Zarządzaj), a zwykły arkusz edytowalny."""
+        from finanse import zapytania_budzet
+        self.przelicz()
+        s = zapytania_budzet.arkusz(self.con, 'sys:oplaty:2026')
+        self.assertEqual((s['planowanie'], s['systemowy']), (False, True))
+        z = zapytania_budzet.arkusz(self.con, 'a-test')
+        self.assertEqual((z['planowanie'], z['systemowy']), (True, False))
+        p = self.con.execute("SELECT id, wiersz, miesiac FROM bud_platnosc WHERE wiersz LIKE 'sys:%' LIMIT 1").fetchone()
+        self.assertFalse(zapytania_budzet.platnosc(self.con, p['id'])['planowanie'])
+        self.assertFalse(zapytania_budzet.komorka(self.con, p['wiersz'], p['miesiac'])['planowanie'])
+        with self.assertRaisesRegex(ValueError, 'arkusz systemowy'):
+            podatki.sprawdz_bud({'op': 'przesun_arkusz', 'arkusz': 'sys:oplaty:2026', 'o': 1})
+
     def test_1_vat_1840_zl_z_terminem_25_11_w_cash_flow(self):
         self.wiersz('w-s', 1, {'2026-10': 1000000})    # faktura sprzedaży 10 000 zł netto, 23%
         self.wiersz('w-k', -1, {'2026-10': 200000})    # koszt 2 000 zł netto, 23%

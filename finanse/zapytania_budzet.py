@@ -110,7 +110,9 @@ def arkusz(con, aid: str) -> dict:
         narast += wp + ob
         podsumowanie.append({'miesiac': m, 'wplywy': wp, 'obciazenia': ob, 'saldo': wp + ob, 'narastajaco': narast})
     inne = [dict(r) for r in con.execute('SELECT id, folder, kategoria, nazwa, od, do FROM bud_arkusz ORDER BY folder, nazwa')]
-    return {'arkusz': a, 'miesiace': miesiace, 'wiersze': wiersze, 'podsumowanie': podsumowanie, 'planowanie': planowanie(con),
+    systemowy = a.get('zrodlo') == 'system'   # Opłaty urzędowe (pakiet 8): plany liczy apka, arkusz tylko do odczytu
+    return {'arkusz': a, 'miesiace': miesiace, 'wiersze': wiersze, 'podsumowanie': podsumowanie,
+            'planowanie': planowanie(con) and not systemowy, 'systemowy': systemowy,
             'arkusze': inne, 'podstawy': reguly.PODSTAWY_WIERSZA, 'slowniki': slowniki(con), 'wzorce': wzorce_kontrahentow(con, aid),
             'poza_zakresem': poza_zakresem, 'limit_wierszy': 1000}
 
@@ -178,7 +180,8 @@ def komorka(con, wid: str, m: str) -> dict:
     w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None
     rz = [x['platnosc'] for x in platnosci if x['platnosc']['typ'] != 'plan']
     return {'wiersz': w, 'arkusz': a, 'miesiac': m, 'kwota': k[0] if k else None, 'platnosci': platnosci,
-            'rzeczywiste': sum(p['netto'] for p in rz), 'ma_rzeczywiste': bool(rz), 'planowanie': planowanie(con)}
+            'rzeczywiste': sum(p['netto'] for p in rz), 'ma_rzeczywiste': bool(rz),
+            'planowanie': planowanie(con) and a.get('zrodlo') != 'system'}
 
 
 def ostatni(con) -> dict | None:
@@ -226,7 +229,7 @@ def platnosc(con, pid: str) -> dict:
     w['stawka'] = _stawka(w['stawka_vat'])
     k = con.execute('SELECT kwota FROM bud_komorka WHERE wiersz = ? AND miesiac = ?', (p['wiersz'], p['miesiac'])).fetchone()
     return {'platnosc': p, 'wiersz': w, 'kwota_komorki': k[0] if k else None, 'powiazania': pow_, 'historia': historia,
-            'planowanie': planowanie(con)}
+            'planowanie': planowanie(con) and not str(p['wiersz']).startswith('sys:')}
 
 
 LISTY = {

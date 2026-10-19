@@ -79,7 +79,9 @@ Object.assign(WIDOKI, {
     const a = d.arkusz;
     const zakl = ['arkusz', 'platnosci', 'cashflow'].includes(p.zakladka) ? p.zakladka : 'arkusz';
     const nazwyZakl = { arkusz: 'Arkusz', platnosci: 'Płatności', cashflow: 'Cash flow' };
-    setTimeout(() => {
+    // Zdarzenia podpinamy po narysowaniu treści zakładki: Płatności i Cash flow najpierw pytają serwer, a wcześniejszy
+    // setTimeout trafiłby w przyciski poprzedniego ekranu (zakładki nie reagowały na klik).
+    const podepnij = () => setTimeout(() => {
       document.querySelectorAll('[data-zakl]').forEach(b => b.onclick = e => {
         if (b.dataset.zakl === 'zarzadzaj') { e.stopPropagation(); return menuZarzadzaj(b, d); }
         location.hash = `#/budzet/arkusz?id=${encodeURIComponent(a.id)}${b.dataset.zakl === 'arkusz' ? '' : '&zakladka=' + b.dataset.zakl}`;
@@ -100,10 +102,13 @@ Object.assign(WIDOKI, {
         <button role="tab" data-zakl="platnosci" aria-selected="${zakl === 'platnosci'}">${ik('fale')}Płatności</button>
         <button role="tab" data-zakl="cashflow" aria-selected="${zakl === 'cashflow'}">${ik('fale')}Cash flow</button>
         <button role="tab" data-zakl="zarzadzaj" aria-selected="false" data-karta>${ik('zebatka')}Zarządzaj</button></div>
-      ${banerOsieroconych(0)}`;
-    if (zakl === 'cashflow') return naglowek + await widokCashflow(p, { arkusz: a.id, ark: a });
-    if (zakl === 'platnosci') return naglowek + await listaPlatnosci(p, { arkusz: a.id });   // lista z pakietu 7 (listy.js)
-    return `${naglowek}<div id="ark-widok">${arkuszTabela(d, p)}</div>`;
+      ${banerOsieroconych(0)}${d.systemowy ? `<p class="notka">Arkusz systemowy: VAT i podatek dochodowy liczy apka z budżetu, więc tu nic się nie edytuje.
+        Kwotę od biura i dzień realnej płatności wpiszesz w <a href="#/budzet/podatki">Budżet, Podatki i ZUS</a>.</p>` : ''}`;
+    const tresc = zakl === 'cashflow' ? await widokCashflow(p, { arkusz: a.id, ark: a })
+      : zakl === 'platnosci' ? await listaPlatnosci(p, { arkusz: a.id })   // lista z pakietu 7 (listy.js)
+        : `<div id="ark-widok">${arkuszTabela(d, p)}</div>`;
+    podepnij();
+    return naglowek + tresc;
   },
 
   async 'budzet/rozjazdy'() {
