@@ -48,7 +48,9 @@ TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 
 MAKS_W_SERII = 1000
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria',
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
-                'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz')
+                'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz',
+                # pakiet 4: Biblioteka (słowniki, foldery i kategorie), reguły w biblioteka.py
+                'slownik', 'struktura')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
 # Nazwy pól w komunikatach (po ludzku, jak w BS)
@@ -415,6 +417,9 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         if len(json.dumps(wynik)) > 400000:
             raise ValueError('za duży wpis')
         return wynik
+    if op in ('slownik', 'struktura'):
+        from .biblioteka import sprawdz_op
+        return sprawdz_op(d)
     if len(json.dumps(d)) > (8000 if op in ('arkusz', 'wiersz', 'platnosc', 'komorka', 'decyzja_planu') else 120000):
         raise ValueError('za duży wpis')
     if op in ('arkusz', 'wiersz', 'platnosc'):
@@ -426,6 +431,8 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         obiekt = _pola(o, POLA_BUD[op], op)
         if op == 'arkusz':
             sprawdz_zakres(obiekt.get('od'), obiekt.get('do'))
+        if op == 'wiersz' and d.get('domyslne') is True:   # pakiet 4: nowy wiersz, resztę pól uzupełni Biblioteka
+            return {'op': op, 'obiekt': obiekt, 'usun': False, 'domyslne': True}
         return {'op': op, 'obiekt': obiekt, 'usun': False}
     if op in ('scal', 'duplikuj'):
         ws = d.get('wiersze')

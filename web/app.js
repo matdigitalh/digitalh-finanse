@@ -80,6 +80,7 @@ const PODSTRONY = {
     { nazwa: 'Nieprzypisane wg kontrahenta', hash: '#/budzet/nieprzypisane', ik: 'osoby' },
     { nazwa: 'Konta reklamowe', hash: '#/budzet/konta', ik: 'wykres' },
     { grupa: 'Ustawienia' },
+    { nazwa: 'Biblioteka', hash: '#/budzet/biblioteka', ik: 'ksiazka' },   // pakiet 4: słowniki, foldery i kategorie
     { nazwa: 'Reguły przypisań', hash: '#/budzet/reguly', ik: 'zebatka' },
     { nazwa: 'Ustawienia budżetu', hash: '#/budzet/ustawienia', ik: 'zebatka' }],
   cashflow: [{ grupa: 'Zapisane widoki', ik: 'oko' }],   // pozycje z WIDOKI_CF (budzet.js)
@@ -247,9 +248,9 @@ async function otworzWysuw(id) {
       const html = (d?.foldery || []).map(fo => {
         const kat = Object.entries(fo.kategorie).map(([k, ark]) => {
           const a = ark.filter(x => pasuje(x.nazwa) || pasuje(k) || pasuje(fo.folder));
-          return a.length ? `<div class="kat-wysuw">${esc(k)}</div>${a.map(x => `<a class="ark-wysuw" href="#/budzet/arkusz?id=${encodeURIComponent(x.id)}">${esc(x.nazwa)}</a>`).join('')}` : '';
+          return a.length ? `<a class="kat-wysuw" href="#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(fo.folder)}&kategoria=${encodeURIComponent(k)}">${esc(k)}</a>${a.map(x => `<a class="ark-wysuw" href="#/budzet/arkusz?id=${encodeURIComponent(x.id)}">${esc(x.nazwa)}</a>`).join('')}` : '';
         }).join('');
-        return kat ? `<div class="folder-wysuw">${ik('folder')}${esc(fo.folder)}</div>${kat}` : '';
+        return kat ? `<a class="folder-wysuw" href="#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(fo.folder)}">${ik('folder')}${esc(fo.folder)}</a>${kat}` : '';
       }).join('');
       return html || '<div class="pusto-wysuw">Brak arkuszy dla tej frazy.</div>';
     };

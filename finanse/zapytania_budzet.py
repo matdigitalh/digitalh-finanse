@@ -41,12 +41,28 @@ def drzewo(con) -> dict:
         f = foldery.setdefault(a['folder'], {'folder': a['folder'], 'kategorie': {}, 'saldo': 0})
         f['kategorie'].setdefault(a['kategoria'], []).append(a)
         f['saldo'] += a['saldo']
+    foldery = _wg_struktury(con, foldery)   # pakiet 4: kolejność folderów i kategorii z Biblioteki
     zr = con.execute("SELECT wartosc FROM meta WHERE klucz='import_bs'").fetchone()
     kopia = con.execute("SELECT wartosc FROM meta WHERE klucz='kopia_bs'").fetchone()
     imp_wl = con.execute("SELECT wartosc FROM meta WHERE klucz='import_bs_wl'").fetchone()
     return {'foldery': list(foldery.values()), 'import': json.loads(zr[0]) if zr else None, 'planowanie': planowanie(con),
             'osierocone': osierocone_ile(con), 'kopia_bs': json.loads(kopia[0]) if kopia else None,
             'import_bs': not imp_wl or imp_wl[0] != 'nie'}
+
+
+def _wg_struktury(con, foldery: dict) -> dict:
+    """Foldery i kategorie drzewa w kolejności ustawionej w Bibliotece (pakiet 4); nieznane na końcu, alfabetycznie."""
+    from .biblioteka import kolejnosc_folderow
+    kol = kolejnosc_folderow(con)
+    poz_f = {}
+    for (f, _), (kf, _) in kol.items():
+        poz_f[f] = min(kf, poz_f.get(f, kf))
+    wynik = {}
+    for nazwa in sorted(foldery, key=lambda f: (poz_f.get(f, 10 ** 6), f)):
+        f = foldery[nazwa]
+        f['kategorie'] = dict(sorted(f['kategorie'].items(), key=lambda kv: (kol.get((nazwa, kv[0]), (0, 10 ** 6))[1], kv[0])))
+        wynik[nazwa] = f
+    return wynik
 
 
 def osierocone_ile(con) -> int:
@@ -122,43 +138,18 @@ def _stawka(s):
     return stawka_proc(s)
 
 
-def _po_polsku(xs):
-    return sorted(xs, key=lambda x: (x.casefold().translate(_PL), x))
-
-
-_PL = str.maketrans({'ą': 'a~', 'ć': 'c~', 'ę': 'e~', 'ł': 'l~', 'ń': 'n~', 'ó': 'o~', 'ś': 's~', 'ź': 'z~', 'ż': 'z~~'})
-
-
 def slowniki(con) -> dict:
-    """Wartości do list wyboru w arkuszu (kontrahent, sekcja, przedmiot, metoda) ze wszystkich arkuszy budżetu; do czasu
-    Biblioteki (pakiet 4) słownikiem jest to, co już jest w wierszach i płatnościach."""
-    wynik = {}
-    for pole in ('kontrahent', 'sekcja', 'przedmiot', 'metoda'):
-        xs = {r[0].strip() for r in con.execute(f"SELECT DISTINCT {pole} FROM bud_wiersz WHERE COALESCE({pole}, '') != ''")}
-        if pole in ('kontrahent', 'metoda'):
-            xs |= {r[0].strip() for r in con.execute(f"SELECT DISTINCT {pole} FROM bud_platnosc WHERE typ = 'plan' AND COALESCE({pole}, '') != ''")}
-        wynik[pole] = _po_polsku(x for x in xs if x and x not in ('-', 'Przedmiot transakcji'))
-    return wynik
-
-
-POLA_WZORCA = ('rodzaj', 'podstawa', 'stawka_vat', 'dzien_wystawienia', 'dni_na_platnosc', 'metoda', 'ksiegowane', 'w_cashflow', 'split')
+    """Wartości do list wyboru w arkuszu (kontrahent, sekcja, przedmiot, metoda) z Biblioteki (pakiet 4), plus wpisy
+    domyślne dla nowych wierszy i struktura folderów (także pustych) do wyboru miejsca arkusza."""
+    from .biblioteka import dla_arkusza
+    return dla_arkusza(con)['slowniki']
 
 
 def wzorce_kontrahentow(con, aid: str) -> dict:
-    """Ustawienia domyślne kontrahenta (A-KOL-04) do czasu Biblioteki: ustawienia jego wiersza, najpierw z tego arkusza,
-    potem z innych (ostatni dodany). Umowy pomijamy, bo wymagają kwot od księgowej."""
-    wynik = {}
-    for r in con.execute('SELECT * FROM bud_wiersz WHERE COALESCE(kontrahent, \'\') != \'\' ORDER BY (arkusz = ?), kolejnosc', (aid,)):
-        if r['podstawa'] in reguly.UMOWY or r['podstawa'] not in reguly.PODSTAWY_WIERSZA:
-            continue
-        w = {k: r[k] for k in POLA_WZORCA}
-        w['stawka_vat'] = _stawka(w['stawka_vat'])
-        w['dni_na_platnosc'] = reguly.dni_na_platnosc(w['dni_na_platnosc'])
-        w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
-        if w['dzien_wystawienia'] in ('', '(auto)'):
-            w.pop('dzien_wystawienia')
-        wynik[r['kontrahent'].strip()] = w   # wiersze z tego arkusza są na końcu, więc wygrywają
-    return wynik
+    """Ustawienia domyślne kontrahentów z Biblioteki (A-KOL-04, pakiet 4), do podglądu nowego wiersza w arkuszu; nowy
+    wiersz uzupełnia i tak serwer (biblioteka.uzupelnij_wiersz)."""
+    from .biblioteka import dla_arkusza
+    return dla_arkusza(con)['wzorce']
 
 
 def komorka(con, wid: str, m: str) -> dict:

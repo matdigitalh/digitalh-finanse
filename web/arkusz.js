@@ -43,6 +43,9 @@ const KOL = {
   rodzaj: { naglowek: 'Rodzaj', typ: 'rodzaj', pole: 'rodzaj', html: w => chipZnak(w.rodzaj), sort: w => w.rodzaj, tekst: w => w.rodzaj === 1 ? 'wpływy' : 'obciążenia' },
 };
 const KOL_UST = ['podstawa', 'vat', 'dzien', 'dni', 'metoda', 'split', 'ksiegowane', 'w_cashflow'];
+// Pakiet 4: na dole listy słownika link do Biblioteki (jak „Edycja kontrahentów” w BS)
+const EDYCJA_SLOWNIKA = { kontrahent: ['Edycja kontrahentów', 'kontrahenci'], przedmiot: ['Edycja przedmiotów transakcji', 'przedmioty'],
+  sekcja: ['Edycja sekcji', 'sekcje'], metoda: ['Edycja metod płatności', 'metody'] };
 const KOL_OPIS = ['przedmiot', 'kontrahent', 'sekcja', 'komentarz', 'rodzaj'];
 const GRUPY_ARK = { '': 'Nie grupuj', rodzaj: 'Rodzaj', kontrahent: 'Kontrahent', przedmiot: 'Przedmiot transakcji', podstawa: 'Podstawa płatności',
   vat: 'Stawka VAT', dzien: 'Dzień wystawienia', dni: 'Dni na płatność', metoda: 'Metoda płatności', ksiegowane: 'Księgowane', w_cashflow: 'W cash flow' };
@@ -578,7 +581,7 @@ function edytujKwote(td, w, m, znak) {
     zamknij();
     if (kwota === stara || (kwota == null && !c)) td.innerHTML = stareHtml;
     else {
-      const znakW = w ? w.rodzaj : NOWY.rodzaj;
+      const znakW = w ? w.rodzaj : wzorNowego({}).rodzaj;
       td.innerHTML = `<span class="kom">${kwota == null ? '-' : zl(kwota * znakW, false)}</span>`;
       td.classList.add('zapisuje');
       if (w) zapiszArk({ op: 'komorka', wiersz: w.id, miesiac: m, kwota });
@@ -599,15 +602,24 @@ function edytujKwote(td, w, m, znak) {
   inp.addEventListener('blur', () => zatwierdz(null));
 }
 
-// Nowy wiersz z wiersza „Dodaj +”: ustawienia domyślne, a gdy pierwszą akcją jest kontrahent z ustawieniami
-// w innym wierszu budżetu, jego ustawienia (A-KOL-04; pełna Biblioteka kontrahentów w pakiecie 4).
+// Nowy wiersz z wiersza „Dodaj +” (A-ARK-10): do serwera idą tylko pola pierwszej akcji z flagą „domyslne”, a resztę
+// uzupełnia serwer z Biblioteki: ustawienia wybranego kontrahenta, gdy to on był pierwszą akcją, inaczej kontrahent
+// domyślny i jego ustawienia (A-KOL-04, A-KOL-05; pakiet 4). Tu tylko podgląd z tych samych danych.
+function wzorNowego(pola) {
+  const dom = ARK.d.slowniki?.domyslne || { kontrahent: '', przedmiot: '' }, wz = ARK.d.wzorce || {};
+  const kontrahent = 'kontrahent' in pola ? pola.kontrahent : dom.kontrahent;
+  const u = { ...NOWY, ...(wz[dom.kontrahent] || {}), ...(wz[kontrahent] || {}) };
+  const w = { ...u, przedmiot: u.przedmiot || dom.przedmiot || '', sekcja: u.sekcja || '', komentarz: '', kontrahent, ...pola };
+  if (!jestFaktura(w)) delete w.stawka_vat;
+  if (WOREK.includes(w.podstawa)) delete w.dzien_wystawienia;
+  return w;
+}
+
 function nowyWiersz(pola, komorki = []) {
   const id = nowyId('w');
-  const wzor = pola.kontrahent && Object.keys(pola).length === 1 ? ARK.d.wzorce?.[pola.kontrahent] || {} : {};
-  const obiekt = { id, arkusz: ARK.aid, ...NOWY, ...wzor, ...pola };
-  if (!jestFaktura(obiekt)) delete obiekt.stawka_vat;
-  if (WOREK.includes(obiekt.podstawa)) delete obiekt.dzien_wystawienia;
-  const ops = [{ op: 'wiersz', obiekt }, ...komorki.map(k => ({ op: 'komorka', wiersz: id, miesiac: k.miesiac, kwota: k.kwota }))];
+  const obiekt = { id, arkusz: ARK.aid, ...wzorNowego(pola) };
+  const ops = [{ op: 'wiersz', obiekt: { id, arkusz: ARK.aid, ...pola }, domyslne: true },
+    ...komorki.map(k => ({ op: 'komorka', wiersz: id, miesiac: k.miesiac, kwota: k.kwota }))];
   // wiersz od razu na ekranie (z ustawieniami domyślnymi), żeby kolejne Tab i wpisy trafiały do niego, zanim serwer odpowie
   const stub = { ...obiekt, komorki: {}, ma_rzeczywiste: false, dni: obiekt.dni_na_platnosc ?? 0, dzien_opis: obiekt.dzien_wystawienia || 'tydzień (worek)', proporcje: null };
   komorki.forEach(k => { stub.komorki[k.miesiac] = { netto: k.kwota * stub.rodzaj, kwota: k.kwota, platnosci: [], kwoty: {}, plany: 1, rzeczywiste: 0, nieaktualne: 0, oplacone: 0, stan: 'planowana' }; });
@@ -643,14 +655,14 @@ function zapiszPole(w, pole, wartosc) {
 function przelacz(w, k) {
   if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   if (k === 'ksiegowane' && w && UMOWY[w.podstawa]) return komunikat('Umowa jest zawsze księgowana (koszt i podatki liczy księgowa), więc tego przełącznika nie zmienisz.', true);
-  zapiszPole(w, KOL[k].pole, !(w ? w[KOL[k].pole] : NOWY[KOL[k].pole]));
+  zapiszPole(w, KOL[k].pole, !(w ? w[KOL[k].pole] : wzorNowego({})[KOL[k].pole]));
 }
 
 function zmienRodzaj(w) {
   if (!ARK.d.planowanie) return komunikat(tekstPodgladu(), true);
   if (w?.ma_rzeczywiste) return komunikat('Wiersz ma już płatność rzeczywistą, więc rodzaju (wpływ albo obciążenie) nie zmienisz. Zduplikuj wiersz i zmień rodzaj w kopii.', true);
   if (w && UMOWY[w.podstawa]) return komunikat('Umowa to zawsze obciążenie (koszt), więc rodzaju nie zmienisz.', true);
-  zapiszPole(w, 'rodzaj', -(w ? w.rodzaj : NOWY.rodzaj));
+  zapiszPole(w, 'rodzaj', -(w ? w.rodzaj : wzorNowego({}).rodzaj));
 }
 
 // Delete i Backspace: jedna komórka = edycja od pustej wartości (Enter czyści); zakres komórek miesięcy = wyczyszczenie
@@ -711,8 +723,9 @@ function edytujPole(td, w, k, znak) {
     if (wl && (t || obecna)) pozycje.push([wl[0], wl[1], true]);
     if (aktywny >= pozycje.length || aktywny < 0) aktywny = pozycje.findIndex(([v]) => String(v) === String(obecna ?? '') || (k === 'vat' && v === stawkaStd(obecna)));
     if (q && aktywny < 0 && pozycje.length) aktywny = 0;
-    lista.innerHTML = pozycje.length ? pozycje.map(([v, e, nowa], i) => `<div class="poz${i === aktywny ? ' aktywna' : ''}${nowa ? ' dodaj' : ''}${String(v) === String(obecna ?? '') ? ' obecna' : ''}" data-i="${i}" role="option">${esc(e)}</div>`).join('')
-      : '<div class="pusto-lista">Brak pasujących pozycji.</div>';
+    lista.innerHTML = (pozycje.length ? pozycje.map(([v, e, nowa], i) => `<div class="poz${i === aktywny ? ' aktywna' : ''}${nowa ? ' dodaj' : ''}${String(v) === String(obecna ?? '') ? ' obecna' : ''}" data-i="${i}" role="option">${esc(e)}</div>`).join('')
+      : '<div class="pusto-lista">Brak pasujących pozycji.</div>')
+      + (EDYCJA_SLOWNIKA[kol.slownik] ? `<a class="ark-edycja" href="#/budzet/biblioteka?zakladka=${EDYCJA_SLOWNIKA[kol.slownik][1]}">${EDYCJA_SLOWNIKA[kol.slownik][0]} …</a>` : '');
     lista.querySelector('.aktywna')?.scrollIntoView({ block: 'nearest' });
     umiescPrzy(lista, td);
   };
@@ -754,6 +767,8 @@ function edytujPole(td, w, k, znak) {
   });
   lista.addEventListener('mousedown', e => {
     e.preventDefault();   // bez utraty fokusu w polu
+    const ed = e.target.closest('.ark-edycja');
+    if (ed) { anuluj(); location.hash = ed.getAttribute('href'); return; }   // Biblioteka (pakiet 4)
     const p = e.target.closest('.poz');
     if (p) wybierz(pozycje[+p.dataset.i][0], null);
   });
@@ -767,7 +782,7 @@ function edytujPole(td, w, k, znak) {
 // Dzień wystawienia (A-KOL-12): ostatni, pierwszy albo wybrany dzień, przesunięcie o miesiące, miesiąc księgowania.
 function edytujDzien(td, w) {
   if (w && WOREK.includes(w.podstawa)) return komunikat('W worku dzień wystawienia ustala apka: początek każdego tygodnia miesiąca.', true);
-  const r = regulaZ(w?.dzien_wystawienia || NOWY.dzien_wystawienia);
+  const r = regulaZ(w?.dzien_wystawienia || wzorNowego({}).dzien_wystawienia || NOWY.dzien_wystawienia);
   const panel = document.createElement('div');
   panel.className = 'ark-lista ark-dzien';
   panel.innerHTML = `<div class="formularz">
@@ -858,10 +873,7 @@ function wklej(blok) {
     if (!w) {
       if (!Object.keys(pola).length && !kom.length) return;
       const id = nowyId('w');
-      const obiekt = { id, arkusz: ARK.aid, ...NOWY, ...pola };
-      if (!jestFaktura(obiekt)) delete obiekt.stawka_vat;
-      if (WOREK.includes(obiekt.podstawa)) delete obiekt.dzien_wystawienia;
-      ops.push({ op: 'wiersz', obiekt });
+      ops.push({ op: 'wiersz', obiekt: { id, arkusz: ARK.aid, ...pola }, domyslne: true });   // resztę pól uzupełni serwer z Biblioteki
       kom.forEach(x => ops.push({ op: 'komorka', wiersz: id, ...x }));
       nowych++;
     } else {
@@ -1108,7 +1120,8 @@ function kartaNazwy(d) {
 
 function kartaMiejsca(d) {
   const foldery = {};
-  d.arkusze.forEach(x => (foldery[x.folder] ||= new Set()).add(x.kategoria));
+  (d.slowniki?.struktura || []).forEach(x => { foldery[x.folder] = new Set(x.kategorie); });   // pakiet 4: kolejność i puste z Biblioteki
+  d.arkusze.filter(x => !String(x.id).startsWith('sys:')).forEach(x => (foldery[x.folder] ||= new Set()).add(x.kategoria));
   let folder = d.arkusz.folder, kategoria = d.arkusz.kategoria;
   const k = kartaFormularza('Zmień folder / kategorię', '<div class="dwie-kolumny" id="z-miejsce"></div>', 'Przenieś arkusz', () => {
     const f = ($('#z-nowy-folder').value.trim() || folder), kat = ($('#z-nowa-kategoria').value.trim() || kategoria);
@@ -1122,9 +1135,9 @@ function kartaMiejsca(d) {
     zmianaArkusza({ op: 'arkusz', obiekt: { id: d.arkusz.id, folder: f, kategoria: kat } });
   });
   const rysuj = () => {
-    $('#z-miejsce', k).innerHTML = `<div><h3>Folder</h3><div class="wybor-lista">${Object.keys(foldery).sort((a, b) => a.localeCompare(b, 'pl')).map(f => `<button data-f="${esc(f)}" class="${f === folder ? 'aktywna' : ''}">${esc(f)}</button>`).join('')}</div>
+    $('#z-miejsce', k).innerHTML = `<div><h3>Folder</h3><div class="wybor-lista">${Object.keys(foldery).map(f => `<button data-f="${esc(f)}" class="${f === folder ? 'aktywna' : ''}">${esc(f)}</button>`).join('')}</div>
         ${pole('', 'albo nowy folder', '<input id="z-nowy-folder" maxlength="80">')}</div>
-      <div><h3>Kategoria</h3><div class="wybor-lista">${[...(foldery[folder] || [])].sort((a, b) => a.localeCompare(b, 'pl')).map(x => `<button data-k="${esc(x)}" class="${x === kategoria ? 'aktywna' : ''}">${esc(x)}</button>`).join('') || '<span class="szary">nowy folder: wpisz kategorię</span>'}</div>
+      <div><h3>Kategoria</h3><div class="wybor-lista">${[...(foldery[folder] || [])].map(x => `<button data-k="${esc(x)}" class="${x === kategoria ? 'aktywna' : ''}">${esc(x)}</button>`).join('') || '<span class="szary">nowy folder: wpisz kategorię</span>'}</div>
         ${pole('', 'albo nowa kategoria', '<input id="z-nowa-kategoria" maxlength="80">')}</div>`;
     k.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { e.stopPropagation(); folder = b.dataset.f; if (!foldery[folder].has(kategoria)) kategoria = [...foldery[folder]][0]; rysuj(); });
     k.querySelectorAll('[data-k]').forEach(b => b.onclick = e => { e.stopPropagation(); kategoria = b.dataset.k; rysuj(); });

@@ -178,6 +178,9 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania_budzet.platnosc(con, q.get('id', ''))
             elif sciezka == 'budzet/komorka':
                 dane = zapytania_budzet.komorka(con, q.get('wiersz', ''), q.get('miesiac', ''))
+            elif sciezka == 'budzet/biblioteka':   # pakiet 4: słowniki, foldery i kategorie, arkusze
+                from . import biblioteka
+                dane = biblioteka.widok(con, zapytania_budzet.planowanie(con))
             elif sciezka == 'budzet/ostatni':
                 dane = {'ostatni': zapytania_budzet.ostatni(con)}
             elif sciezka == 'budzet/lista':

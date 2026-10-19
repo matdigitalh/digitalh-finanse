@@ -59,8 +59,9 @@ Object.assign(WIDOKI, {
   async 'budzet/arkusze'() {
     const d = await api('budzet/drzewo');
     const imp = d.import;
-    const foldery = d.foldery.map(f => `<section class="folder"><h2 class="sekcja">${esc(f.folder)} <span class="szary">${zl(f.saldo)}</span></h2>
-      ${Object.entries(f.kategorie).map(([k, ark]) => `<div class="kategoria"><h3>${esc(k)}</h3>
+    const doBib = (f, k) => `#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(f)}${k ? `&kategoria=${encodeURIComponent(k)}` : ''}`;   // A-BUD-08
+    const foldery = d.foldery.map(f => `<section class="folder"><h2 class="sekcja"><a class="naglowek-miejsca" href="${doBib(f.folder)}" title="Foldery i kategorie w Bibliotece">${esc(f.folder)}</a> <span class="szary">${zl(f.saldo)}</span></h2>
+      ${Object.entries(f.kategorie).map(([k, ark]) => `<div class="kategoria"><h3><a class="naglowek-miejsca" href="${doBib(f.folder, k)}">${esc(k)}</a></h3>
         ${ark.map(a => `<a class="arkusz-link" href="#/budzet/arkusz?id=${a.id}"><span>${esc(a.nazwa)}</span>
           <small>${mies(a.od)} – ${mies(a.do)} · ${a.wierszy} wierszy${a.po_terminie ? ` · <b class="minus">${a.po_terminie} po terminie</b>` : ''}</small>
           <b class="${a.saldo < 0 ? 'minus' : ''}">${zl(a.saldo, false)}</b></a>`).join('')}</div>`).join('')}</section>`).join('');
@@ -483,15 +484,19 @@ function kartaWiersza(w, d, wstepne = {}) {
   };
 }
 
-function kartaArkusza(a, drzewo) {
+async function kartaArkusza(a, drzewo) {
   const k = $('#karta');
-  const foldery = drzewo.foldery.map(f => f.folder);
-  const kategorie = [...new Set(drzewo.foldery.flatMap(f => Object.keys(f.kategorie)))];
+  // pakiet 4: także puste foldery i kategorie z Biblioteki (A-BUD-05: pusty folder można wybrać przy dodawaniu arkusza)
+  const bib = await api('budzet/biblioteka').catch(() => null);
+  const struktura = bib ? bib.struktura.filter(f => !f.systemowy) : drzewo.foldery.map(f => ({ folder: f.folder, kategorie: Object.keys(f.kategorie).map(x => ({ kategoria: x })) }));
+  const foldery = struktura.map(f => f.folder);
+  const kategorie = [...new Set(struktura.flatMap(f => f.kategorie.map(x => x.kategoria)))];
+  const start = (STAN?.naleznosci?.dzien_stanu || new Date().toISOString()).slice(0, 7);   // A-OPS-01: 12 mies. od bieżącego
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${a ? 'Arkusz' : 'Nowy arkusz'}</h2>
     <div class="formularz">${pole('', 'Nazwa', '<input id="a-nazwa">')}
       ${pole('', 'Folder (klient albo obszar)', `<input id="a-folder" list="a-foldery">`)}<datalist id="a-foldery">${foldery.map(f => `<option value="${esc(f)}">`).join('')}</datalist>
       ${pole('', 'Kategoria (możesz wpisać nową)', `<input id="a-kategoria" list="a-kategorie">`)}<datalist id="a-kategorie">${kategorie.map(f => `<option value="${esc(f)}">`).join('')}</datalist>
-      ${pole('', 'Od miesiąca', '<input id="a-od" type="month">')}${pole('', 'Do miesiąca', '<input id="a-do" type="month">')}</div>
+      ${pole('', 'Od miesiąca', `<input id="a-od" type="month" value="${start}">`)}${pole('', 'Do miesiąca', `<input id="a-do" type="month" value="${nastMies(start, 11)}">`)}</div>
     <div class="akcje"><button class="glowny" id="a-zapisz">Zapisz arkusz</button></div>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };

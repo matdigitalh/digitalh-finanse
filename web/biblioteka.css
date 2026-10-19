@@ -1,0 +1,67 @@
+/* Biblioteka budżetu (pakiet 4): słowniki, foldery i kategorie. Tylko tokeny kolorów z styl.css (oba tryby). */
+
+/* Foldery i kategorie: trzy kolumny jak w BS (Folder | Kategoria | Arkusze) */
+.bib-struktura { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); max-width: 1160px; border: 1px solid var(--linia); background: var(--tlo); }
+.bib-kol { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--linia); }
+.bib-kol:last-child { border-right: none; }
+.bib-kol h3 { margin: 0; padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--fiolet); border-bottom: 1px solid var(--linia); }
+.bib-kol h3 .szary { font-weight: 400; }
+.bib-lista { max-height: calc(100vh - 330px); min-height: 160px; overflow-y: auto; padding: 4px 0; }
+.bib-poz { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 8px 2px 12px; font-size: 12px; }
+.bib-poz > a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tekst); }
+.bib-poz > a:hover { color: var(--fiolet); text-decoration: none; }
+.bib-poz:hover { background: var(--tlo-2); }
+.bib-poz.aktywna { background: var(--fiolet-tlo); }
+.bib-poz.aktywna > a { color: var(--fiolet); font-weight: 600; }
+.bib-poz.systemowy > a { color: var(--tekst-2); font-style: italic; }
+.bib-poz .licz { color: var(--tekst-2); font-variant-numeric: tabular-nums; min-width: 16px; text-align: right; }
+.bib-poz.ark { flex-wrap: wrap; gap: 2px 10px; padding-top: 5px; padding-bottom: 5px; border-bottom: 1px solid var(--linia-2); }
+.bib-poz.ark > a { color: var(--fiolet); flex-basis: 100%; }
+.bib-poz.ark select { height: 24px; max-width: 100%; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--fiolet); font: inherit; font-size: 11px; }
+.bib-ikony { display: inline-flex; gap: 0; visibility: hidden; }
+.bib-poz:hover .bib-ikony, .bib-poz:focus-within .bib-ikony, .bib-ikony.widoczne { visibility: visible; }
+.bib-ikony .przycisk-ikona { width: 22px; height: 22px; }
+.bib-ikony .przycisk-ikona svg.ik { width: 14px; height: 14px; }
+.bib-ikony .przycisk-ikona:disabled { opacity: .35; cursor: default; background: none; }
+.bib-ikony .przycisk-ikona[aria-disabled="true"] { opacity: .35; }
+.bib-input { flex: 1; min-width: 0; height: 26px; border: 1px solid var(--fiolet-2); border-radius: 4px; padding: 0 8px; background: var(--tlo); color: var(--tekst); font: inherit; font-size: 12px; }
+.bib-dodaj { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--linia); }
+.bib-dodaj .bib-input { flex-basis: 100%; }
+.pusto-lista { padding: 10px 12px; color: var(--tekst-2); font-size: 12px; line-height: 1.5; }
+
+/* Karta kontrahenta: ustawienia domyślne w dwóch kolumnach */
+.bib-ust { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.bib-ust .pole select, .bib-ust .pole input { width: 100%; box-sizing: border-box; }
+.bib-przel { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
+/* Łączenie duplikatów: kandydaci i wybór danych, które zostają */
+.bib-kandydaci { position: static; display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; padding: 0; gap: 0; box-shadow: none; border-radius: 0; }
+.bib-kandydaci button { all: unset; display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 12px; cursor: pointer; color: var(--tekst); }
+.bib-kandydaci button:hover { background: var(--fiolet-tlo); color: var(--fiolet); }
+.bib-wybor { width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0; }
+.bib-wybor th, .bib-wybor td { text-align: left; vertical-align: top; padding: 6px 6px; border-bottom: 1px solid var(--linia-2); }
+.bib-wybor th { color: var(--fiolet); font-weight: 600; }
+.bib-wybor td:first-child { color: var(--tekst-2); white-space: nowrap; }
+.bib-wybor label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; word-break: break-word; }
+.bib-wybor input { accent-color: var(--fiolet); margin: 2px 0 0; }
+
+/* Lista w komórce arkusza: link „Edycja …” na dole (A-ARK-14) */
+.ark-lista .ark-edycja { display: block; padding: 7px 12px; border-top: 1px solid var(--linia); color: var(--fiolet); font-size: 12px; position: sticky; bottom: 0; background: var(--tlo); }
+.ark-lista .ark-edycja:hover { background: var(--fiolet-tlo); text-decoration: none; }
+
+/* Klik w folder i kategorię w drzewie budżetu otwiera Bibliotekę (A-BUD-08) */
+.wysuw a.folder-wysuw, .wysuw a.kat-wysuw { text-decoration: none; }
+.wysuw a.kat-wysuw { display: block; }
+.wysuw a.folder-wysuw:hover, .wysuw a.kat-wysuw:hover { color: var(--fiolet); }
+.drzewo a.naglowek-miejsca { color: inherit; }
+.drzewo a.naglowek-miejsca:hover { color: var(--fiolet); text-decoration: none; }
+
+/* Wybór folderu i kategorii w karcie arkusza: lista w karcie, nie wyskakująca (Zarządzaj, Zmień folder / kategorię) */
+.karta .dwie-kolumny .wybor-lista { position: static; display: flex; flex-direction: column; gap: 0; padding: 0; max-height: 220px; box-shadow: none; border-radius: 0; }
+.karta .dwie-kolumny .wybor-lista button { padding: 6px 10px; }
+
+@media (max-width: 900px) {
+  .bib-struktura { grid-template-columns: 1fr; }
+  .bib-kol { border-right: none; border-bottom: 1px solid var(--linia); }
+  .bib-ust { grid-template-columns: 1fr; }
+}

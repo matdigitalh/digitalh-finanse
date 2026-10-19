@@ -350,11 +350,13 @@ def _roznica_mies(z: str, na: str) -> int:
 
 def _stan(model: dict) -> dict:
     """Stan roboczy modelu: obiekty po ID, kwoty komórek {(wiersz, miesiąc): grosze} i ręczne zmiany planów z komórek."""
+    from . import biblioteka
     return {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
             'platnosc': {p['id']: p for p in model['platnosci']},
             'komorka': {(k['wiersz'], k['miesiac']): k['kwota'] for k in model.get('komorki', [])},
             'nadpisane': dict(model.get('nadpisane', {})), 'parametry': dict(model.get('parametry') or parametry_planu()),
-            'podzialy': dict(model.get('podzialy', {}))}   # podział komórki z kopii BS (pakiet 6): '<wiersz>:<miesiąc>'
+            'podzialy': dict(model.get('podzialy', {})),   # podział komórki z kopii BS (pakiet 6): '<wiersz>:<miesiąc>'
+            **biblioteka.stan(model)}   # pakiet 4: słowniki i struktura folderów (Biblioteka)
 
 
 def parametry_planu() -> dict:
@@ -792,6 +794,21 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
     op = d['op']
     akcje = {'scal': _scal, 'podziel': _podziel, 'duplikuj': _duplikuj, 'przesun_arkusz': _przesun_arkusz,
              'duplikuj_arkusz': _duplikuj_arkusz}
+    # pakiet 4: Biblioteka (słowniki, foldery i kategorie) i miejsce arkusza w strukturze (biblioteka.py)
+    from . import biblioteka
+    if op in ('slownik', 'struktura'):
+        return biblioteka.zastosuj(st, d, scisle)
+    if scisle and op in ('arkusz', 'duplikuj_arkusz') and not d.get('usun') and (powod := biblioteka.sprawdz_miejsce(st, d['obiekt'])):
+        return powod, None, d['obiekt']['id']
+    if op == 'wiersz' and d.get('domyslne') and d['obiekt']['id'] not in wie:
+        # nowy wiersz z „Dodaj +”: brakujące pola z ustawień kontrahenta albo kontrahenta domyślnego (A-KOL-04, 05);
+        # przy zapisie wpis dostaje pełny wiersz, więc historia nie zależy od późniejszych zmian w Bibliotece
+        d_pelny = {**d, 'obiekt': biblioteka.uzupelnij_wiersz(st, d['obiekt'])}
+        d_pelny.pop('domyslne')
+        if scisle:
+            d.update(d_pelny)
+            d.pop('domyslne', None)
+        d = d_pelny
     if op in akcje:
         return akcje[op](st, d, scisle)
     if op == 'komorka':
@@ -989,6 +1006,8 @@ def _zastosuj_wpis(st: dict, w: dict, stare: dict, scisle: bool = False, dzis: s
         if powod:
             return (f'operacja {i} z {len(ops)}: {powod}' if len(ops) > 1 else powod), []
         wykonane.append((o, bylo, oid))
+    from . import biblioteka
+    biblioteka.wchlon(roboczy, ops)   # pakiet 4: nowe wartości i foldery z tego wpisu trafiają do Biblioteki
     st.update(roboczy)
     return None, wykonane
 
@@ -1024,6 +1043,8 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict]) -> list[dict]:
     model['podzialy'] = st['podzialy']
     model['parametry'] = st['parametry']
     model['osierocone'] = osierocone
+    from . import biblioteka
+    biblioteka.odloz(model, st)   # pakiet 4: słowniki i struktura po zdarzeniach
     return historia
 
 
@@ -1202,6 +1223,8 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_osierocone (wpis, czas, mac, op, obiekt, powod) VALUES (?,?,?,?,?,?)',
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))
+    from . import biblioteka
+    biblioteka.zapisz(con, model)   # pakiet 4: Biblioteka (słowniki, foldery i kategorie)
     wynik = {**ile}   # liczby budżetu z importu (albo kopii) i zmian, bez arkusza systemowego (podatki w meta „podatki”)
     if info.get('kopia'):   # pakiet 6: budżet z kopii; nowy eksport BS tylko porównujemy (okres równoległy)
         k = info['kopia']

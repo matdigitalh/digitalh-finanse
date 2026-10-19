@@ -253,6 +253,63 @@ budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikat
 - Testy: `testy/test_pakiet3.py` (scal, podziel, duplikuj, usuń, przenieś, limit wierszy, zakres, przesunięcie, duplikat arkusza,
   usunięcie arkusza, odstępstwa, karta komórki, plan na inny miesiąc, ostatnia zmiana do cofnięcia, komunikaty).
 
+## Pakiet 4: struktura budżetu i Biblioteka (2026-10-19)
+
+Reguły w `finanse/biblioteka.py`, ekran Budżet, Biblioteka (`web/biblioteka.js`, `web/biblioteka.css`), API `GET /api/budzet/biblioteka`.
+
+- **Model.** Słowniki (kontrahenci, przedmioty transakcji, sekcje, metody płatności) i struktura folderów i kategorii są częścią
+  stanu budżetu, obok arkuszy i wierszy. Zmiany to zdarzenia `bud` z nowymi operacjami `slownik` (dodaj, zmien, polacz, usun)
+  i `struktura` (dodaj_folder, dodaj_kategorie, zmien_folder, zmien_kategorie, usun_folder, usun_kategorie, kolejnosc), więc
+  działają jak reszta budżetu: próba na modelu z blokadami, cały wpis albo nic, seria, Historia zmian, Cmd+Z. Bez wpisów
+  słowniki i struktura wynikają z danych (kopia z BS albo import): każda nazwa z wierszy, płatności i ręcznych zmian planów,
+  foldery i kategorie z arkuszy; ustawienia domyślne kontrahenta z jego najczęstszego wiersza. Plików Mata nic nie przepisuje.
+  Tabele `bud_slownik` i `bud_struktura` w bazie; liczniki wystąpień liczy zapytanie.
+- **Wpisy systemowe.** Pusty kontrahent (na liście „Bez kontrahenta”) to kontrahent domyślny na start, z ustawieniami, które apka
+  wpisywała do nowego wiersza w pakiecie 3; pusty przedmiot to „Przedmiot transakcji”, pusta sekcja to „-”. Nie zmienisz ich nazwy
+  ani nie usuniesz. Wartości używane przez arkusz systemowy Opłaty urzędowe (Urząd Skarbowy, Przelew, przedmioty podatkowe) mają
+  znacznik „podatki” i nie dają się usunąć. Arkusze podatkowe z BS zastąpione przez arkusz systemowy nie liczą się do folderów.
+- **Biblioteka (A-KON-01 do 12).** Zakładki: Kontrahenci, Przedmioty transakcji, Sekcje, Metody płatności, Foldery i kategorie,
+  Arkusze budżetu. Słownik: licznik wystąpień (wiersze i płatności), sortowanie, wyszukiwarka, strony, zaznaczanie z paskiem
+  (Usuń tylko przy liczniku 0, Połącz zaznaczone), karta po kliknięciu: nazwa (zmiana przepina wszystkie wiersze, płatności
+  i ręczne zmiany planów), kontrahent: pełna nazwa, NIP (suma kontrolna, prefiks PL, numery VAT UE), „Domyślny dla nowych
+  wierszy” (zawsze dokładnie jeden), ustawienia domyślne (rodzaj, podstawa bez umów, VAT, dzień wystawienia, dni, metoda, split,
+  Księgowane, W cash flow, przedmiot, sekcja); przedmiot: domyślny; metoda: rachunek ING (główny, online, VAT, karta) i bank.
+  Pełna nazwa i NIP podpowiadają się z Fakturowni (nabywca o tej samej krótkiej nazwie, jednoznaczny NIP): szary NIP ze znakiem
+  zapytania, „Wpisz z Fakturowni” w karcie. **Łączenie duplikatów** (A-KON-06): drugi wpis z wyszukiwarki albo zaznaczone, wybór
+  nazwy i danych, które zostają; wszystkie wystąpienia przechodzą na jeden wpis jednym wpisem w pliku zmian.
+- **Nowy wiersz wg reguły BS (A-ARK-10, A-KOL-03 do 05).** Wiersz „Dodaj +” wysyła tylko pole pierwszej akcji z flagą `domyslne`;
+  serwer uzupełnia resztę: gdy pierwszą akcją był wybór kontrahenta, jego ustawienia domyślne, inaczej kontrahent domyślny i jego
+  ustawienia, przedmiot domyślny. Do pliku zmian trafia już pełny wiersz (historia nie zależy od późniejszych zmian w Bibliotece).
+  Wybór kontrahenta w istniejącym wierszu nie zmienia jego ustawień. Nowa nazwa wpisana w wierszu („Dodaj …”) trafia do Biblioteki
+  sama jako wpis uproszczony (pełna = skrócona, NIP pusty); nowy kontrahent dostaje bieżące ustawienia wiersza jako domyślne
+  (wiersz zaczęty od niego ma ustawienia kontrahenta domyślnego, więc te). Zmiana w wierszu nie zmienia Biblioteki. Na dole listy
+  w komórce link „Edycja kontrahentów …” (przedmiotów, sekcji, metod) do Biblioteki.
+- **Foldery i kategorie (A-BUD-05 do 11).** Trzy kolumny jak w BS (Folder, Kategoria, Arkusze): dodanie folderu z pierwszą
+  kategorią, nazwa folderu unikalna w całej apce, kategorii w folderze (bez względu na wielkość liter), zmiana nazwy ołówkiem
+  (✓ zapis, × anuluj, Enter, Esc; arkusze przechodzą razem), usunięcie pustego po potwierdzeniu albo z przeniesieniem arkuszy
+  (folder: kategorie z arkuszami do innego folderu, ta sama nazwa kategorii łączy się; kategoria: do innej kategorii; ostatniej
+  kategorii folderu nie usuniesz), kolejność strzałkami (drzewo budżetu i listy idą w tej kolejności), przeniesienie arkusza z listy.
+  Pusty folder istnieje, ale nie ma go w drzewie, dopóki nie ma arkusza; można go wybrać przy dodawaniu arkusza i w „Zmień folder /
+  kategorię”. Folder „System” zarezerwowany dla arkusza z podatkami. Klik w folder i kategorię w drzewie (panel Budżet i ekran
+  Arkusze budżetu) otwiera Bibliotekę na tym miejscu (A-BUD-08). Arkusz w folderze różniącym się tylko wielkością liter: odrzucony
+  na serwerze. Nowy arkusz: zakres domyślnie 12 miesięcy od bieżącego (A-OPS-01).
+- Zmiany w istniejących plikach: `budzet.py` (stan i zapis Biblioteki, operacje przez `_zastosuj_op`, uzupełnienie nowego wiersza,
+  wchłanianie nowych nazw po wpisie), `zmiany.py` (operacje `slownik`, `struktura`, flaga `domyslne`), `zapytania_budzet.py`
+  (listy w arkuszu, wzorce kontrahentów i kolejność drzewa z Biblioteki), `baza.py`, `odbudowa.py`, `serwer.py` (jedna ścieżka),
+  `web/arkusz.js` (link „Edycja …”, nowy wiersz i wklejanie z flagą, wybór miejsca arkusza ze struktury), `web/budzet.js`,
+  `web/app.js` (pozycja menu, linki w drzewie), `web/index.html`.
+- Testy: `testy/test_pakiet4.py` (słowniki z danych i liczniki, łączenie duplikatów jedną serią z cofnięciem, zmiana nazwy
+  wszędzie, blokada usuwania użytych, systemowych, domyślnych i podatkowych, NIP, ustawienia domyślne kontrahenta wg reguły BS
+  w pięciu wariantach, seria wszystko albo nic, foldery i kategorie: unikalność, zmiana nazwy, usuwanie z przeniesieniem,
+  kolejność, cofnięcie).
+
+Do dokończenia:
+- Pozostały przegląd w przeglądarce: tryb jasny, karta przedmiotu, sekcji i metody, wklejanie bloku do nowych wierszy.
+- Automatyczne dodawanie kontrahentów z importów (B-LIS-12, Fakturownia i ING jako nowe wpisy): jest tylko podpowiedź pełnej
+  nazwy i NIP-u z Fakturowni; apka nie tworzy płatności rzeczywistych z dokumentów w budżecie, więc nie ma momentu „zatwierdzenia”.
+- Przypinanie arkuszy i widoki arkusza: pakiet 11.
+- Wpisy Biblioteki sprzed przyjęcia kopii z BS przestają obowiązywać razem z innymi zmianami budżetu sprzed kopii (jak w pakiecie 6).
+
 ## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)
 
 Moduł `finanse/kopia_bs.py`, ekran Budżet, „Zgodność z BS i kopia” (`web/kopia_bs.js`), karta w Ustawieniach budżetu.

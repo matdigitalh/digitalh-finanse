@@ -119,6 +119,12 @@ CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), s
 CREATE TABLE widoki (ekran TEXT NOT NULL, id TEXT NOT NULL, nazwa TEXT, parametry TEXT, kolumny TEXT, usuniety INTEGER NOT NULL DEFAULT 0,
   wpis TEXT, czas TEXT, PRIMARY KEY (ekran, id));
 CREATE TABLE oznaczone (obiekt TEXT NOT NULL, ref TEXT NOT NULL, powod TEXT, wpis TEXT, czas TEXT, PRIMARY KEY (obiekt, ref));
+
+-- Pakiet 4 (biblioteka.py): słowniki Biblioteki (kontrahent, przedmiot, sekcja, metoda; dane wpisu jako JSON) i kolejność
+-- folderów i kategorii (kf, kk); systemowy = folder arkusza Opłaty urzędowe.
+CREATE TABLE bud_slownik (rodzaj TEXT NOT NULL, nazwa TEXT NOT NULL, dane TEXT, PRIMARY KEY (rodzaj, nazwa));
+CREATE TABLE bud_struktura (folder TEXT NOT NULL, kategoria TEXT NOT NULL, kf INTEGER, kk INTEGER, systemowy INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (folder, kategoria));
 """
 
 
