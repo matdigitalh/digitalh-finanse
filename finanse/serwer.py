@@ -84,6 +84,9 @@ def _sprawdz_odwolania(con, typ, dane):
         _sprawdz_bud(con, dane)
     if typ == 'danina':   # pakiet 8: kwota od biura, daty w granicach okresu
         podatki.sprawdz_wpis(dane, zmiany.wczytaj()[0], zapytania_budzet._dzien_stanu(con))
+    if typ == 'umowa':   # pakiet 9: folder klienta i arkusze przychodowe muszą istnieć w budżecie
+        from . import umowy
+        umowy.sprawdz_odwolania(con, dane)
     if typ == 'do_weryfikacji' and not dane.get('usun') and not con.execute(OBIEKTY_SQL[dane['obiekt']], (dane['ref'],)).fetchone():
         raise ValueError(f"nie ma pozycji {dane['ref']}")
     for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
@@ -202,12 +205,11 @@ class Obsluga(BaseHTTPRequestHandler):
                         else kopia_bs.zgodnosc(con, zmiany.wczytaj()[0]))
             elif sciezka == 'umowy':
                 from . import umowy
-                dane = umowy.lista(con)
+                dane = umowy.dla_arkusza(con, q['arkusz']) if q.get('arkusz') else umowy.lista(con)
             elif sciezka == 'cashflow':
                 dane = cashflow.prognoza(con)
-            elif sciezka == 'cashflow/okresy':
-                dane = cashflow.okresy(con, **{k: q.get(k) for k in ('granulacja', 'od', 'do', 'saldo_start', 'rodzaj', 'arkusz')},
-                                       scenariusz=q.get('scenariusz') or 'ostrozny')
+            elif sciezka == 'cashflow/okresy':   # pakiet 9: wszystkie filtry jak w BS (parametry po nazwie, nieznane pomijane)
+                dane = cashflow.okresy(con, **{k: v for k, v in q.items() if k not in ('pierwszy', 'con')})
             elif sciezka == 'podatki':
                 dane = podatki.widok(con)
             elif sciezka == 'rentownosc/klienci':

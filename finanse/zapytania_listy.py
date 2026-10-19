@@ -147,6 +147,9 @@ def lista(con, ekran: str, q: dict) -> dict:
            'strona': q.get('strona'), 'ile': q.get('ile'), 'q': q.get('q')}
     if ekran == 'platnosci':
         return platnosci(con, q)
+    if ekran == 'cashflow':   # pakiet 9: lista płatności wycinka cash flow (te same filtry co wykres)
+        from .cashflow import lista as lista_cashflow
+        return lista_cashflow(con, q)
     if ekran == 'bank':
         w = zapytania.operacje(con, rachunek=q.get('rachunek'), kierunek=q.get('kierunek'), wewnetrzne=q.get('wewnetrzne'), od=q.get('od'),
                                do=q.get('do'), daty=_daty_z(q, zapytania.DATY_OPERACJI), **{**wsp, 'sortuj': wsp['sortuj'] or 'data_ksiegowania',
@@ -221,9 +224,12 @@ WIDOKI_STARTOWE = {
 def widoki(con, ekran: str) -> list[dict]:
     """Widoki listy: startowe w stałej kolejności (zmienione przez Mata mają jego parametry), potem własne wg czasu.
     Widok usunięty znika; pierwszy startowy jest domyślny i nie znika."""
-    if ekran not in WIDOKI_STARTOWE:
+    if ekran == 'cashflow':   # pakiet 9: startowe widoki cash flow w cashflow.py (bez liczników w menu Płatności)
+        from .cashflow import WIDOKI_STARTOWE as start
+    elif ekran not in WIDOKI_STARTOWE:
         raise ValueError('nieznana lista')
-    start = WIDOKI_STARTOWE[ekran]
+    else:
+        start = WIDOKI_STARTOWE[ekran]
     startowe = {v['id']: {**v, 'startowy': True, 'zmieniony': False, 'domyslny': i == 0} for i, v in enumerate(start)}
     wlasne = []
     for r in con.execute('SELECT * FROM widoki WHERE ekran = ? ORDER BY czas, id', (ekran,)):

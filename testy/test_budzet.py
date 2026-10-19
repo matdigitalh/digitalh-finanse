@@ -166,7 +166,8 @@ class TestBudzet(unittest.TestCase):
         self.assertEqual(c['saldo_start'], 5000000)
         self.assertEqual(len(c['tygodnie']), 13)
         self.assertGreaterEqual(c['koniec']['pelny'], c['koniec']['ostrozny'])   # pełny ma dodatkowo zaległości i plany po terminie
-        self.assertEqual(len(c['po_terminie']), 1)
+        # pakiet 9: zaległości jak w BS (minął dzień realny), także plan połączony z fakturą po terminie (wcześniej liczony jako faktura)
+        self.assertEqual(len(c['po_terminie']), 2)
 
     def test_rentownosc_i_eksport(self):
         zmiany.zapisz('estymata', zmiany.sprawdz('estymata', {'klient': 'Alfa', 'udzial': '25'}))
