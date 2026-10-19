@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, odbudowa, podatki, rentownosc, wynik, zapytania,
                zapytania_budzet, zmiany)
+from .importy import podsumowanie as importy_podsumowanie, reczny
 
 mimetypes.add_type('font/woff2', '.woff2')   # font interfejsu leży lokalnie w web/fonty
 WEB = Path(__file__).resolve().parent.parent / 'web'
@@ -88,10 +89,10 @@ class Obsluga(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(tresc)
 
-    def _plik(self, nazwa: str, tresc: bytes):
+    def _plik(self, nazwa: str, tresc: bytes, typ: str = eksport.XLSX):
         from urllib.parse import quote
         self.send_response(200)
-        self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.send_header('Content-Type', typ)
         self.send_header('Content-Disposition', f"attachment; filename*=UTF-8''{quote(nazwa)}")
         self.send_header('Content-Length', str(len(tresc)))
         for k, v in NAGLOWKI.items():
@@ -184,18 +185,15 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = rentownosc.klienci(con, _rok(q))
             elif sciezka == 'rentownosc/arkusze':
                 dane = rentownosc.arkusze(con)
-            elif sciezka.startswith('eksport/'):
-                rodzaj = sciezka.split('/', 1)[1]
-                nazwa, tresc = (eksport.arkusz(con, q.get('id', '')) if rodzaj == 'arkusz' else eksport.cash_flow(con)
-                                if rodzaj == 'cashflow' else eksport.rentownosc_xls(con, _rok(q)) if rodzaj == 'rentownosc' else (None, None))
-                if rodzaj == 'kontrola-bs':
-                    r = kopia_bs.podglad() if q.get('podglad') else kopia_bs.zgodnosc(con, zmiany.wczytaj()[0])
-                    if not r.get('eksport'):
-                        raise ValueError('brak eksportu BS do porównania')
-                    nazwa, tresc = f"kontrola BS {r['eksport'].removesuffix('.csv')}.xlsx", kopia_bs.xlsx(r)
-                if not tresc:
-                    return self._json({'blad': 'nieznany eksport'}, 404)
-                return self._plik(nazwa, tresc)
+            elif sciezka == 'eksport/kontrola-bs':   # pakiet 6: raport kontroli sum kopii albo zgodności z BS (Excel)
+                r = kopia_bs.podglad() if q.get('podglad') else kopia_bs.zgodnosc(con, zmiany.wczytaj()[0])
+                if not r.get('eksport'):
+                    raise ValueError('brak eksportu BS do porównania')
+                return self._plik(f"kontrola BS {r['eksport'].removesuffix('.csv')}.xlsx", kopia_bs.xlsx(r))
+            elif sciezka.startswith('eksport/'):   # pakiet 10: plik do pobrania, te same parametry co zapytanie ekranu
+                return self._plik(*eksport.plik(con, sciezka.split('/', 1)[1], q))
+            elif sciezka.startswith('importy/'):   # pakiet 10: historia i podsumowanie importów
+                dane = importy_podsumowanie.api(con, sciezka.split('/', 1)[1], q)
             elif sciezka == 'konta-reklamowe':
                 dane = zapytania.konta_reklamowe(con)
             elif sciezka == 'nieprzypisane-grupy':
@@ -235,7 +233,31 @@ class Obsluga(BaseHTTPRequestHandler):
             return self._zmiana()
         if u.path == '/api/kopia-bs':
             return self._kopia_bs()
+        if u.path == '/api/import':
+            return self._import(parse_qs(u.query).get('tryb', ['podglad'])[0])
         self._json({'blad': 'nieznany adres'}, 404)
+
+    def _import(self, tryb: str):
+        """Pakiet 10: plik przeciągnięty do okna (treść w ciele, nazwa w nagłówku X-Nazwa-Pliku). Podgląd niczego nie
+        zapisuje; „zapisz” kładzie surowy plik w Dane/ (600) i przelicza bazę."""
+        from urllib.parse import unquote
+        try:
+            dlugosc = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            dlugosc = -1
+        if not 0 < dlugosc <= reczny.MAKS_ROZMIAR:
+            return self._json({'blad': 'pusty plik albo większy niż 20 MB'}, 413 if dlugosc > 0 else 400)
+        tresc = self.rfile.read(dlugosc)
+        nazwa = unquote(self.headers.get('X-Nazwa-Pliku', ''))
+        try:
+            with BLOKADA:
+                wynik_ = reczny.przyjmij(tresc, nazwa, zapisz=tryb == 'zapisz')
+        except (ValueError, OSError) as e:
+            return self._json({'blad': f'nie udało się zapisać pliku: {e}'}, 400)
+        if wynik_.get('zapisano') and wynik_.get('cel'):
+            raport = odbuduj_jesli_trzeba(wymus=True)
+            wynik_['bledy'] = raport['bledy'] if raport else []
+        self._json(wynik_)
 
     def _zmiana(self):
         """Decyzja Mata (połącz, bez faktury, zatwierdź, odrzuć, poza bankiem, cofnij): dopisanie do pliku zmian

@@ -1,6 +1,6 @@
 'use strict';
 // Budżet jak w Budget Studio (folder → kategoria → arkusz), listy płatności planu, rozjazdy, historia, ustawienia,
-// cash flow, rentowność klientów i arkuszy, eksport. Korzysta z funkcji z app.js (api, zmiana, tabela, zl, ...).
+// cash flow, rentowność klientów i arkuszy. Korzysta z funkcji z app.js (api, zmiana, tabela, zl, ...).
 
 const ETAPY_KLASA = { 'Opłacona': 'plus', 'Planowana': 'neutral', 'Po terminie': 'minus', 'Wystawiona': 'akcent',
   'Częściowo opłacona': 'ostrzezenie', 'Opłacona wg BS': 'ostrzezenie', 'Nieaktualna': 'neutral' };
@@ -198,15 +198,6 @@ Object.assign(WIDOKI, {
     return `<h1>Arkusze: plan i wykonanie</h1><div class="okruszki">Rentowność / budżet</div>
       <p class="notka">Plan: wszystkie aktualne pozycje arkusza (netto). Wykonanie: pozycje opłacone według banku (przychód przez fakturę, koszt przez przelew).</p>
       ${tabela({ kolumny: kol, dane: lista, poczatek: 1, sortLokalny: true, onWiersz: x => { location.hash = `#/budzet/arkusz?id=${x.id}`; } })}`;
-  },
-
-  async eksport() {
-    return `<h1>Eksport</h1>
-      <div class="zakladki" role="tablist"><button role="tab" aria-selected="true">${ik('arkusz')}Excel</button></div>
-      <div class="kafle"><a class="kafel klik" href="/api/eksport/cashflow"><div class="tytul">${ik('fale')}Cash flow</div><div class="wartosc">13 tygodni</div><div class="dop">tygodnie, pozycje, saldo dzienne</div></a>
-        <a class="kafel klik" href="/api/eksport/rentownosc"><div class="tytul">${ik('wykres')}Rentowność</div><div class="wartosc">klienci i arkusze</div><div class="dop">obrót, koszty, marża, plan i wykonanie</div></a>
-        <a class="kafel klik" href="#/budzet/arkusze"><div class="tytul">${ik('arkusz')}Arkusz budżetu</div><div class="wartosc">wybierz arkusz</div><div class="dop">w arkuszu: Zarządzaj, Eksport arkusza do Excela</div></a></div>
-      <p class="notka">Pliki powstają z danych na dziś, w tym komputerze; nic nie wychodzi do internetu.</p>`;
   },
 });
 
