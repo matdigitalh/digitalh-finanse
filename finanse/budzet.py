@@ -795,6 +795,9 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     model = json.loads(json.dumps(model))   # kopia, plik zostaje nietknięty
     historia = zastosuj_zdarzenia(model, wpisy)
     generuj_cykliczne(model)
+    ile = {'arkuszy': len(model['arkusze']), 'wierszy': len(model['wiersze']), 'platnosci': len(model['platnosci'])}
+    from . import podatki   # pakiet 8: arkusz systemowy „Opłaty urzędowe” zamiast wierszy podatkowych z BS
+    podatki.dolacz(model, wpisy, con)
     for a in model['arkusze']:
         con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo) VALUES (?,?,?,?,?,?,?)',
                     (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', '')))
@@ -832,7 +835,7 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_osierocone (wpis, czas, mac, op, obiekt, powod) VALUES (?,?,?,?,?,?)',
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))
-    wynik = {'arkuszy': len(model['arkusze']), 'wierszy': len(model['wiersze']), 'platnosci': len(model['platnosci'])}
+    wynik = {**ile}   # liczby budżetu z importu i zmian, bez arkusza systemowego (podsumowanie podatków w meta „podatki”)
     if model['osierocone']:
         wynik['osierocone'] = len(model['osierocone'])
     return wynik

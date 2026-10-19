@@ -35,6 +35,7 @@ TYPY = {
     'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
     'umowa': ('id',),                         # umowa z klientem (rejestr umów)
+    'danina': ('danina', 'okres'),            # kwota od biura za okres VAT/CIT (zamraża go), termin, dzień realny (pakiet 8)
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
 }
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria')
@@ -51,6 +52,12 @@ def sprawdz(typ: str, dane) -> dict:
     czyste = {}
     if typ == 'bud':
         return _sprawdz_bud(dane)
+    if typ == 'danina':
+        from .podatki import sprawdz_danine
+        return sprawdz_danine(dane)
+    if typ == 'ustawienie' and dane.get('klucz') == 'podatki':   # ustawienia podatkowe (pakiet 8), część pól wystarczy
+        from .podatki import sprawdz_ustawienia
+        return {'klucz': 'podatki', 'wartosc': sprawdz_ustawienia(dane.get('wartosc'))}
     if typ == 'ustawienie':
         if dane.get('klucz') not in USTAWIENIA or dane.get('wartosc') not in USTAWIENIA[dane.get('klucz')]:
             raise ValueError('nieznane ustawienie')

@@ -29,6 +29,7 @@ def odcisk_kodu() -> str:
     h.update(Path(laczenie.__file__).read_bytes())
     h.update((Path(budzet.__file__).parent / 'plan.py').read_bytes())
     h.update((Path(budzet.__file__).parent / 'umowy.py').read_bytes())
+    h.update((Path(budzet.__file__).parent / 'podatki.py').read_bytes())
     return h.hexdigest()[:16]
 
 

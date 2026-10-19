@@ -56,7 +56,8 @@ class Baza(unittest.TestCase):
 
 class TestStabilneId(Baza):
     def test_id_platnosci_bez_hasha_wiersza_i_mapa_deterministyczna(self):
-        ids = {r[0] for r in self.con.execute('SELECT id FROM bud_platnosc')}
+        # ID z importu (wiersze podatkowe BS w bazie zastępuje arkusz systemowy z pakietu 8)
+        ids = {p['id'] for p in json.loads(budzet.plik_importu().read_text(encoding='utf-8'))['platnosci']}
         self.assertEqual(ids, {'bs:1', 'bs:2', 'bs:3', 'bs:4', 'bs:5', 'bs:6', 'bs:6:2'})   # ID 6 dwa razy w eksporcie
         mapa = budzet.plik_mapy()
         self.assertEqual(mapa.stat().st_mode & 0o777, 0o600)
@@ -275,6 +276,8 @@ class TestListyPlanu(unittest.TestCase):
             zapisz_ing(srod.dane, 'ing_historia_2026-01-01_2026-10-13.csv', [operacja('2026-10-13', '-1,00', '100,00', 'ING', 'OPŁATA', ref='X')])
             wiersze = [bs(str(i), '1', 'Planowana', 'Bez faktury ', f'Klient {i % 7}', f'{i},00', '2026-11', '2026-11-20',
                           'Arkusz', 'Folder', 'Kategoria', f'opis {i % 3}') for i in range(1, 451)]
+            for w in wiersze:   # poza prognozą CIT (pakiet 8), żeby lista miała dokładnie te 450 płatności
+                w['Księgowane'] = 'Nie'
             zapisz_bs(srod, 'budget_studio_2026-10-13.csv', wiersze)
             odbudowa.odbuduj()
             con = baza.polacz(konfig.plik_bazy(), tylko_odczyt=True)
