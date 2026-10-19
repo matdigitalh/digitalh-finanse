@@ -185,8 +185,11 @@ function arkuszTabela(d, p) {
   const grupy = (ws, klucz) => { const g = new Map(); ws.forEach(w => { const e = etykietaGrupy(klucz, w); (g.get(e) || g.set(e, []).get(e)).push(w); }); return [...g]; };
   let tbody = '';
   if (sekcje) {
-    for (const [sek, ws] of grupy(wiersze, 'sekcja')) {
-      tbody += naglowekGrupy(sek, ws);
+    // kolejność sekcji = sortowanie kolumny Sekcja sprzed włączenia przełącznika (A-ARK-05); późniejsze sortowanie jej nie zmienia
+    const sek = grupy(wiersze, 'sekcja');
+    if (p.sekcje_kier) sek.sort(([a], [b]) => (p.sekcje_kier === 'malejaco' ? -1 : 1) * a.localeCompare(b, 'pl'));
+    for (const [sek_, ws] of sek) {
+      tbody += naglowekGrupy(sek_, ws);
       tbody += grupuj ? grupy(ws, grupuj).map(([e, xs]) => naglowekGrupy(e, xs, true) + xs.map(wiersz).join('')).join('') : ws.map(wiersz).join('');
     }
   } else if (grupuj) tbody = grupy(wiersze, grupuj).map(([e, ws]) => naglowekGrupy(e, ws) + ws.map(wiersz).join('')).join('');
@@ -267,7 +270,8 @@ function podepnijArkusz() {
   tab.querySelectorAll('th.sort').forEach(h => h.onclick = () => ustawParametry({ sortuj: h.dataset.sort,
     kolejnosc: p.sortuj === h.dataset.sort && p.kolejnosc !== 'malejaco' ? 'malejaco' : 'rosnaco' }));
   $('#ark-grupuj').onchange = e => ustawParametry({ grupuj: e.target.value });
-  $('#ark-sekcje').onchange = e => ustawParametry({ sekcje: e.target.checked ? '1' : '' });
+  $('#ark-sekcje').onchange = e => ustawParametry({ sekcje: e.target.checked ? '1' : '',
+    sekcje_kier: e.target.checked && p.sortuj === 'sekcja' ? (p.kolejnosc === 'malejaco' ? 'malejaco' : 'rosnaco') : '' });
   $('#ark-ustawienia').onchange = e => ustawParametry({ ustawienia: e.target.checked ? '1' : '' });
   $('#ark-karta').onclick = e => { e.stopPropagation(); otworzKarte(); };
   const dodaj = $('#dodaj-wiersz');
