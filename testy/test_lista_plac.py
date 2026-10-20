@@ -205,7 +205,7 @@ class TestNowePolaIPPK(Baza):
         zus = self.komorka('Anna Nowak', 'Umowa o pracę - ZUS', '2026-01')[0]
         self.assertEqual((p1['miesiac'], p1['termin'], p1['realny'], p1['etap']), ('2026-01', '2026-03-15', '2026-03-15', 'Opłacona'))
         self.assertEqual((p1['miesiac'], p1['termin']), (zus['miesiac'], zus['termin']))   # jak ZUS z tej listy
-        self.assertEqual(p1['ksiegowanie'][:7], '2026-01')
+        self.assertEqual(p1['ksiegowanie'][:7], '2026-03')   # księgowanie (CIT) jak w BS: miesiąc przelewu, bez zmian
         self.assertIn('w BS w komórce marzec 2026: 594,78 zł', p1['tytul'])
         f = laczenie.lista_plac(self.con, '2026-01')
         self.assertEqual({k: f['ppk'][k] for k in ('wiersz', 'miesiac', 'miesiac_budzetu', 'termin', 'bs', 'lista', 'roznica')},

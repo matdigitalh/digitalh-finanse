@@ -259,7 +259,9 @@ def _zastosuj_ppk(st: dict, m: str, pk: dict):
     p = {**_wspolne(m, pk['ref'], wz, pk['w']), 'id': id_rzeczywistej(pk['ref']), 'wiersz': cel, 'netto': suma, 'brutto': suma,
          'tytul': f'PPK z listy płac za {_mies_pl(m)}' + gdzie,
          'wystawienie': (wz or {}).get('wystawienie') or pk['termin'], 'termin': pk['termin'], 'realny': pk['termin'],
-         'ksiegowanie': f'{m}-01', 'skladniki': dict(pk['kwoty'])}
+         # miesiąc księgowania (CIT, oś „księgowanie”) bez zmian: jak w BS, miesiąc przelewu (decyzja Mata 2026-10-20 dotyczy
+         # miesiąca budżetowego; zmiana księgowania przesunęłaby zaliczki CIT, a z nimi cash flow)
+         'ksiegowanie': (wz or {}).get('ksiegowanie') or f"{pk['termin'][:7]}-01", 'skladniki': dict(pk['kwoty'])}
     st['platnosc'][p['id']] = p
     rek['czesci'].append({'wiersz': cel, 'miesiac': m, 'kwota': suma})
     rek['platnosci'].append(p['id'])
