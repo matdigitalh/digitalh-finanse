@@ -490,79 +490,117 @@ function kartaZamiany(p) {
     });
 }
 
-// ---------- Lista płac za miesiąc (decyzja Mata 12): kwoty od biura zastępują estymację ----------
-const SKL_LISTY = { osoba: 'Wypłata (na rękę)', us: 'PIT', zus: 'ZUS (wszystkie składki)' };
+// ---------- Lista płac za miesiąc (decyzja Mata 12, pola z 2026-10-20): kwoty od biura to dane rzeczywiste ----------
+// Zapis wpisem „lista_plac” (nie zdarzeniem budżetu): działa przy wyłączonym planowaniu, ma pierwszeństwo przed kwotami
+// z kopii BS i przetrwa przyjęcie kopii. Puste pole = brak na liście (zostaje kwota z BS albo planu), 0 = zero.
+const POLA_LISTY = [
+  ['osoba', 'Wypłata na konto'], ['us', 'PIT'], ['zus', 'ZUS (wszystkie składki)'], ['ppk_pracownik', 'PPK pracownika'],
+  ['ppk_pracodawca', 'PPK pracodawcy'], ['pakiet', 'Pakiet medyczny'], ['potracenia', 'Potrącenia z wypłaty']];
+const SKL_LISTY = Object.fromEntries(POLA_LISTY.slice(0, 3));
 
 WIDOKI['budzet/lista-plac'] = async p => {
   let d;
   try { d = await api('lista-plac', { miesiac: p.miesiac || '' }); } catch (e) { return `<h1>Lista płac</h1><div class="komunikat blad"><span>${esc(e.message)}</span></div>`; }
-  setTimeout(() => podepnijListePlac(d));
+  const dodane = (p.dodaj || '').split(',').filter(Boolean);
+  const kand = d.kandydaci.filter(k => dodane.includes(k.id)).map(k => ({ wiersz: k.id, kontrahent: k.kontrahent, komentarz: k.komentarz,
+    podstawa: k.podstawa, arkusz: k.arkusz, arkusz_id: '', umowa: false, skladowe: ['osoba', 'us', 'zus'], plan: {}, rzeczywiste: {}, wpisane: {},
+    bs: {}, z_listy: false, z_kopii: false, mozna: true, przelewy: [], dodany: true }));
+  const osoby = [...d.osoby.filter(o => o.mozna || o.z_listy), ...kand];
+  setTimeout(() => podepnijListePlac(d, osoby));
   const mies = [...new Set([d.miesiac, ...d.miesiace])].sort().reverse();
-  const osoby = d.osoby.filter(o => Object.keys(o.plan).length || Object.keys(o.rzeczywiste).length);
-  const komorka = (o, s) => {
-    if (!o.skladowe.includes(s) && o.umowa) return '<td class="liczba-kol szary">-</td>';
-    const wart = o.wpisane[s] ?? '';
-    return `<td class="liczba-kol"><input class="lp-kwota" data-lp="${esc(o.wiersz)}" data-s="${s}" inputmode="decimal" value="${wart === '' ? '' : zlWpis(wart)}"
-      placeholder="${o.plan[s] != null ? zlWpis(o.plan[s]) : ''}"${o.mozna && d.planowanie ? '' : ' disabled'}></td>`;
+  const komorka = (o, k) => {
+    if (o.umowa && ['osoba', 'us', 'zus'].includes(k) && !o.skladowe.includes(k)) return '<td class="liczba-kol szary">-</td>';
+    const wart = o.wpisane[k];
+    const pod = SKL_LISTY[k] ? (o.bs[k] ?? o.plan[k]) : null;
+    return `<td class="liczba-kol"><input class="lp-kwota${SKL_LISTY[k] ? '' : ' waska'}" data-lp="${esc(o.wiersz)}" data-s="${k}" inputmode="decimal"
+      value="${wart == null ? '' : zlWpis(wart)}" placeholder="${pod != null ? zlWpis(pod) : ''}"${o.mozna || o.z_listy ? '' : ' disabled'}>
+      ${SKL_LISTY[k] && o.bs[k] != null ? `<span class="lp-bs" title="kwota z kopii Budget Studio (estymacja)">BS ${zl(o.bs[k], false)}</span>` : ''}</td>`;
   };
-  const stan = o => o.z_listy ? '<span class="chip plus">wpisana</span>' : o.z_kopii ? '<span class="chip neutral">rzeczywiste z kopii BS</span>'
+  const stan = o => o.z_listy ? '<span class="chip plus">z listy płac</span>' : o.z_kopii ? '<span class="chip ostrzezenie">do wpisania (kwoty z BS)</span>'
+    : o.dodany ? '<span class="chip niebieski">nowy na liście</span>'
     : !Object.keys(o.plan).length ? '<span class="chip neutral">brak planu</span>' : o.termin_wyplaty && o.termin_wyplaty < d.dzien_stanu
       ? '<span class="chip ostrzezenie">wypłata minęła</span>' : '<span class="chip niebieski">estymacja</span>';
   const sumaBank = l => l.reduce((a, x) => a + x.kwota, 0);
+  const ppk = d.ppk;
+  const wierszePpk = d.kandydaci.concat(ppk.wiersz && !d.kandydaci.some(k => k.id === ppk.wiersz) ? [{ id: ppk.wiersz, kontrahent: ppk.wiersz, komentarz: '', arkusz: '' }] : []);
+  const roznica = v => v == null ? '-' : `<span class="${v > 0 ? 'minus' : v < 0 ? 'plus' : ''}">${zl(v, false)}</span>`;
   return `<h1>Lista płac za ${esc(miesPelny(d.miesiac))}</h1>
     <div class="pigulki"><label class="pigulka miekka">Miesiąc <select id="lp-mies">${mies.map(m => `<option value="${m}"${m === d.miesiac ? ' selected' : ''}>${esc(miesPelny(m))}</option>`).join('')}</select></label>
-      <span class="szary">Kwoty z listy płac od biura zastępują estymację z arkusza (plan wynagrodzenia jest zawyżony). Przelew z banku tylko podpowiada i oznacza opłacenie.</span></div>
+      <span class="szary">Kwoty z listy płac od biura to dane rzeczywiste: zastępują estymację z arkusza i kwoty z kopii Budget Studio (w BS są liczone z podziału procentowego). Działa też przy wyłączonym planowaniu. Przelew z banku tylko podpowiada i oznacza opłacenie.</span></div>
     ${d.ostrzezenia.map(o => `<div class="komunikat"><span>${esc(o.opis)}</span></div>`).join('')}
-    ${d.planowanie ? '' : '<div class="komunikat"><span>Planowanie w apce jest wyłączone, więc listy płac też nie zapiszesz (Budżet, Ustawienia budżetu).</span></div>'}
-    <div class="tabela-ramka niska"><table class="lp-tabela"><thead><tr><th>Osoba</th><th>Stan</th><th class="liczba-kol">Plan (estymacja)</th><th class="liczba-kol">Ostatnia lista</th>
-      ${Object.values(SKL_LISTY).map(n => `<th class="liczba-kol">${esc(n)}</th>`).join('')}<th class="liczba-kol">Razem</th><th class="liczba-kol">Przelew wypłaty</th></tr></thead><tbody>
-      ${osoby.map(o => `<tr data-wiersz="${esc(o.wiersz)}"><td><b>${esc(o.kontrahent || o.komentarz)}</b><br><span class="szary">${esc(o.podstawa)} · <a href="#/budzet/arkusz?id=${encodeURIComponent(o.arkusz_id)}">${esc(o.arkusz)}</a></span></td>
-        <td>${stan(o)}</td><td class="liczba-kol">${o.plan_razem ? zl(o.plan_razem, false) : '-'}</td>
-        <td class="liczba-kol">${o.ostatnia ? `${zl(o.ostatnia.razem, false)}<br><span class="szary">${esc(miesPelny(o.ostatnia.miesiac))}</span>` : '-'}</td>
-        ${['osoba', 'us', 'zus'].map(s => komorka(o, s)).join('')}<td class="liczba-kol" data-razem="${esc(o.wiersz)}">-</td>
+    <div class="tabela-ramka niska"><table class="lp-tabela"><thead><tr><th>Osoba</th><th>Stan</th><th>Data wypłaty</th>
+      ${POLA_LISTY.map(([, n]) => `<th class="liczba-kol">${esc(n)}</th>`).join('')}<th class="liczba-kol">Koszt pracodawcy</th><th class="liczba-kol">Różnica z BS</th><th class="liczba-kol">Przelew wypłaty</th></tr></thead><tbody>
+      ${osoby.map(o => `<tr data-wiersz="${esc(o.wiersz)}"><td><b>${esc(o.kontrahent || o.komentarz)}</b><br><span class="szary">${esc(o.podstawa)}${o.arkusz_id ? ` · <a href="#/budzet/arkusz?id=${encodeURIComponent(o.arkusz_id)}">${esc(o.arkusz)}</a>` : ` · ${esc(o.arkusz || '')}`}</span>
+          ${o.ostatnia ? `<br><span class="szary">ostatnia lista: ${zl(o.ostatnia.razem, false)} (${esc(miesPelny(o.ostatnia.miesiac))})</span>` : ''}</td>
+        <td>${stan(o)}</td><td><input type="date" class="lp-data" data-lp="${esc(o.wiersz)}" value="${esc(o.data_wyplaty || '')}"${o.mozna || o.z_listy ? '' : ' disabled'}></td>
+        ${POLA_LISTY.map(([k]) => komorka(o, k)).join('')}<td class="liczba-kol" data-razem="${esc(o.wiersz)}">-</td>
+        <td class="liczba-kol">${roznica(o.roznica_bs)}${o.bs_razem != null ? `<span class="lp-bs">BS razem ${zl(o.bs_razem, false)}</span>` : ''}</td>
         <td class="liczba-kol">${o.przelewy.length ? o.przelewy.map(x => `${zl(x.kwota, false)}<br><span class="szary">${esc(dataPl(x.data))}</span>`).join('<br>') : '<span class="szary">brak</span>'}</td></tr>`).join('')
-        || '<tr><td colspan="9" class="szary">Brak wierszy wynagrodzeń z planem w tym miesiącu (umowa o pracę, zlecenie, dzieło albo wiersz oznaczony do listy płac).</td></tr>'}
-      </tbody><tfoot><tr><td colspan="4">Przelewy z banku za ten miesiąc: PIT-4 ${d.bank.us.length ? zl(sumaBank(d.bank.us)) : 'brak'}, ZUS ${d.bank.zus.length ? zl(sumaBank(d.bank.zus)) : 'brak'}</td>
-        ${['osoba', 'us', 'zus'].map(s => `<td class="liczba-kol" data-suma="${s}">-</td>`).join('')}<td class="liczba-kol" data-suma="razem">-</td><td></td></tr></tfoot></table></div>
-    <div class="akcje">${d.planowanie ? `<button class="glowny" id="lp-zapisz">Zapisz listę płac</button>${osoby.some(o => o.z_listy) ? '<button id="lp-usun">Usuń listę za ten miesiąc (wraca estymacja)</button>' : ''}` : ''}
-      <span class="szary">Puste pole = 0 zł. Pozycja bez żadnej kwoty nie zapisze się: jej plan zostaje.</span></div>
-    ${d.planowanie && d.kandydaci.length ? `<h2 class="sekcja">${ik('plus')}Wiersz wynagrodzenia bez umowy</h2>
-      <p class="notka">Np. powołanie prezesa albo PPK zapisane w arkuszu jako „Bez faktury”. Oznaczony wiersz trafi na listę płac (jedna płatność na sumę wypłaty, PIT i ZUS) i nie dostanie dokumentów z Do połączenia.</p>
-      <div class="akcje"><select id="lp-kand">${d.kandydaci.map(k => `<option value="${esc(k.id)}">${esc(k.kontrahent || k.komentarz || k.id)} (${esc(k.arkusz)})</option>`).join('')}</select><button id="lp-kand-ok">Dodaj do listy płac</button></div>` : ''}`;
+        || '<tr><td colspan="13" class="szary">Brak wierszy wynagrodzeń z planem albo z kwotami z BS w tym miesiącu (umowa o pracę, zlecenie, dzieło albo wiersz bez faktury dodany do listy).</td></tr>'}
+      </tbody><tfoot><tr><td colspan="3">Przelewy z banku za miesiąc wypłaty: PIT-4 ${d.bank.us.length ? zl(sumaBank(d.bank.us)) : 'brak'}, ZUS ${d.bank.zus.length ? zl(sumaBank(d.bank.zus)) : 'brak'}</td>
+        ${POLA_LISTY.map(([k]) => `<td class="liczba-kol" data-suma="${k}">-</td>`).join('')}<td class="liczba-kol" data-suma="razem">-</td><td></td><td></td></tr></tfoot></table></div>
+    <p class="notka">Koszt pracodawcy = wypłata + ZUS + PIT + PPK pracownika i pracodawcy + pakiet medyczny + potrącenia (potrącenie, np. Luxmed, jest częścią wynagrodzenia brutto). Pakiet i potrącenia nie są osobną płatnością: opłaca je faktura za pakiet medyczny, która już jest w budżecie, więc nic nie liczy się dwa razy. Terminy: wypłata wg daty z listy, ZUS i PPK do 15., PIT do 20. dnia miesiąca po wypłacie.</p>
+    <h2 class="sekcja">${ik('kalendarz')}PPK z tej listy</h2>
+    <div class="lp-ppk"><label>Zbiorczy wiersz PPK w budżecie <select id="lp-ppk-w"><option value="">bez wiersza (PPK tylko w koszcie pracodawcy)</option>${wierszePpk.map(k => `<option value="${esc(k.id)}"${k.id === ppk.wiersz ? ' selected' : ''}>${esc(k.kontrahent || '')}${k.komentarz ? ` · ${esc(k.komentarz)}` : ''}${k.arkusz ? ` (${esc(k.arkusz)})` : ''}</option>`).join('')}</select></label>
+      <label>Komórka (miesiąc w BS) <input type="month" id="lp-ppk-m" value="${esc(ppk.miesiac || '')}"></label>
+      <label>Termin przelewu <input type="date" id="lp-ppk-t" value="${esc(ppk.termin || '')}"></label>
+      <span class="szary">W tej komórce BS ma ${ppk.bs != null ? zl(ppk.bs) : ppk.plan != null ? `plan ${zl(ppk.plan)}` : 'nic'}${ppk.wpisane ? `, z listy ${zl(ppk.lista)}, różnica ${roznica(ppk.roznica)}` : ''}. BS trzyma PPK wg miesiąca przelewu, więc lista za ${esc(miesPelny(d.miesiac))} trafia domyślnie do komórki miesiąca terminu; PPK z listy zastępuje to, co BS ma w tej komórce.</span></div>
+    ${d.ppk_mapa.length ? `<details class="notka"><summary>Mapa PPK: lista płac → komórka BS</summary><div class="tabela-ramka niska"><table><thead><tr><th>Komórka BS</th><th>Lista płac za</th><th>Termin</th><th class="liczba-kol">BS</th><th class="liczba-kol">Z listy</th><th class="liczba-kol">Różnica</th></tr></thead><tbody>
+      ${d.ppk_mapa.map(x => `<tr><td>${esc(miesPelny(x.komorka))}</td><td>${x.lista ? esc(miesPelny(x.lista)) : '<span class="szary">bez listy, kwota z BS</span>'}</td><td>${x.termin ? esc(dataPl(x.termin)) : ''}</td>
+        <td class="liczba-kol">${x.bs != null ? zl(x.bs, false) : '-'}</td><td class="liczba-kol">${x.z_listy != null ? zl(x.z_listy, false) : '-'}</td><td class="liczba-kol">${roznica(x.roznica)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    <h2 class="sekcja">${ik('weryfikuj')}Uwaga do listy</h2>
+    <textarea id="lp-uwaga" class="lp-uwaga" maxlength="500" placeholder="np. różnica ZUS z biurem do wyjaśnienia">${esc(d.uwaga || '')}</textarea>
+    <div class="akcje"><button class="glowny" id="lp-zapisz">Zapisz listę płac</button>${d.z_listy ? '<button id="lp-usun">Usuń listę za ten miesiąc (wraca BS albo estymacja)</button>' : ''}
+      <span class="szary">Puste pole = brak na liście: zostaje kwota z BS albo planu. Wpisz 0, gdy na liście jest zero.</span></div>
+    ${d.kandydaci.length ? `<h2 class="sekcja">${ik('plus')}Wiersz wynagrodzenia bez umowy</h2>
+      <p class="notka">Np. powołanie zarządu zapisane w arkuszu jako „Bez faktury” jedną kwotą brutto. Lista płac rozbije ją na wypłatę na konto, zdrowotną (ZUS) i PIT; suma kosztu się nie zmienia.</p>
+      <div class="akcje"><select id="lp-kand">${d.kandydaci.map(k => `<option value="${esc(k.id)}">${esc(k.kontrahent || k.komentarz || k.id)}${k.komentarz ? ` · ${esc(k.komentarz)}` : ''} (${esc(k.arkusz)})</option>`).join('')}</select><button id="lp-kand-ok">Dodaj do tej listy</button></div>` : ''}
+    ${d.koszt.length ? `<h2 class="sekcja">${ik('osoby')}Koszt pracy z list płac</h2><div class="tabela-ramka niska"><table><thead><tr><th>Lista za</th><th class="liczba-kol">Koszt pracodawcy</th><th class="liczba-kol">W budżecie (wypłaty, ZUS, PIT, PPK)</th><th class="liczba-kol">Przez fakturę za pakiet</th><th class="liczba-kol">Zastąpione kwoty BS</th></tr></thead><tbody>
+      ${d.koszt.map(x => `<tr><td><a href="#/budzet/lista-plac?miesiac=${x.miesiac}">${esc(miesPelny(x.miesiac))}</a></td><td class="liczba-kol">${zl(x.koszt_pracodawcy, false)}</td><td class="liczba-kol">${zl(x.platnosci, false)}</td><td class="liczba-kol">${zl(x.przez_fakture, false)}</td><td class="liczba-kol">${zl(x.bs_zastapione, false)}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
 };
 
-function podepnijListePlac(d) {
+function podepnijListePlac(d, osoby) {
   const s = $('#lp-mies');
   if (!s) return;
   s.onchange = () => { location.hash = `#/budzet/lista-plac?miesiac=${s.value}`; };
+  const wartosc = el => el.value.trim() === '' ? null : kwotaZTekstu(el.value);
   const sumuj = () => {
-    const sumy = { osoba: 0, us: 0, zus: 0 };
+    const sumy = Object.fromEntries(POLA_LISTY.map(([k]) => [k, 0]));
     document.querySelectorAll('tr[data-wiersz]').forEach(tr => {
       let r = 0;
-      tr.querySelectorAll('.lp-kwota').forEach(el => { const v = el.value.trim() ? kwotaZTekstu(el.value) : 0; if (!Number.isNaN(v)) { r += v; sumy[el.dataset.s] += v; } });
+      tr.querySelectorAll('.lp-kwota').forEach(el => { const v = wartosc(el); if (v != null && !Number.isNaN(v)) { r += v; sumy[el.dataset.s] += v; } });
       tr.querySelector('[data-razem]').textContent = r ? zl(r, false) : '-';
     });
     for (const k of Object.keys(sumy)) $(`[data-suma="${k}"]`).textContent = zl(sumy[k], false);
-    $('[data-suma="razem"]').textContent = zl(sumy.osoba + sumy.us + sumy.zus, false);
+    $('[data-suma="razem"]').textContent = zl(Object.values(sumy).reduce((a, x) => a + x, 0), false);
   };
   document.querySelectorAll('.lp-kwota').forEach(el => { el.oninput = sumuj; });
   sumuj();
-  const z = $('#lp-zapisz');
-  if (z) z.onclick = () => {
+  $('#lp-zapisz').onclick = () => {
     const poz = {};
     for (const el of document.querySelectorAll('.lp-kwota:not(:disabled)')) {
-      const v = el.value.trim() ? kwotaZTekstu(el.value) : 0;
-      if (Number.isNaN(v)) return komunikat('Kwoty wpisz liczbą, np. 6 716,06.', true);
-      (poz[el.dataset.lp] ||= { wiersz: el.dataset.lp, osoba: 0, us: 0, zus: 0 })[el.dataset.s] = v;
+      const v = wartosc(el);
+      if (v != null && (Number.isNaN(v) || v < 0)) return komunikat('Kwoty wpisz liczbą od zera, np. 6 716,06.', true);
+      const x = (poz[el.dataset.lp] ||= { wiersz: el.dataset.lp });
+      if (v != null) x[el.dataset.s] = v;
     }
-    const pozycje = Object.values(poz).filter(x => x.osoba || x.us || x.zus);
+    for (const el of document.querySelectorAll('.lp-data:not(:disabled)')) if (el.value && poz[el.dataset.lp]) poz[el.dataset.lp].data_wyplaty = el.value;
+    const pozycje = Object.values(poz).filter(x => POLA_LISTY.some(([k]) => x[k] != null));
     if (!pozycje.length) return komunikat('Wpisz kwoty z listy płac co najmniej jednej osoby.', true);
-    zmiana('bud', { op: 'lista_plac', miesiac: d.miesiac, pozycje });
+    const dane = { miesiac: d.miesiac, pozycje };
+    const w = $('#lp-ppk-w').value;
+    if (w) dane.ppk = { wiersz: w, ...($('#lp-ppk-m').value ? { miesiac: $('#lp-ppk-m').value } : {}), ...($('#lp-ppk-t').value ? { termin: $('#lp-ppk-t').value } : {}) };
+    const u = $('#lp-uwaga').value.trim();
+    if (u) dane.uwaga = u;
+    zmiana('lista_plac', dane);
   };
   const u = $('#lp-usun');
-  if (u) u.onclick = () => zmiana('bud', { op: 'lista_plac', miesiac: d.miesiac, usun: true, pozycje: d.osoby.filter(o => o.z_listy).map(o => ({ wiersz: o.wiersz })) });
+  if (u) u.onclick = () => zmiana('lista_plac', { miesiac: d.miesiac, usun: true });
   const k = $('#lp-kand-ok');
-  if (k) k.onclick = () => zmiana('bud', { op: 'wiersz', obiekt: { id: $('#lp-kand').value, lista_plac: true } });
+  if (k) k.onclick = () => {
+    const juz = osoby.filter(o => o.dodany).map(o => o.wiersz);
+    location.hash = `#/budzet/lista-plac?miesiac=${d.miesiac}&dodaj=${encodeURIComponent([...juz, $('#lp-kand').value].join(','))}`;
+  };
 }
 
 // ---------- Worek na karcie komórki: podpięte rzeczywiste, niezrealizowane plany tygodniowe, ręczne zamknięcie ----------

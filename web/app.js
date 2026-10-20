@@ -148,7 +148,7 @@ async function zmiana(typ, dane) {
   await pokaz();
   komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.', false,
     typ === 'bud' && typeof cofnijOstatni === 'function' ? { nazwa: 'Cofnij', akcja: cofnijOstatni }
-      : typ === 'rezerwa' && w.wpis ? { nazwa: 'Cofnij', akcja: () => zmiana('cofnij', { wpis: w.wpis }) } : null);
+      : (typ === 'rezerwa' || typ === 'lista_plac') && w.wpis ? { nazwa: 'Cofnij', akcja: () => zmiana('cofnij', { wpis: w.wpis }) } : null);
   return true;
 }
 

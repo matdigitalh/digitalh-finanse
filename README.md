@@ -359,11 +359,9 @@ Co działa:
 - **Zmień na rzeczywistą** na karcie planu (numer dokumentu, 1:1, nie worek, nie z przyszłym wystawieniem).
 - **Dodaj płatność** (formularz jak w BS: faktura albo bez faktury, walidacje dat BS).
 - **Opłacona** wyłącznie z banku; ręcznie tylko wyjątek poza bankiem i zawsze z datą przelewu (serwer odrzuca bez daty).
-- **Lista płac za miesiąc** (Budżet, decyzja 12): per osoba wypłata, PIT, ZUS z listy od biura zastępują estymację.
-  Obsługuje umowy w jednym wierszu i składowe z kopii BS w osobnych wierszach („Umowa o pracę - PIT” itd.). Plan
-  wynagrodzenia nigdy nie zamyka się sam (etap BS, przelew, zamiana planu); „Niewymagana” z BS nie jest opłacona i zostaje
-  w cash flow. Ostrzeżenia (a) lista niewpisana po terminie wypłaty, (b) estymacja niższa niż ostatnia lista, (c) lista
-  inna niż przelew o ponad 1 zł: na pulpicie, w arkuszu, w Do weryfikacji i na liście płac.
+- **Lista płac za miesiąc** (Budżet, decyzja 12): od 2026-10-20 dane rzeczywiste z osobnym wpisem, szczegóły w sekcji
+  „Lista płac jako dane rzeczywiste” niżej. Plan wynagrodzenia nigdy nie zamyka się sam (etap BS, przelew, zamiana planu);
+  „Niewymagana” z BS nie jest opłacona i zostaje w cash flow.
 - **Odłącz od budżetu** masowo: na liście Do połączenia (zakładka połączone), na liście płatności i w cash flow
   (przycisk nad listą płatności wycinka).
 - Rozjazdy „Faktura bez pozycji w BS” i „Wydatek z banku bez pozycji w BS”: klik prowadzi do ekranu łączenia, przycisk
@@ -371,8 +369,55 @@ Co działa:
 
 API: `GET /api/lista/do-polaczenia`, `GET /api/laczenie/dokument?ref=&q=`, `GET /api/laczenie/polaczone`,
 `GET /api/lista-plac?miesiac=`, `GET /api/ostrzezenia` (lista z polami `typ`, `opis`, `osoba`, `miesiac`, `kwota_gr`,
-`link`). Zdarzenia „bud”: `polacz`, `odlacz` (także `worek:`, `zamiana:`, `lista:`), `rzeczywista`, `zamien`,
-`lista_plac`, `zamknij_worek`. Kod: `finanse/budzet.py`, `finanse/laczenie.py`, `web/laczenie.js`, `web/laczenie.css`.
+`link`). Zdarzenia „bud”: `polacz`, `odlacz` (także `worek:`, `zamiana:`), `rzeczywista`, `zamien`, `zamknij_worek`
+(lista płac to od 2026-10-20 osobny wpis `lista_plac`, nie zdarzenie budżetu). Kod: `finanse/budzet.py`, `finanse/laczenie.py`, `web/laczenie.js`, `web/laczenie.css`.
+
+## Lista płac jako dane rzeczywiste (2026-10-20)
+
+Decyzja Mata 12 uzupełniona 2026-10-20 („żeby w aplikacji było dobrze”). Kod: `finanse/lista_plac.py` (silnik),
+`finanse/laczenie.py` (`lista_plac`, `ostrzezenia`), `web/laczenie.js` (ekran `#/budzet/lista-plac`), testy
+`testy/test_lista_plac.py`.
+
+- **Osobny wpis `lista_plac`, nie planowanie.** Lista płac od biura to dane rzeczywiste: zapis działa przy wyłączonym
+  planowaniu, w miesiącach z płatnościami z kopii BS i przed dniem „Łączenie w apce od”. Wpis leży w pliku zmian
+  (`zmiany/<Mac>.jsonl`) i jest nakładany na budżet po wszystkich zdarzeniach „bud”, przy każdej odbudowie, więc przetrwa
+  nowy eksport BS i przyjęcie kopii z BS (zdarzenia „bud” sprzed kopii przestają obowiązywać, lista płac nie). Obowiązuje
+  ostatni nie cofnięty wpis za miesiąc (cała lista to jedna decyzja); `usun` albo „Cofnij” przywraca BS albo estymację.
+  Serwer sprawdza wpis próbą na bieżącym budżecie (`budzet.sprawdz_liste`); zdarzenie „bud” `lista_plac` jest odrzucane,
+  a „odłącz” listy płac z list płatności i cash flow też (zmienia się ją tylko na ekranie listy).
+- **Pierwszeństwo przed BS.** Dla osoby, miesiąca i składowej kwota z listy zastępuje plan albo płatność rzeczywistą z kopii
+  BS (kwota BS to estymacja z podziałem procentowym). Zastąpiona płatność BS zostaje w zapisie połączenia: ekran listy pokazuje
+  kwotę BS przy każdym polu, razem i różnicę, tytuł płatności „Lista płac za … (w BS było …)”. Cash flow, rentowność budżetu,
+  koszt pracy i wynik liczą się z listy. W arkuszu komórka z listy ma znak „L”, płatność ma źródło „lista płac”. Płatność
+  połączona w apce w tej komórce (dokument) blokuje zapis z komunikatem.
+- **Pola per osoba:** wypłata na konto, PIT, ZUS (pracownika, pracodawcy, zdrowotna: jeden przelew), PPK pracownika,
+  PPK pracodawcy, pakiet medyczny, potrącenia z wypłaty (np. Luxmed), data wypłaty, uwaga; do miesiąca uwaga i PPK. Pole
+  puste = brak na liście: składowa zostaje jak w BS albo w planie (nic nie zgadujemy); 0 = zero.
+- **Terminy:** wypłata = data wypłaty z listy; ZUS i PPK do 15., PIT do 20. dnia miesiąca po miesiącu wypłaty (lista za
+  styczeń, wypłata 4.02: ZUS 15.03, PIT 20.03, PPK 15.03, zgodnie z przelewami w ING). Etap BS przechodzi z płatności
+  zastąpionej (lista poprawia kwotę, nie fakt zapłaty); „Opłacona” nadal z banku.
+- **PPK:** jedna płatność (suma PPK pracownika i pracodawcy wszystkich osób) w zbiorczym wierszu PPK z BS (domyślnie wiersz
+  bez faktury z „PPK” w komentarzu), w komórce wskazanej we wpisie. Domyślnie komórka = miesiąc terminu, bo BS trzyma PPK
+  wg miesiąca przelewu (komórka marzec 594,78 = lista za styczeń). PPK z listy zastępuje to, co BS ma w tej komórce, więc
+  nic się nie dubluje; komórki BS bez listy (np. styczeń i luty 2026 = PPK z list za XI i XII 2025) zostają. Mapa „lista →
+  komórka, BS, z listy, różnica” jest na ekranie listy płac. Bez wskazanego wiersza PPK zostaje tylko w koszcie pracodawcy.
+- **Pakiet medyczny i potrącenia** są częścią kosztu pracodawcy osoby, ale bez osobnej płatności: opłaca je faktura za pakiet
+  medyczny (Mediccentre 364 zł = pakiet 89 zł × 2 + potrącenia 80 i 106 zł), która już jest w budżecie. Osobna płatność
+  liczyłaby ten koszt dwa razy.
+- **Wiersz bez umowy** (powołanie zarządu, w BS jedna kwota brutto) trafia na listę wprost z ekranu („Dodaj do tej listy”):
+  dostaje trzy płatności (na konto, zdrowotna jako ZUS, PIT) zamiast jednej kwoty, suma bez zmian; wpis wymaga wszystkich
+  trzech części. Wiersz staje się wierszem listy płac (ostrzeżenia, bez dokumentów z Do połączenia).
+- **Koszt pracodawcy** = wypłata + ZUS + PIT + PPK pracownika i pracodawcy + pakiet + potrącenia; zgodny co do grosza
+  z kolumną „Koszt pracodawcy” w zestawieniu list płac (40 osobomiesięcy I–IX 2026). Ekran pokazuje go per osoba i w tabeli
+  „Koszt pracy z list płac” (koszt, w budżecie, przez fakturę za pakiet, zastąpione kwoty BS).
+- **Ostrzeżenia** (pulpit, arkusz, Do weryfikacji, ekran listy): dotychczasowe (a) lista niewpisana po terminie wypłaty,
+  (b) estymacja niższa niż ostatnia lista, (c) lista inna niż przelew o ponad 1 zł, plus „Lista płac do wpisania”: w miesiącu
+  są płatności wynagrodzeń z kopii BS, a listy nie ma. ZUS (DRA) i PIT-4 z list porównywane z przelewem za miesiąc wypłaty
+  (wcześniej ZUS porównywał się z okresem o miesiąc za wcześnie).
+- API: `GET /api/lista-plac?miesiac=` (osoby z polami `wpisane`, `bs`, `bs_razem`, `roznica_bs`, `koszt_pracodawcy`,
+  `data_wyplaty`; `ppk`, `ppk_mapa`, `koszt`, `uwaga`), zapis `POST /api/zmiana` z `typ: lista_plac`
+  (`{miesiac, pozycje: [{wiersz, osoba, us, zus, ppk_pracownik, ppk_pracodawca, pakiet, potracenia, data_wyplaty, uwaga}],
+  ppk: {wiersz, miesiac, termin}, uwaga}` albo `{miesiac, usun: true}`).
 
 ## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)
 

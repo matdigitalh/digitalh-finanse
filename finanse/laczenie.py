@@ -764,18 +764,33 @@ def _przelewy_osoby(w: dict, przelewy: list[dict]) -> list[dict]:
     return [x for x in przelewy if tok and tok & x['_tok']]
 
 
+def _meta_json(con, klucz: str, domyslnie):
+    r = con.execute('SELECT wartosc FROM meta WHERE klucz = ?', (klucz,)).fetchone()
+    return json.loads(r[0]) if r and r[0] else domyslnie
+
+
+def _bs_platnosc(p: dict) -> bool:
+    """Płatność rzeczywista z kopii BS (kwota BS to estymacja z podziałem procentowym; lista płac ją zastępuje)."""
+    return p['typ'] != 'plan' and bool(p.get('bs_id')) and not p.get('dokument')
+
+
 def lista_plac(con, miesiac: str | None = None) -> dict:
-    """GET /api/lista-plac?miesiac=: formularz „Lista płac za miesiąc”: osoby (wiersze umów i wiersze oznaczone do listy
-    płac) z planem (estymacja), ostatnią rzeczywistą kwotą, wpisaną listą i przelewami z banku jako podpowiedzią."""
+    """GET /api/lista-plac?miesiac=: formularz „Lista płac za miesiąc”: osoby (wiersze umów, wiersze listy płac, wiersze
+    bez faktury do dodania) z planem (estymacja), kwotami z kopii BS, wpisaną listą (wszystkie pola), kosztem pracodawcy,
+    różnicą z BS i przelewami z banku jako podpowiedzią; PPK (zbiorczy wiersz z BS, komórka, kwota BS i różnica, mapa
+    miesięcy) i koszt pracy w miesiącach z listą. Lista płac to dane rzeczywiste: zapis nie zależy od planowania."""
+    from . import lista_plac as lp
     from .zapytania_budzet import planowanie
     if miesiac and not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', miesiac):
         raise ValueError('miesiąc RRRR-MM')
     wiersze = _wiersze_wynagrodzen(con)
     kom = _komorki_wynagrodzen(con, wiersze)
-    miesiace = sorted({m for (_, m) in kom}, reverse=True)
+    pol = _meta_json(con, 'polaczenia', {})
+    listy = _meta_json(con, 'listy_plac', {})
+    miesiace = sorted({m for (_, m) in kom} | set(listy), reverse=True)
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0] or date.today().isoformat()
-    if not miesiac:   # domyślnie najstarszy miesiąc z minioną wypłatą bez listy, inaczej bieżący
-        brak = sorted(o['miesiac'] for o in ostrzezenia(con) if o['rodzaj'] == 'lista_niewpisana')
+    if not miesiac:   # domyślnie najstarszy miesiąc do wpisania (BS bez listy albo wypłata minęła), inaczej bieżący
+        brak = sorted(o['miesiac'] for o in ostrzezenia(con) if o['rodzaj'] in ('lista_niewpisana', 'lista_do_wpisania'))
         miesiac = brak[0] if brak else dzien[:7]
     przelewy = _przelewy_wynagrodzen(con)
     osoby = []
@@ -784,38 +799,98 @@ def lista_plac(con, miesiac: str | None = None) -> dict:
         skladowe = list(plan.UMOWY.get(w['podstawa'], ('osoba', 'us', 'zus')))
         ostatnia = max((m for (wid, m), v in kom.items() if wid == w['id'] and v['rzeczywiste'] and m < miesiac), default=None)
         rz = k['rzeczywiste']
-        z_listy = any(p['zrodlo'] == 'lista płac' for p in rz.values())
-        wpisane = {}
-        if z_listy:
-            if plan.jest_umowa(w['podstawa']):
-                wpisane = {s: rz[s]['netto'] for s in skladowe if s in rz}
-            else:
-                p = rz.get('osoba')
-                wpisane = json.loads(p['skladniki']) if p and p['skladniki'] else {'osoba': p['netto'] if p else 0}
+        rek = pol.get(f"lista:{miesiac}:{w['id']}")
+        z_listy = bool(rek)
+        bs = (rek or {}).get('bs') or ({} if z_listy else {s: p['netto'] for s, p in rz.items() if _bs_platnosc(p)})
+        wpisane = dict((rek or {}).get('kwoty') or {})
         osoba_plan = k['plany'].get('osoba') or {}
-        termin = osoba_plan.get('termin') or (rz.get('osoba') or {}).get('termin')
+        termin = (rz.get('osoba') or {}).get('termin') or osoba_plan.get('termin')
+        bs_razem = sum(v for v in bs.values() if v) if bs else None
         osoby.append({
             'wiersz': w['id'], 'kontrahent': w['kontrahent'] or '', 'komentarz': w['komentarz'] or '', 'podstawa': w['podstawa'],
             'arkusz': w['arkusz_nazwa'], 'arkusz_id': w['arkusz'], 'umowa': plan.jest_umowa(w['podstawa']), 'skladowe': skladowe,
             'plan': {s: p['netto'] for s, p in k['plany'].items()}, 'plan_razem': sum(p['netto'] for p in k['plany'].values()),
             'rzeczywiste': {s: p['netto'] for s, p in rz.items()}, 'z_listy': z_listy, 'wpisane': wpisane,
-            'z_kopii': bool(rz) and not z_listy, 'termin_wyplaty': termin,
+            'bs': bs, 'bs_razem': bs_razem, 'z_kopii': bool(bs) and not z_listy, 'termin_wyplaty': termin,
+            'data_wyplaty': (rek or {}).get('data_wyplaty'), 'uwaga': (rek or {}).get('uwaga') or '',
+            'koszt_pracodawcy': lp.koszt_pracodawcy(wpisane) if z_listy else None,
+            'roznica_bs': (sum(wpisane.get(s) or 0 for s in skladowe) - bs_razem) if z_listy and bs_razem is not None else None,
             'ostatnia': ({'miesiac': ostatnia, 'razem': sum(p['netto'] for p in kom[(w['id'], ostatnia)]['rzeczywiste'].values()),
                           'kwoty': {s: p['netto'] for s, p in kom[(w['id'], ostatnia)]['rzeczywiste'].items()}} if ostatnia else None),
             'przelewy': [{k2: v for k2, v in x.items() if k2 != '_tok'} for x in _przelewy_osoby(w, przelewy['osoba'].get(miesiac, []))],
-            'mozna': bool(k['plany']) and not (rz and not z_listy)})
-    termin_m = next((o['termin_wyplaty'] for o in osoby if o['termin_wyplaty']), None)
-    bank = {'us': przelewy['us'].get((termin_m or '')[:7], []), 'zus': przelewy['zus'].get(miesiac, [])}
+            'mozna': bool(k['plany'] or rz)})
+    termin_m = next((o['data_wyplaty'] or o['termin_wyplaty'] for o in osoby if o['data_wyplaty'] or o['termin_wyplaty']), None)
+    mies_wyplaty = (termin_m or '')[:7] or plan.przesun_miesiac(miesiac, 1)
+    bank = {'us': przelewy['us'].get(mies_wyplaty, []), 'zus': przelewy['zus'].get(mies_wyplaty, [])}
     kandydaci = [dict(r) for r in con.execute(
-        "SELECT w.id, w.kontrahent, w.komentarz, a.nazwa AS arkusz FROM bud_wiersz w JOIN bud_arkusz a ON a.id = w.arkusz"
-        " WHERE w.rodzaj = -1 AND w.podstawa IN ('Bez faktury', 'Bez faktury (w worku)') AND COALESCE(w.lista_plac, 0) = 0"
-        " AND COALESCE(a.zrodlo, '') != 'system' ORDER BY a.nazwa, w.kontrahent")]
+        "SELECT w.id, w.kontrahent, w.komentarz, w.przedmiot, w.podstawa, w.rodzaj, a.nazwa AS arkusz FROM bud_wiersz w"
+        " JOIN bud_arkusz a ON a.id = w.arkusz WHERE w.rodzaj = -1 AND w.podstawa IN ('Bez faktury', 'Bez faktury (w worku)')"
+        " AND COALESCE(w.lista_plac, 0) = 0 AND COALESCE(a.zrodlo, '') != 'system' ORDER BY a.nazwa, w.kontrahent")]
     return {'miesiac': miesiac, 'miesiace': miesiace, 'osoby': osoby, 'bank': bank, 'kandydaci': kandydaci, 'dzien_stanu': dzien,
-            'planowanie': planowanie(con), 'ostrzezenia': [o for o in ostrzezenia(con) if o.get('miesiac') == miesiac]}
+            'planowanie': planowanie(con), 'zapis': True, 'uwaga': (listy.get(miesiac) or {}).get('uwaga') or '',
+            'z_listy': miesiac in listy, 'ppk': _ppk_listy(con, miesiac, listy, pol, kandydaci, mies_wyplaty),
+            'ppk_mapa': _ppk_mapa(con, listy, pol), 'koszt': _koszt_miesiecy(listy, pol),
+            'ostrzezenia': [o for o in ostrzezenia(con) if o.get('miesiac') == miesiac]}
+
+
+def _ppk_listy(con, miesiac, listy, pol, kandydaci, mies_wyplaty) -> dict:
+    """PPK listy za miesiąc: wpisany wiersz i komórka albo domyślne (wiersz z „PPK” z BS, komórka = miesiąc terminu, bo BS
+    trzyma PPK wg miesiąca przelewu: lista za styczeń, wypłata w lutym, PPK do 15 marca), kwota w komórce z BS i z listy."""
+    from . import lista_plac as lp
+    zapis = (listy.get(miesiac) or {}).get('ppk') or {}
+    rek = pol.get(f'lista:{miesiac}:ppk')
+    termin = f"{plan.przesun_miesiac(mies_wyplaty, 1)}-{lp.DZIEN['ppk']:02d}"
+    wiersz = zapis.get('wiersz') or lp.wiersz_ppk_domyslny(kandydaci)
+    kom = zapis.get('miesiac') or termin[:7]
+    w_komorce = [dict(r) for r in con.execute('SELECT * FROM bud_platnosc WHERE wiersz = ? AND miesiac = ?', (wiersz, kom))] if wiersz else []
+    bs = (rek or {}).get('bs', {}).get('ppk') if rek else (sum(p['netto'] for p in w_komorce if _bs_platnosc(p)) if any(map(_bs_platnosc, w_komorce)) else None)
+    lista = (rek or {}).get('kwoty', {}).get('ppk')
+    return {'wiersz': wiersz, 'miesiac': kom, 'termin': zapis.get('termin') or termin, 'wpisane': bool(rek), 'bs': bs, 'lista': lista,
+            'plan': (rek or {}).get('plan', {}).get('ppk') if rek else sum(p['netto'] for p in w_komorce if p['typ'] == 'plan') or None,
+            'roznica': (lista - bs) if lista is not None and bs is not None else None, 'osoby': (rek or {}).get('osoby') or {}}
+
+
+def _ppk_mapa(con, listy, pol) -> list[dict]:
+    """Mapa PPK, jawnie: lista płac za miesiąc → komórka zbiorczego wiersza PPK, kwota BS i z listy, różnica; komórki PPK
+    z BS bez listy (np. PPK za grudzień 2025 zapłacone w styczniu) zostają z kwotą BS."""
+    wynik, wiersze = [], set()
+    for m, x in sorted(listy.items()):
+        ppk = x.get('ppk') or {}
+        rek = pol.get(f'lista:{m}:ppk')
+        if not rek or not ppk.get('wiersz'):
+            continue
+        wiersze.add(ppk['wiersz'])
+        bs, kw = rek.get('bs', {}).get('ppk'), rek['kwoty']['ppk']
+        wynik.append({'lista': m, 'wiersz': ppk['wiersz'], 'komorka': ppk.get('miesiac'), 'termin': ppk.get('termin'), 'bs': bs,
+                      'z_listy': kw, 'roznica': kw - bs if bs is not None else None})
+    zajete = {(x['wiersz'], x['komorka']) for x in wynik}
+    for wid in sorted(wiersze):
+        for r in con.execute("SELECT miesiac, SUM(netto) FROM bud_platnosc WHERE wiersz = ? AND COALESCE(dokument, '') = ''"
+                             " AND aktualna = 1 GROUP BY miesiac ORDER BY miesiac", (wid,)):
+            if (wid, r[0]) not in zajete:
+                wynik.append({'lista': None, 'wiersz': wid, 'komorka': r[0], 'termin': None, 'bs': r[1], 'z_listy': None, 'roznica': None})
+    return sorted(wynik, key=lambda x: (x['komorka'] or '', x['lista'] or ''))
+
+
+def _koszt_miesiecy(listy, pol) -> list[dict]:
+    """Koszt pracy w miesiącach z listą płac: koszt pracodawcy z listy (wszystkie pola), w tym płatności w budżecie (wypłata,
+    ZUS, PIT, PPK) i część opłacana fakturą za pakiet (pakiet i potrącenia), obok kwot z kopii BS, które lista zastąpiła."""
+    from . import lista_plac as lp
+    wynik = []
+    for m in sorted(listy):
+        reks = [r for ref, r in pol.items() if ref.startswith(f'lista:{m}:') and not r.get('ppk')]
+        ppk = pol.get(f'lista:{m}:ppk')
+        koszt = sum(lp.koszt_pracodawcy(r.get('kwoty') or {}) for r in reks)
+        faktura = sum(int((r.get('kwoty') or {}).get(k) or 0) for r in reks for k in lp.INFO)
+        bs = sum(v for r in reks for v in (r.get('bs') or {}).values() if v) + ((ppk or {}).get('bs') or {}).get('ppk', 0)
+        wynik.append({'miesiac': m, 'koszt_pracodawcy': koszt, 'platnosci': koszt - faktura, 'przez_fakture': faktura,
+                      'ppk_w_budzecie': (ppk or {}).get('kwoty', {}).get('ppk'), 'bs_zastapione': bs, 'osob': len(reks)})
+    return wynik
 
 
 def ostrzezenia(con) -> list[dict]:
-    """Ostrzeżenia kosztu pracy (decyzja Mata 12): (a) wypłata za miesiąc minęła, a listy płac nie ma; (b) estymacja na
+    """Ostrzeżenia kosztu pracy (decyzja Mata 12): (a) wypłata za miesiąc minęła, a listy płac nie ma; (a2) w miesiącu są
+    płatności rzeczywiste z kopii BS, a listy płac nie ma („do wpisania”, 2026-10-20); (b) estymacja na
     przyszły miesiąc niższa niż ostatnia rzeczywista kwota tej osoby (estymacja ma być zawyżona); (c) lista płac różni się
     od przelewów w banku o ponad 1 zł. Każde: rodzaj, poziom, tytuł, opis, wiersz, osoba, miesiąc, kwota."""
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0] or date.today().isoformat()
@@ -831,8 +906,16 @@ def ostrzezenia(con) -> list[dict]:
         komorki = po_wierszu.get(w['id'], {})
         osoba = w['kontrahent'] or w['komentarz'] or 'osoba'
         for m, v in sorted(komorki.items()):
-            if v['rzeczywiste'] and any(p['zrodlo'] == 'lista płac' for p in v['rzeczywiste'].values()):
+            z_listy = any(p['zrodlo'] == 'lista płac' for p in v['rzeczywiste'].values())
+            if v['rzeczywiste'] and z_listy:
                 listy[m].append((w, v))
+            bs = [p for p in v['rzeczywiste'].values() if _bs_platnosc(p)]
+            if bs and not z_listy:   # 2026-10-20: kwoty BS za wynagrodzenia to estymacja; lista płac do wpisania
+                razem = sum(p['netto'] for p in bs)
+                wynik.append({'rodzaj': 'lista_do_wpisania', 'poziom': 'uwaga', 'tytul': 'Lista płac do wpisania',
+                              'opis': f'{osoba}: za {_mies(m)} w budżecie są kwoty z kopii Budget Studio ({_zl(razem)}, estymacja '
+                                      'z podziałem procentowym). Wpisz listę płac od biura: jej kwoty zastąpią BS.',
+                              'wiersz': w['id'], 'osoba': osoba, 'miesiac': m, 'kwota': -razem, 'data': f'{m}-01'})
             if v['plany'] and not v['rzeczywiste']:
                 o = v['plany'].get('osoba') or next(iter(v['plany'].values()))
                 termin = o.get('termin') or f'{m}-28'
@@ -862,19 +945,12 @@ def ostrzezenia(con) -> list[dict]:
         termin_m = None
         sumy = {'osoba': 0, 'us': 0, 'zus': 0}
         for w, v in pozycje:
-            rz = v['rzeczywiste']
-            if plan.jest_umowa(w['podstawa']):
-                for s in sumy:
-                    sumy[s] += rz[s]['netto'] if s in rz else 0
-            else:
-                p = rz.get('osoba') or next(iter(rz.values()))
-                skl = json.loads(p['skladniki']) if p.get('skladniki') else {'osoba': p['netto']}
-                for s in sumy:
-                    sumy[s] += int(skl.get(s) or 0)
+            rz = {s_: p for s_, p in v['rzeczywiste'].items() if p['zrodlo'] == 'lista płac'}
+            for s_ in sumy:
+                sumy[s_] += rz[s_]['netto'] if s_ in rz else 0
             termin_m = termin_m or (rz.get('osoba') or {}).get('termin')
             os_ = _przelewy_osoby(w, przelewy['osoba'].get(m, []))
-            wpis = (rz['osoba']['netto'] if plan.jest_umowa(w['podstawa']) and 'osoba' in rz else
-                    int((json.loads((rz.get('osoba') or {}).get('skladniki') or '{}') or {}).get('osoba') or 0))
+            wpis = rz['osoba']['netto'] if 'osoba' in rz else 0
             if os_ and abs(sum(x['kwota'] for x in os_) - wpis) > 100:
                 bank = sum(x['kwota'] for x in os_)
                 wynik.append({'rodzaj': 'lista_vs_przelew', 'poziom': 'info', 'tytul': 'Lista płac inna niż przelew',
@@ -882,13 +958,15 @@ def ostrzezenia(con) -> list[dict]:
                                       f'{_zl(bank)} (różnica {_zl(wpis - bank)}). Sprawdź listę płac albo przelew.',
                               'wiersz': w['id'], 'osoba': w['kontrahent'] or '', 'miesiac': m, 'kwota': wpis - bank,
                               'data': os_[0]['data']})
-        for s, nazwa, przel in (('us', 'PIT-4', przelewy['us'].get((termin_m or '')[:7], [])), ('zus', 'ZUS', przelewy['zus'].get(m, []))):
-            if przel and abs(sum(x['kwota'] for x in przel) - sumy[s]) > 100:
+        # ZUS (DRA) i PIT-4 płacimy za miesiąc wypłaty: lista za styczeń, wypłata w lutym, przelewy z okresem luty
+        mw = (termin_m or '')[:7] or plan.przesun_miesiac(m, 1)
+        for s_, nazwa, przel in (('us', 'PIT-4', przelewy['us'].get(mw, [])), ('zus', 'ZUS', przelewy['zus'].get(mw, []))):
+            if przel and abs(sum(x['kwota'] for x in przel) - sumy[s_]) > 100:
                 bank = sum(x['kwota'] for x in przel)
                 wynik.append({'rodzaj': 'lista_vs_przelew', 'poziom': 'info', 'tytul': 'Lista płac inna niż przelew',
-                              'opis': f'{nazwa} za {_mies(m)}: z list płac {_zl(sumy[s])}, przelew w banku {_zl(bank)} '
-                                      f'(różnica {_zl(sumy[s] - bank)}). Sprawdź listę płac albo przelew.',
-                              'wiersz': '', 'osoba': nazwa, 'miesiac': m, 'kwota': sumy[s] - bank, 'data': przel[0]['data']})
+                              'opis': f'{nazwa} za {_mies(m)}: z list płac {_zl(sumy[s_])}, przelew w banku {_zl(bank)} '
+                                      f'(różnica {_zl(sumy[s_] - bank)}). Sprawdź listę płac albo przelew.',
+                              'wiersz': '', 'osoba': nazwa, 'miesiac': m, 'kwota': sumy[s_] - bank, 'data': przel[0]['data']})
     for i, o in enumerate(wynik):
         o['id'] = f"{o['rodzaj']}|{o['wiersz']}|{o['miesiac']}|{i}"
         # prosty kształt dla kafla pulpitu (pakiet 11): typ, opis, osoba, miesiąc, kwota w groszach, link do ekranu
@@ -899,7 +977,8 @@ def ostrzezenia(con) -> list[dict]:
 def polaczone(con) -> dict:
     """GET /api/laczenie/polaczone: płatność budżetu → dokument, z którym połączono ją w apce (dokument z Do połączenia,
     zamiana planu, lista płac). Do masowego odłączenia z list i cash flow."""
-    return {r[0]: r[1] for r in con.execute("SELECT id, dokument FROM bud_platnosc WHERE COALESCE(dokument, '') != ''")}
+    return {r[0]: r[1] for r in con.execute("SELECT id, dokument FROM bud_platnosc WHERE COALESCE(dokument, '') != ''"
+                                          " AND dokument NOT LIKE 'lista:%'")}   # listę płac zmienia się na ekranie listy płac
 
 
 MIES_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień']

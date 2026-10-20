@@ -51,3 +51,15 @@ button.link { all: unset; color: var(--fiolet); cursor: pointer; text-decoration
 .lacz-cf-lista { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .lacz-cf-lista label { display: flex; gap: 8px; align-items: center; }
 .cf-lista-naglowek #cf-odlacz { margin-left: auto; }
+
+/* Lista płac jako dane rzeczywiste (2026-10-20): znak „L” w komórce arkusza, szersza tabela listy, PPK i koszt pracy */
+.znak-lista { display: inline-block; font-size: 9px; font-weight: 700; line-height: 12px; padding: 0 3px; margin-right: 3px; border-radius: 3px;
+  color: var(--tlo); background: var(--fiolet, #6F7BF2); vertical-align: 1px; }
+.lp-tabela .lp-kwota.waska { width: 88px; }
+.lp-tabela .lp-data { width: 128px; height: 28px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--tekst);
+  font: inherit; font-size: 12px; padding: 0 4px; }
+.lp-tabela .lp-bs { display: block; font-size: 11px; color: var(--tekst-3); }
+.lp-uwaga { width: 100%; max-width: 900px; min-height: 48px; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); color: var(--tekst);
+  font: inherit; font-size: 13px; padding: 6px; }
+.lp-ppk { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+.lp-ppk label { display: grid; gap: 4px; font-size: 12px; }
