@@ -23,9 +23,9 @@ Object.assign(POMOC, {
     jak: 'Saldo rachunku VAT w dniu przelewu = saldo dziś plus VAT z wpłat klientów płacących podzieloną płatnością minus wcześniejsze przelewy z tego rachunku.',
     zrob: 'Gdy kafel jest żółty, przed terminem zostaw na rachunku głównym kwotę „dołóż”. Szczegóły w Budżet, Podatki i ZUS.' },
   lista_plac: { tytul: 'Lista płac do wpisania', krotko: 'Miesiące, za które nie wpisałeś jeszcze kwot z listy płac od biura.',
-    co: 'Plany wynagrodzeń są zawyżonym szacunkiem. Prawdziwe kwoty (wypłata, PIT, ZUS) wpisujesz ręcznie z listy płac. Kafel liczy miesiące, które minęły bez wpisu, szacunki niższe niż ostatnia prawdziwa kwota i różnice między wpisem a przelewem.',
-    skad: 'Plany umów w budżecie, wpisy listy płac i przelewy z ING.',
-    jak: 'Dopóki listy płac nie wpiszesz, plan zostaje w cash flow.',
+    co: 'Plany wynagrodzeń są zawyżonym szacunkiem, a kwoty za wynagrodzenia z kopii Budget Studio to estymacja z podziałem procentowym. Prawdziwe kwoty (wypłata, PIT, ZUS, PPK, pakiet, potrącenia) wpisujesz z listy płac. Kafel liczy miesiące bez listy (minione i te z kwotami z BS), szacunki niższe niż ostatnia prawdziwa kwota i różnice między listą a przelewem.',
+    skad: 'Plany umów i płatności z kopii BS w budżecie, wpisy listy płac i przelewy z ING.',
+    jak: 'Dopóki listy płac nie wpiszesz, liczy się plan albo kwota z BS. Lista płac ma pierwszeństwo przed BS i działa też przy wyłączonym planowaniu.',
     zrob: 'Kliknij kafel i wpisz listę płac za wskazany miesiąc.' },
   plany_nieaktualne: { tytul: 'Plany nieaktualne', krotko: 'Plany, którym minął dzień wystawienia albo płatności, a nie ma do nich dokumentu.',
     co: 'Każdy taki plan to pytanie: faktura nie przyszła, przyszła z inną datą albo plan jest już nieaktualny.',
@@ -74,7 +74,8 @@ function kafelVat(pod) {
 }
 
 // GET /api/ostrzezenia (pakiet 5, laczenie.ostrzezenia): {ostrzezenia: [{rodzaj, typ, tytul, opis, osoba, miesiac, kwota_gr, link}]};
-// rodzaj: „lista_niewpisana” (wypłata za miesiąc minęła, lista płac niewpisana), „estymacja_nizsza” (plan niższy niż ostatnia
+// rodzaj: „lista_niewpisana” (wypłata za miesiąc minęła, lista płac niewpisana), „lista_do_wpisania” (w miesiącu kwoty z kopii BS,
+// listy płac nie ma), „estymacja_nizsza” (plan niższy niż ostatnia
 // lista), „lista_vs_przelew” (lista inna niż przelew). Link prowadzi do listy płac za miesiąc.
 async function listaPlac() {
   try {
@@ -88,8 +89,9 @@ async function listaPlac() {
 
 function kafelListyPlac(lista) {
   if (!lista) return '';
-  const niewpisane = lista.filter(x => x.rodzaj === 'lista_niewpisana');
-  const inne = lista.filter(x => x.rodzaj !== 'lista_niewpisana');
+  const doWpisania = x => x.rodzaj === 'lista_niewpisana' || x.rodzaj === 'lista_do_wpisania';
+  const niewpisane = lista.filter(doWpisania);
+  const inne = lista.filter(x => !doWpisania(x));
   const miesiace = [...new Set(niewpisane.map(x => x.miesiac).filter(Boolean))].sort();
   const st = niewpisane.length ? 'zle' : inne.length ? 'uwaga' : 'dobrze';
   const link = (niewpisane[0] || inne[0])?.link || '#/platnosci/do-weryfikacji';

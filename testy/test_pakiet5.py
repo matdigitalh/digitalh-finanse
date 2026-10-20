@@ -394,6 +394,20 @@ class TestListaPlac(Baza5):
         self.bud({'op': 'seria', 'operacje': [{'op': 'komorka', 'wiersz': 'w-up', 'miesiac': m, 'kwota': 1240944}
                                                for m in ('2026-09', '2026-10', '2026-11', '2026-12')]})
 
+    def lista(self, d):
+        """Wpis „lista_plac” jak z serwera (od 2026-10-20 osobny wpis, nie zdarzenie budżetu)."""
+        czyste = zmiany.sprawdz('lista_plac', d)
+        serwer._sprawdz_odwolania(self.con, 'lista_plac', czyste)
+        w = zmiany.zapisz('lista_plac', czyste)
+        self.przelicz()
+        return w
+
+    def blad_listy(self, d) -> str:
+        with self.assertRaises(ValueError) as e:
+            czyste = zmiany.sprawdz('lista_plac', d)
+            serwer._sprawdz_odwolania(self.con, 'lista_plac', czyste)
+        return str(e.exception)
+
     def test_przyszle_pit_i_zus_w_cashflow_do_wpisu_listy_plac(self):
         """Test regresji: plany wynagrodzeń (w tym PIT i ZUS) zostają w cash flow, dopóki nie ma listy płac; przelew z banku
         nie zamyka planu (tylko podpowiada); żaden import BS go nie zamyka."""
@@ -415,7 +429,7 @@ class TestListaPlac(Baza5):
         self.assertIn('listą płac', self.blad({'op': 'decyzja_planu', 'platnosc': 'plan:w-up:2026-09:osoba', 'decyzja': 'zaplacone', 'data': DZIS}))
 
     def test_lista_plac_zamienia_plany_na_rzeczywiste_i_ostrzezenia(self):
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-up', 'osoba': 800000, 'us': 90000, 'zus': 450000}]})
+        self.lista({'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-up', 'osoba': 800000, 'us': 90000, 'zus': 450000}]})
         ps = {p['skladowa']: p for p in self.platnosci('w-up', '2026-09')}
         self.assertEqual({s: (p['typ'], p['netto'], p['zrodlo']) for s, p in ps.items()},
                          {s: ('rzeczywista', k, 'lista płac') for s, k in (('osoba', 800000), ('us', 90000), ('zus', 450000))})
@@ -427,7 +441,10 @@ class TestListaPlac(Baza5):
         # prosty kształt dla kafla pulpitu (pakiet 11): typ, opis, osoba, miesiąc, kwota w groszach, link
         e = rodzaje['estymacja_nizsza']
         self.assertEqual((e['typ'], e['kwota_gr'], e['link']), ('estymacja_nizsza', 1240944 - 1340000, '#/budzet/lista-plac?miesiac=2026-10'))
-        self.assertEqual(laczenie.polaczone(self.con)[ps['us']['id']], 'lista:2026-09:w-up')
+        self.assertEqual(ps['us']['dokument'], 'lista:2026-09:w-up')
+        # lista płac nie odłącza się z list płatności ani z cash flow (zmienia się na ekranie listy płac)
+        self.assertNotIn(ps['us']['id'], laczenie.polaczone(self.con))
+        self.assertIn('ekranie Lista płac', self.blad({'op': 'odlacz', 'dokument': 'lista:2026-09:w-up'}))
         # (c) wypłata z listy 8 000,00, przelew 6 716,06
         c = rodzaje['lista_vs_przelew']
         self.assertEqual((c['miesiac'], c['kwota']), ('2026-09', 800000 - 671606))
@@ -437,9 +454,9 @@ class TestListaPlac(Baza5):
         self.assertEqual((osoba['wpisane'], osoba['z_listy'], [x['kwota'] for x in osoba['przelewy']]),
                          ({'osoba': 800000, 'us': 90000, 'zus': 450000}, True, [671606]))
         # poprawka listy (ten sam miesiąc) i powrót do planu („usun”)
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-up', 'osoba': 671606, 'us': 78003, 'zus': 427915}]})
+        self.lista({'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-up', 'osoba': 671606, 'us': 78003, 'zus': 427915}]})
         self.assertNotIn('lista_vs_przelew', {x['rodzaj'] for x in laczenie.ostrzezenia(self.con)})
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-09', 'usun': True, 'pozycje': [{'wiersz': 'w-up'}]})
+        self.lista({'miesiac': '2026-09', 'usun': True})
         self.assertEqual({p['typ'] for p in self.platnosci('w-up', '2026-09')}, {'plan'})
 
     def test_skladowe_umowy_w_osobnych_wierszach_z_kopii_bs(self):
@@ -454,7 +471,7 @@ class TestListaPlac(Baza5):
         # plan składowej nie zamienia się na rzeczywistą sam ani kliknięciem „Zmień na rzeczywistą”
         plan_pit = self.con.execute("SELECT id FROM bud_platnosc WHERE bs_id = '13'").fetchone()[0]
         self.assertIn('listą płac', self.blad({'op': 'zamien', 'plan': plan_pit}))
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-10', 'pozycje': [{'wiersz': o['wiersz'], 'osoba': 700000, 'us': 70000, 'zus': 400000}]})
+        self.lista({'miesiac': '2026-10', 'pozycje': [{'wiersz': o['wiersz'], 'osoba': 700000, 'us': 70000, 'zus': 400000}]})
         for s, k in (('osoba', 700000), ('us', 70000), ('zus', 400000)):
             ps = self.platnosci(wiersze[s], '2026-10')
             self.assertEqual([(p['typ'], p['netto'], p['zrodlo']) for p in ps], [('rzeczywista', k, 'lista płac')])
@@ -464,21 +481,25 @@ class TestListaPlac(Baza5):
         o = next(x for x in f['osoby'] if x['kontrahent'] == 'Paulina')
         self.assertEqual((o['z_listy'], o['wpisane']), (True, {'osoba': 700000, 'us': 70000, 'zus': 400000}))
         # usunięcie listy przywraca plany z kopii BS
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-10', 'usun': True, 'pozycje': [{'wiersz': o['wiersz']}]})
+        self.lista({'miesiac': '2026-10', 'usun': True})
         self.assertEqual([(p['typ'], p['netto']) for p in self.platnosci(wiersze['zus'], '2026-10')], [('plan', 427915)])
 
     def test_wiersz_bez_umowy_na_liscie_plac(self):
+        """Wiersz bez faktury (np. powołanie prezesa) trafia na listę płac wprost z wpisu listy: trzy płatności (na konto, ZUS,
+        PIT) zamiast jednej kwoty; wiersz z fakturą nie jest wierszem wynagrodzenia."""
         self.bud({'op': 'wiersz', 'obiekt': {'id': 'w-prezes', 'arkusz': 'a-test', 'rodzaj': -1, 'podstawa': 'Bez faktury',
                                              'kontrahent': 'Prezes', 'dzien_wystawienia': 'Ostatni', 'dni_na_platnosc': 7}}, przelicz=False)
+        self.wiersz('w-fv')
+        self.komorka('w-fv', '2026-09', 1000)
         self.komorka('w-prezes', '2026-09', 1200000)
-        self.assertIn('nie jest wierszem wynagrodzenia', self.blad({'op': 'lista_plac', 'miesiac': '2026-09',
-                                                                      'pozycje': [{'wiersz': 'w-prezes', 'osoba': 1}]}))
-        self.bud({'op': 'wiersz', 'obiekt': {'id': 'w-prezes', 'lista_plac': True}})
-        self.bud({'op': 'lista_plac', 'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-prezes', 'osoba': 936793, 'us': 100000, 'zus': 50000}]})
+        self.assertIn('nie jest wierszem wynagrodzenia', self.blad_listy({'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-fv', 'osoba': 1}]}))
+        self.assertIn('wszystkie części', self.blad_listy({'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-prezes', 'osoba': 936793}]}))
+        self.lista({'miesiac': '2026-09', 'pozycje': [{'wiersz': 'w-prezes', 'osoba': 936793, 'us': 100000, 'zus': 50000}]})
         p = self.platnosci('w-prezes', '2026-09')
-        self.assertEqual([(x['typ'], x['netto'], json.loads(x['skladniki'])) for x in p],
-                         [('rzeczywista', 1086793, {'osoba': 936793, 'us': 100000, 'zus': 50000})])
-        # komórka umowy z rzeczywistą z kopii BS nie przyjmie listy płac; zwykły dokument nie trafi do wiersza wynagrodzenia
+        self.assertEqual(sorted((x['typ'], x['skladowa'], x['netto']) for x in p),
+                         [('rzeczywista', 'osoba', 936793), ('rzeczywista', 'us', 100000), ('rzeczywista', 'zus', 50000)])
+        self.assertEqual(self.con.execute("SELECT lista_plac FROM bud_wiersz WHERE id = 'w-prezes'").fetchone()[0], 1)
+        # zwykły dokument nie trafi do wiersza wynagrodzenia
         self.komorka('w-prezes', '2026-10', 1200000)
         self.assertIn('wiersz wynagrodzenia', self.blad({'op': 'polacz', 'dokument': next(r['ref'] for r in laczenie.lista(self.con, {})['wiersze']
                                                                                          if r['typ'] == 'operacja' and r['kwota'] == 8000),

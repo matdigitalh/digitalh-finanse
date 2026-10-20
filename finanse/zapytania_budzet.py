@@ -82,14 +82,15 @@ def arkusz(con, aid: str) -> dict:
         'SELECT k.* FROM bud_komorka k JOIN bud_wiersz w ON w.id = k.wiersz WHERE w.arkusz = ?', (aid,))}
     komorki = {}
     poza_zakresem = {}   # miesiące płatności spoza zakresu arkusza (do kalendarza „Zmodyfikuj czas trwania”)
-    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, p.ukryty, s.etap, s.aktualnosc'
+    for r in con.execute('SELECT p.id, p.wiersz, p.miesiac, p.netto, p.brutto, p.rodzaj, p.typ, p.aktualna, p.ukryty, p.zrodlo, s.etap, s.aktualnosc'
                          ' FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz LEFT JOIN bud_stan s ON s.platnosc = p.id'
                          ' WHERE w.arkusz = ? ORDER BY p.id', (aid,)):
         if not a['od'] <= r['miesiac'] <= a['do']:
             x = poza_zakresem.setdefault(r['miesiac'], {'rzeczywiste': 0, 'plany': 0})
             x['rzeczywiste' if r['typ'] != 'plan' else 'plany'] += 1
         k = komorki.setdefault((r['wiersz'], r['miesiac']), {'netto': 0, 'platnosci': [], 'etapy': [], 'kwoty': {}, 'rzeczywiste': 0,
-                                                              'nieaktualne': 0, 'plany': 0, 'oplacone': 0})
+                                                              'nieaktualne': 0, 'plany': 0, 'oplacone': 0, 'z_listy': 0})
+        k['z_listy'] += r['zrodlo'] == 'lista płac'   # kwota z listy płac od biura (zastąpiła BS albo plan)
         k['rzeczywiste'] += r['typ'] != 'plan'   # do koloru komórki jak w BS: tło planów, kropka nieaktualnych
         k['plany'] += r['typ'] == 'plan' and not r['ukryty'] and bool(r['aktualna'])
         k['oplacone'] += r['etap'] == 'Opłacona'
@@ -109,7 +110,7 @@ def arkusz(con, aid: str) -> dict:
                         else 'wg-bs' if 'Opłacona wg BS' in etapy else 'planowana')
                 w['komorki'][m] = {'netto': k['netto'], 'platnosci': k['platnosci'], 'kwoty': k['kwoty'], 'stan': stan,
                                    'rzeczywiste': k['rzeczywiste'], 'nieaktualne': k['nieaktualne'], 'plany': k['plany'],
-                                   'oplacone': k['oplacone'],
+                                   'oplacone': k['oplacone'], 'z_listy': k['z_listy'],
                                    'kwota': kwoty_komorek.get((w['id'], m))}   # kwota wpisana w apce (plany z niej liczone)
         w['plan'] = json.loads(w['plan']) if w['plan'] else None
         w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None

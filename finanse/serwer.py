@@ -92,6 +92,8 @@ def _sprawdz_odwolania(con, typ, dane):
         raise ValueError('nie ma takiej operacji')
     if typ == 'bud':
         _sprawdz_bud(con, dane)
+    if typ == 'lista_plac':   # lista płac od biura: dane rzeczywiste, bez planowania; próba na bieżącym budżecie
+        budzet.sprawdz_liste(dane, zmiany.wczytaj()[0], dokumenty=laczenie.Dokumenty(con))
     if typ == 'danina':   # pakiet 8: kwota od biura, daty w granicach okresu
         podatki.sprawdz_wpis(dane, zmiany.wczytaj()[0], zapytania_budzet._dzien_stanu(con))
     if typ == 'umowa':   # pakiet 9: folder klienta i arkusze przychodowe muszą istnieć w budżecie

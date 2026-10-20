@@ -42,6 +42,7 @@ TYPY = {
     'seria': ('wpisy',),                      # akcja grupowa na liście: kilka wpisów w jednym, wszystko albo nic
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
     'kopia_bs': ('plik', 'sha256'),           # pakiet 6: przyjęta kopia z BS (plik Aplikacja/kopia_bs_*.json i jego suma)
+    'lista_plac': ('miesiac', 'pozycje'),     # lista płac za miesiąc od biura (dane rzeczywiste, nie planowanie; lista_plac.py)
 }
 # Co może wejść do serii z listy (akcje grupowe, pakiet 7); budżet ma własną serię w „bud” (op „seria”, pakiet 1).
 TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 'klient_faktura', 'koszt_regula', 'koszt_operacja',
@@ -51,7 +52,8 @@ OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
                 'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz',
                 # pakiet 5: rzeczywista zastępuje plan (połącz, odłącz), ręczne dodanie, zamiana planu, lista płac
-                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac', 'zamknij_worek',
+                # (lista płac od 2026-10-20 to osobny wpis „lista_plac”, nie zdarzenie budżetu)
+                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'zamknij_worek',
                 # pakiet 4: Biblioteka (słowniki, foldery i kategorie), reguły w biblioteka.py
                 'slownik', 'struktura')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
@@ -91,6 +93,8 @@ def sprawdz(typ: str, dane) -> dict:
         return _sprawdz_rezerwe(dane)
     if typ == 'kopia_bs':
         return _sprawdz_kopie(dane)
+    if typ == 'lista_plac':
+        return sprawdz_liste_plac(dane)
     if typ == 'widok':
         return _sprawdz_widok(dane)
     if typ == 'do_weryfikacji':
@@ -504,24 +508,53 @@ def _sprawdz_laczenie(op: str, d: dict) -> dict:
         wynik = {'op': op, 'plan': _niepusty(120)(d.get('plan'), 'plan')}
         wynik['obiekt'] = _pola(d.get('obiekt') or {}, POLA_ZAMIANY, 'zamiana na rzeczywistą')
         return wynik
-    # lista płac (decyzja Mata 12): kwoty z listy płac od biura per osoba (wiersz umowy albo wiersz wynagrodzenia)
-    wynik = {'op': op, 'miesiac': _miesiac(d.get('miesiac'), 'Lista płac za miesiąc')}
+    return sprawdz_liste_plac(d)
+
+
+POLA_LISTY = ('osoba', 'us', 'zus', 'ppk_pracownik', 'ppk_pracodawca', 'pakiet', 'potracenia')
+NAZWY_LISTY = {'osoba': 'Wypłata', 'us': 'PIT', 'zus': 'ZUS', 'ppk_pracownik': 'PPK pracownika', 'ppk_pracodawca': 'PPK pracodawcy',
+               'pakiet': 'Pakiet medyczny', 'potracenia': 'Potrącenia z wypłaty'}
+
+
+def sprawdz_liste_plac(d: dict) -> dict:
+    """Lista płac za miesiąc (decyzja Mata 12, pola z 2026-10-20): per osoba wypłata na konto, PIT, ZUS, PPK pracownika
+    i pracodawcy, pakiet medyczny, potrącenia (grosze; brak pola = brak na liście, nic nie zgadujemy), data wypłaty, uwaga;
+    zbiorczy wiersz PPK z BS i jego komórka; uwaga do miesiąca. Odwołania sprawdza serwer próbą na budżecie."""
+    if not isinstance(d, dict) or set(d) - {'op', 'miesiac', 'pozycje', 'ppk', 'uwaga', 'usun'}:
+        raise ValueError('Lista płac: nieznane pole.')
+    wynik = {'miesiac': _miesiac(d.get('miesiac'), 'Lista płac za miesiąc')}
+    if d.get('usun'):
+        return {**wynik, 'pozycje': [], 'usun': True}
     poz = d.get('pozycje')
     if not isinstance(poz, list) or not 0 < len(poz) <= MAKS_LISTA:
         raise ValueError(f'Lista płac: od 1 do {MAKS_LISTA} osób.')
     pozycje = []
     for x in poz:
-        if not isinstance(x, dict) or set(x) - {'wiersz', 'osoba', 'us', 'zus'}:
-            raise ValueError('Lista płac: każda pozycja to wiersz i kwoty dla osoby, PIT i ZUS.')
+        if not isinstance(x, dict) or set(x) - {'wiersz', 'data_wyplaty', 'uwaga', *POLA_LISTY}:
+            raise ValueError('Lista płac: każda pozycja to wiersz, kwoty z listy, data wypłaty i uwaga.')
         y = {'wiersz': _niepusty(80)(x.get('wiersz'), 'wiersz')}
-        if not d.get('usun'):
-            y.update({k: _kwota(x.get(k) or 0, {'osoba': 'Wypłata', 'us': 'PIT', 'zus': 'ZUS'}[k]) for k in ('osoba', 'us', 'zus')})
+        for k in POLA_LISTY:
+            if x.get(k) is not None:
+                y[k] = _kwota(x[k], NAZWY_LISTY[k])
+        if x.get('data_wyplaty'):
+            y['data_wyplaty'] = _data(x['data_wyplaty'], 'Data wypłaty')
+        if x.get('uwaga'):
+            y['uwaga'] = _tekst(300)(x['uwaga'], 'uwaga')
         pozycje.append(y)
     if len({x['wiersz'] for x in pozycje}) != len(pozycje):
         raise ValueError('Lista płac: ta sama osoba dwa razy.')
     wynik['pozycje'] = pozycje
-    if d.get('usun'):
-        wynik['usun'] = True
+    if d.get('ppk'):
+        p = d['ppk']
+        if not isinstance(p, dict) or set(p) - {'wiersz', 'miesiac', 'termin'}:
+            raise ValueError('Lista płac, PPK: wiersz PPK, miesiąc komórki i termin.')
+        wynik['ppk'] = {'wiersz': _niepusty(80)(p.get('wiersz'), 'wiersz PPK')}
+        if p.get('miesiac'):
+            wynik['ppk']['miesiac'] = _miesiac(p['miesiac'], 'PPK, miesiąc komórki')
+        if p.get('termin'):
+            wynik['ppk']['termin'] = _data(p['termin'], 'PPK, termin')
+    if d.get('uwaga'):
+        wynik['uwaga'] = _tekst(500)(d['uwaga'], 'uwaga')
     return wynik
 
 

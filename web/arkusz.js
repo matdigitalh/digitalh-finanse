@@ -168,9 +168,10 @@ function arkuszTabela(d, p) {
       k.rzeczywiste && k.stan === 'po-terminie' ? 'po-terminie' : '', k.stan === 'wg-bs' ? 'wg-bs' : '',
       k.netto < 0 ? 'minus' : k.netto > 0 ? 'plus' : ''].filter(Boolean).join(' ');
     const ikony = (k.nieaktualne ? '<span class="kropka czerwona" title="płatność nieaktualna: wymaga uwagi"></span>' : '')
-      + (k.oplacone ? '<span class="kropka zielona" title="jest płatność opłacona"></span>' : '');
+      + (k.oplacone ? '<span class="kropka zielona" title="jest płatność opłacona"></span>' : '')
+      + (k.z_listy ? '<span class="znak-lista" title="kwota z listy płac od biura (zastąpiła kwotę z BS albo plan)">L</span>' : '');
     const n = k.platnosci.length;
-    const tytul = `${n} ${n === 1 ? 'płatność' : 'płatności'}${k.rzeczywiste ? `, w tym rzeczywiste: ${k.rzeczywiste}` : ', tylko plany'}${k.nieaktualne ? `, nieaktualne: ${k.nieaktualne}` : ''}`;
+    const tytul = `${n} ${n === 1 ? 'płatność' : 'płatności'}${k.rzeczywiste ? `, w tym rzeczywiste: ${k.rzeczywiste}` : ', tylko plany'}${k.nieaktualne ? `, nieaktualne: ${k.nieaktualne}` : ''}${k.z_listy ? ', z listy płac' : ''}`;
     return `<td class="${kl}" ${dk} title="${tytul}"><span class="kom">${ikony}${zl(k.netto, false)}</span></td>`;
   };
   let lp = 0;
