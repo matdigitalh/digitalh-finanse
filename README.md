@@ -399,7 +399,9 @@ Decyzja Mata 12 uzupełniona 2026-10-20 („żeby w aplikacji było dobrze”). 
 - **PPK:** jedna płatność (suma PPK pracownika i pracodawcy wszystkich osób) w zbiorczym wierszu PPK z BS (domyślnie wiersz
   bez faktury z „PPK” w komentarzu). **Miesiąc budżetowy = miesiąc listy** (decyzja Mata 2026-10-20: PPK działa jak ZUS
   i PIT tej listy), więc koszt, rentowność budżetu, wynik i koszt pracy liczą PPK w miesiącu, za który jest lista. Termin
-  i cash flow bez zmian: 15. dnia miesiąca po wypłacie (lista za styczeń, wypłata 4.02, PPK 15.03). BS trzyma PPK wg miesiąca
+  i cash flow bez zmian: 15. dnia miesiąca po wypłacie (lista za styczeń, wypłata 4.02, PPK 15.03). Miesiąc księgowania
+  (zaliczki CIT, oś „księgowanie” w rentowności) też bez zmian, jak w BS: miesiąc przelewu; przeniesienie go na miesiąc listy
+  zmieniłoby zaliczki CIT, a przez nie cash flow (otwarte do decyzji Mata). BS trzyma PPK wg miesiąca
   przelewu, więc lista zastępuje komórkę BS wskazaną we wpisie (`ppk.miesiac`, domyślnie miesiąc terminu: komórka marzec
   594,78 = lista za styczeń); ta komórka BS nie wraca po nowym eksporcie ani kopii z BS, więc nic się nie dubluje. Komórki BS
   bez listy (styczeń i luty 2026 = PPK z list za XI i XII 2025) zostają z kwotą BS w swoim miesiącu. Rozjazd z BS w PPK to
