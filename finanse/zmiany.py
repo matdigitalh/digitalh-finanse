@@ -50,7 +50,9 @@ OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
                 'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz',
                 # pakiet 5: rzeczywista zastępuje plan (połącz, odłącz), ręczne dodanie, zamiana planu, lista płac
-                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac', 'zamknij_worek')
+                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac', 'zamknij_worek',
+                # pakiet 4: Biblioteka (słowniki, foldery i kategorie), reguły w biblioteka.py
+                'slownik', 'struktura')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
 # Nazwy pól w komunikatach (po ludzku, jak w BS)
@@ -372,7 +374,7 @@ def _plan(v, pole):
 # Biała lista pól obiektów budżetu (APK-BUG-05): nieznane pole albo zła wartość = odrzucenie z komunikatem.
 POLA_BUD = {
     'arkusz': {'id': _niepusty(80), 'nazwa': _niepusty(80), 'folder': _niepusty(80), 'kategoria': _niepusty(80),
-               'od': _miesiac, 'do': _miesiac},
+               'od': _miesiac, 'do': _miesiac, 'przypiety': _tak_nie},   # pakiet 4: przypięty = widoczny w drzewie budżetu
     'wiersz': {'id': _niepusty(80), 'arkusz': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa, 'kontrahent': _tekst(200),
                'komentarz': _tekst(170), 'przedmiot': _tekst(200), 'sekcja': _tekst(100), 'stawka_vat': _stawka,
                'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'metoda': _tekst(60), 'ksiegowane': _tak_nie,
@@ -516,6 +518,9 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         if len(json.dumps(wynik)) > 400000:
             raise ValueError('za duży wpis')
         return wynik
+    if op in ('slownik', 'struktura'):
+        from .biblioteka import sprawdz_op
+        return sprawdz_op(d)
     if len(json.dumps(d)) > (8000 if op in ('arkusz', 'wiersz', 'platnosc', 'komorka', 'decyzja_planu') else 120000):
         raise ValueError('za duży wpis')
     if op in ('polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac'):
@@ -533,6 +538,8 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         obiekt = _pola(o, POLA_BUD[op], op)
         if op == 'arkusz':
             sprawdz_zakres(obiekt.get('od'), obiekt.get('do'))
+        if op == 'wiersz' and d.get('domyslne') is True:   # pakiet 4: nowy wiersz, resztę pól uzupełni Biblioteka
+            return {'op': op, 'obiekt': obiekt, 'usun': False, 'domyslne': True}
         return {'op': op, 'obiekt': obiekt, 'usun': False}
     if op in ('scal', 'duplikuj'):
         ws = d.get('wiersze')

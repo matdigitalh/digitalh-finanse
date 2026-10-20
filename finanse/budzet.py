@@ -350,6 +350,7 @@ def _roznica_mies(z: str, na: str) -> int:
 
 def _stan(model: dict) -> dict:
     """Stan roboczy modelu: obiekty po ID, kwoty komórek {(wiersz, miesiąc): grosze} i ręczne zmiany planów z komórek."""
+    from . import biblioteka
     return {'arkusz': {a['id']: a for a in model['arkusze']}, 'wiersz': {w['id']: w for w in model['wiersze']},
             'platnosc': {p['id']: p for p in model['platnosci']},
             'komorka': {(k['wiersz'], k['miesiac']): k['kwota'] for k in model.get('komorki', [])},
@@ -359,7 +360,8 @@ def _stan(model: dict) -> dict:
             # ((wiersz, miesiąc) → 'zamknieta': bez planu, 'otwarta': plan na resztę) i płatności dodane ręcznie (id → dane)
             'polaczenia': dict(model.get('polaczenia', {})),
             'realizacja': {(r[0], r[1]): r[2] for r in model.get('realizacja', [])},
-            'reczne': dict(model.get('reczne', {}))}
+            'reczne': dict(model.get('reczne', {})),
+            **biblioteka.stan(model)}   # pakiet 4: słowniki i struktura folderów (Biblioteka)
 
 
 def parametry_planu() -> dict:
@@ -631,7 +633,7 @@ def _duplikuj_arkusz(st: dict, d: dict, scisle: bool):
         return 'nie ma arkusza do zduplikowania', None, nid
     if nid in ark:
         return 'arkusz o tym identyfikatorze już jest', None, nid
-    ark[nid] = {**o, 'zrodlo': 'apka'}
+    ark[nid] = {'przypiety': True, **o, 'zrodlo': 'apka'}   # A-OPS-06: kopia przypięta
     zrodlowe = sorted((wie[x] for x in _wiersze_ark(st, src)),
                       key=lambda w: (-w['rodzaj'], w.get('kontrahent') or '', w.get('komentarz') or '', w['id']))
     for w in zrodlowe:
@@ -1337,6 +1339,21 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
     op = d['op']
     akcje = {'scal': _scal, 'podziel': _podziel, 'duplikuj': _duplikuj, 'przesun_arkusz': _przesun_arkusz,
              'duplikuj_arkusz': _duplikuj_arkusz}
+    # pakiet 4: Biblioteka (słowniki, foldery i kategorie) i miejsce arkusza w strukturze (biblioteka.py)
+    from . import biblioteka
+    if op in ('slownik', 'struktura'):
+        return biblioteka.zastosuj(st, d, scisle)
+    if scisle and op in ('arkusz', 'duplikuj_arkusz') and not d.get('usun') and (powod := biblioteka.sprawdz_miejsce(st, d['obiekt'])):
+        return powod, None, d['obiekt']['id']
+    if op == 'wiersz' and d.get('domyslne') and d['obiekt']['id'] not in wie:
+        # nowy wiersz z „Dodaj +”: brakujące pola z ustawień kontrahenta albo kontrahenta domyślnego (A-KOL-04, 05);
+        # przy zapisie wpis dostaje pełny wiersz, więc historia nie zależy od późniejszych zmian w Bibliotece
+        d_pelny = {**d, 'obiekt': biblioteka.uzupelnij_wiersz(st, d['obiekt'])}
+        d_pelny.pop('domyslne')
+        if scisle:
+            d.update(d_pelny)
+            d.pop('domyslne', None)
+        d = d_pelny
     if op in akcje:
         return akcje[op](st, d, scisle)
     if op == 'polacz':
@@ -1431,6 +1448,8 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             if bylo is None and not all(obiekt.get(k) for k in ('nazwa', 'folder', 'kategoria', 'od', 'do')):
                 return 'nie ma takiego arkusza', None, oid
             nowy = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            if bylo and set(obiekt) <= {'id', 'przypiety'}:   # przypięcie nie zmienia źródła arkusza (pakiet 4)
+                nowy['zrodlo'] = bylo.get('zrodlo', '')
             if bylo:
                 powod = _zmien_zakres(st, bylo, nowy, scisle)
                 if powod:
@@ -1555,6 +1574,8 @@ def _zastosuj_wpis(st: dict, w: dict, stare: dict, scisle: bool = False, dzis: s
         if powod:
             return (f'operacja {i} z {len(ops)}: {powod}' if len(ops) > 1 else powod), []
         wykonane.append((o, bylo, oid))
+    from . import biblioteka
+    biblioteka.wchlon(roboczy, ops)   # pakiet 4: nowe wartości i foldery z tego wpisu trafiają do Biblioteki
     st.update(roboczy)
     return None, wykonane
 
@@ -1598,6 +1619,8 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict], dokumenty=None) -> list[d
     model['polaczenia'], model['reczne'] = st['polaczenia'], st['reczne']
     model['realizacja'] = [[w, m, v] for (w, m), v in sorted(st['realizacja'].items())]
     model['osierocone'] = osierocone
+    from . import biblioteka
+    biblioteka.odloz(model, st)   # pakiet 4: słowniki i struktura po zdarzeniach
     return historia
 
 
@@ -1745,8 +1768,9 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
                        else (1, nr)) for nr, w in enumerate(model['wiersze'])}
     kolejnosc = {wid: i for i, wid in enumerate(sorted(klucz, key=klucz.get))}
     for a in model['arkusze']:
-        con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo) VALUES (?,?,?,?,?,?,?)',
-                    (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', '')))
+        con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo, przypiety) VALUES (?,?,?,?,?,?,?,?)',
+                    (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', ''),
+                     int(a.get('przypiety', True) is not False)))   # pakiet 4: bez decyzji arkusz jest przypięty
     for w in model['wiersze']:
         con.execute('INSERT INTO bud_wiersz (id, arkusz, rodzaj, podstawa, kontrahent, komentarz, przedmiot, sekcja, stawka_vat,'
                     ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo, split, proporcje, kup, kolejnosc,'
@@ -1797,6 +1821,8 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_osierocone (wpis, czas, mac, op, obiekt, powod) VALUES (?,?,?,?,?,?)',
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))
+    from . import biblioteka
+    biblioteka.zapisz(con, model)   # pakiet 4: Biblioteka (słowniki, foldery i kategorie)
     wynik = {**ile}   # liczby budżetu z importu (albo kopii) i zmian, bez arkusza systemowego (podatki w meta „podatki”)
     if info.get('kopia'):   # pakiet 6: budżet z kopii; nowy eksport BS tylko porównujemy (okres równoległy)
         k = info['kopia']

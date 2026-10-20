@@ -90,7 +90,7 @@ CREATE INDEX wydatki_dok_op ON wydatki_dok(operacja_id);
 CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
 
 -- Budżet (budzet.py): import z Budget Studio + zdarzenia Mata.
-CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT);
+CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT, przypiety INTEGER DEFAULT 1);
 CREATE TABLE bud_wiersz (id TEXT PRIMARY KEY, arkusz TEXT, rodzaj INTEGER, podstawa TEXT, kontrahent TEXT, komentarz TEXT,
   przedmiot TEXT, sekcja TEXT, stawka_vat TEXT, dzien_wystawienia TEXT, dni_na_platnosc TEXT, metoda TEXT, ksiegowane INTEGER,
   w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT, split INTEGER, proporcje TEXT, kup INTEGER, kolejnosc INTEGER, lista_plac INTEGER);
@@ -128,6 +128,12 @@ CREATE TABLE zakupy_stan (nr_ewid TEXT PRIMARY KEY REFERENCES zakupy(nr_ewid), s
 CREATE TABLE widoki (ekran TEXT NOT NULL, id TEXT NOT NULL, nazwa TEXT, parametry TEXT, kolumny TEXT, usuniety INTEGER NOT NULL DEFAULT 0,
   wpis TEXT, czas TEXT, PRIMARY KEY (ekran, id));
 CREATE TABLE oznaczone (obiekt TEXT NOT NULL, ref TEXT NOT NULL, powod TEXT, wpis TEXT, czas TEXT, PRIMARY KEY (obiekt, ref));
+
+-- Pakiet 4 (biblioteka.py): słowniki Biblioteki (kontrahent, przedmiot, sekcja, metoda; dane wpisu jako JSON) i kolejność
+-- folderów i kategorii (kf, kk); systemowy = folder arkusza Opłaty urzędowe.
+CREATE TABLE bud_slownik (rodzaj TEXT NOT NULL, nazwa TEXT NOT NULL, dane TEXT, PRIMARY KEY (rodzaj, nazwa));
+CREATE TABLE bud_struktura (folder TEXT NOT NULL, kategoria TEXT NOT NULL, kf INTEGER, kk INTEGER, systemowy INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (folder, kategoria));
 """
 
 
