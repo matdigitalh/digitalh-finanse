@@ -44,10 +44,14 @@ TYPY = {
     'kopia_bs': ('plik', 'sha256'),           # pakiet 6: przyjęta kopia z BS (plik Aplikacja/kopia_bs_*.json i jego suma)
     'lista_plac': ('miesiac', 'pozycje'),     # lista płac za miesiąc od biura (dane rzeczywiste, nie planowanie; lista_plac.py)
     'ppk_plan': ('miesiac',),                 # plan PPK w miesiącu listy, dopóki listy płac nie ma (BL-06; lista_plac.py)
+    # analiza wydatków (wydatki.py): kategoria dla kontrahenta albo jednej płatności, cel wydatku per kontrahent
+    'kategoria_regula': ('kontrahent', 'kategoria'),
+    'kategoria_operacja': ('operacja', 'kategoria'),
+    'cel_wydatku': ('kontrahent',),           # obszar, kto, uzasadnienie, ocena, stały; tylko podane pola, kolejne nakładają się
 }
 # Co może wejść do serii z listy (akcje grupowe, pakiet 7); budżet ma własną serię w „bud” (op „seria”, pakiet 1).
 TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 'klient_faktura', 'koszt_regula', 'koszt_operacja',
-                'do_weryfikacji', 'cofnij')
+                'do_weryfikacji', 'cofnij', 'kategoria_regula', 'kategoria_operacja', 'cel_wydatku')
 MAKS_W_SERII = 1000
 OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_planu', 'seria',
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
@@ -82,6 +86,15 @@ def sprawdz(typ: str, dane) -> dict:
     if typ == 'ustawienie' and dane.get('klucz') == 'podatki':   # ustawienia podatkowe (pakiet 8), część pól wystarczy
         from .podatki import sprawdz_ustawienia
         return {'klucz': 'podatki', 'wartosc': sprawdz_ustawienia(dane.get('wartosc'))}
+    if typ in ('kategoria_regula', 'kategoria_operacja'):   # analiza wydatków (wydatki.py)
+        from .wydatki import sprawdz_kategorie
+        return sprawdz_kategorie(typ, dane)
+    if typ == 'cel_wydatku':
+        from .wydatki import sprawdz_cel
+        return sprawdz_cel(dane)
+    if typ == 'ustawienie' and dane.get('klucz') == 'obszary_wydatkow':   # dodatkowe obszary celu wydatku (pełna lista)
+        from .wydatki import sprawdz_obszary
+        return {'klucz': 'obszary_wydatkow', 'wartosc': sprawdz_obszary(dane.get('wartosc'))}
     if typ == 'ustawienie' and dane.get('klucz') == 'laczenie_od':   # pakiet 5: data startu łączenia w apce
         return {'klucz': 'laczenie_od', 'wartosc': _data(dane.get('wartosc'), 'Łączenie w apce od') or LACZENIE_OD}
     if typ == 'ustawienie':

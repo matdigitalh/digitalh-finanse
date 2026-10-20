@@ -60,6 +60,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów z alertami (`finanse/umowy.py`), ekran Cash flow | gotowy 2026-10-15 |
 | 6 | Pulpit jak w Budget Studio, eksport | gotowy 2026-10-19 (pakiety UX, 10 i 11); planowanie w apce od 1.11.2026 |
+| 7 | Ekran Wydatki: kategorie wydatków, cel i ocena kosztu, koszty stałe (`finanse/wydatki.py`) | gotowy 2026-10-20 |
 
 ## Dopasowanie wpłat (etap 2)
 
@@ -117,6 +118,48 @@ plus `pokrycie_wszystkich` i `wymagana_wszystkie`. Zapis: wpis `rezerwa` w pliku
 ksiegowosc: [...]}`, tylko podane pola; kolejne wpisy nakładają się po czasie, `cofnij` przywraca stan sprzed wpisu). Walidacja
 w `zmiany._sprawdz_rezerwe` (znane klucze, kwota int ≥ 0 albo null), serwer sprawdza, że kontrahent księgowości jest w wydatkach
 z banku; złożenie w `klienci.wczytaj_reczne` (meta `rezerwa`). Testy: `testy/test_controlling.py` (`TestRezerwaKrytyczna`).
+
+## Wydatki: kategorie, cel wydatku, koszty stałe (2026-10-20)
+
+`finanse/wydatki.py` (reguły i odczyty), ekran `web/wydatki.js` + `web/wydatki.css` (menu: Wydatki, `#/wydatki`), testy
+`testy/test_wydatki.py`. Pytanie Mata: na co ile wydajemy, jakie mamy koszty stałe i czy każdy koszt ma sens.
+
+- **Kategoria = drugi poziom pod rodzajem.** Rodzaj (`klienci.py`) zostaje bez zmian, bo od niego zależą wynik zarządczy, rezerwa
+  i cash flow. Kategoria (lista stała `wydatki.KATEGORIE`: Pensje, ZUS, PIT-4, PPK, Benefity, Podatki VAT, CIT i opłaty, Księgowość
+  i prawne, Narzędzia i subskrypcje, Reklama własna, Sprzęt, Podróże, Reprezentacja, Rekrutacja, Koszty klientów: media, druk
+  i produkcja, podwykonawcy, Podział zysku, Zwroty, Inne, Nieprzypisane) liczy się przy każdej odbudowie, po budżecie (krok
+  „Kategorie wydatków” w `odbudowa.py`), z polem źródła: decyzja Mata dla płatności, reguła Mata dla kontrahenta, reguła wbudowana
+  (`kategoria_wbudowana`: rodzaj, ZUS, urząd skarbowy wg rodzaju, PPK, konta reklamowe, koszt klienta wg druku, tytuł „wyjazd”,
+  wzorce nazw `REGULY_NAZW`, przelew do osoby przy kosztach pracy), na końcu Inne albo Nieprzypisane. Kolumny w `wydatki`:
+  `kategoria`, `kategoria_zrodlo`, `kategoria_wpis`, `kontrahent_grupa`.
+- **Kontrahent w analizie** (`kontrahent_grupa`) to klucz kontrahenta z `klienci.py`, poza płatnościami kartą z losowym kodem
+  w nazwie (FACEBK, IPR, Microsoft, Bolt, Uber, OpenAI, Anthropic) i dwoma zapisami ZUS, które łączymy (`GRUPY_KART`).
+  Cel i reguła kategorii Mata wiszą na tym kluczu.
+- **Zgodność z rodzajem** (`ZGODNE`): kategoria niepasująca do rodzaju (np. Narzędzia przy kosztach pracy) albo kategoria przy rodzaju
+  nieprzypisanym trafia do „Do decyzji”; apka niczego sama nie poprawia. Stamtąd jednym kliknięciem reguła rodzaju (`koszt_regula`).
+- **Wpisy w pliku zmian:** `kategoria_regula` (`{kontrahent, kategoria}`), `kategoria_operacja` (`{operacja, kategoria}`), `cel_wydatku`
+  (`{kontrahent, obszar?, kto?, uzasadnienie?, ocena?, staly?}`: tylko zmieniane pola, kolejne wpisy nakładają się po czasie, `cofnij`
+  przywraca stan sprzed wpisu, data oceny = dzień wpisu z oceną; `staly` true, false albo null = wykrywanie), `ustawienie` z kluczem
+  `obszary_wydatkow` (lista dodatkowych obszarów). Obszary domyślne: Działalność spółki, New Business, Realizacja dla klientów,
+  Zespół, Rozwój; dodatkowe też z klucza `obszary_wydatkow` w `ustawienia.json`. Walidacja `wydatki.sprawdz_*`, odczyt
+  w `klienci.wczytaj_reczne` (klucz `wydatki`), serwer sprawdza, że kontrahent jest w wydatkach, a obszar na liście.
+- **Koszty stałe** (`koszty_stale`): płatność w co najmniej 3 z 4 ostatnich pełnych miesięcy przed dniem stanu albo opłata roczna
+  (płatność w ostatnich 3 miesiącach i ta sama kwota ±10% 11 do 13 miesięcy wcześniej), bez rodzajów VAT, podział zysku, zwrot,
+  zakup zwrócony i koszt klienta. Koszt miesięczny = średnia z miesięcy z płatnością w ostatnich 3 pełnych, roczny = × 12 (opłata
+  roczna: jej kwota, miesięcznie /12). Zmiana ceny ponad 10%: ostatnia płatność kontra poprzednia, a gdy w miesiącu bywa kilka
+  płatności, suma miesiąca kontra poprzednia. Decyzja Mata (stały tak/nie) wygrywa z wykrywaniem. Sumy wg obszaru i osoby.
+- **Ekran:** okres (domyślnie od 1 stycznia do dnia stanu ING; miesiąc niepełny oznaczony), kafle (koszt pracy z rozbiciem, podatki
+  VAT i CIT bez ZUS i PIT-4, narzędzia miesięcznie ze średniej pełnych miesięcy, koszty stałe miesięcznie), wykres słupkowy po
+  miesiącach w grupach kategorii (koszt pracy, narzędzia, koszty klientów, podatki, pozostałe; stały kolor grupy) z przełącznikiem
+  „bez kosztów klientów i VAT”, udział kategorii (paski), tabela kategorii z rozwijaniem kontrahentów, karta kontrahenta (płatności
+  z rachunkiem, źródłem przypisania i netto z dokumentu, kategoria dla kontrahenta albo jednej płatności, obszar, kto, uzasadnienie,
+  ocena, stały), zakładki Koszty stałe (sortowanie, filtr oceny i obszaru) i Do decyzji. Kwoty z banku brutto; netto z dokumentu
+  tylko w szczegółach. Pomoc „?”: `wydatki`, `wyd_*` w `POMOC`.
+- **API:** `GET /api/wydatki/analiza?od&do`, `/api/wydatki/stale`, `/api/wydatki/do-decyzji?od&do`, `/api/wydatki/kontrahent?klucz&od&do`;
+  eksport `GET /api/eksport/wydatki/analiza` (Kategorie, Kontrahenci, Koszty stałe, Podsumowanie) i `/api/eksport/wydatki/stale?ocena&obszar`.
+- **Testy** (`testy/test_wydatki.py`, zmyślone dane): reguły wbudowane, grupy kart, pierwszeństwo decyzji Mata, kategoria nie zmienia
+  rodzaju ani wyniku zarządczego, cel częściowy i cofnij, walidacja i obszary, koszty stałe (3 z 4, opłata roczna, decyzje Mata,
+  zmiana ceny, sumy wg obszaru), kafle bez podwójnego liczenia, ostrzeżenie o niezgodności, karta kontrahenta, eksport.
 
 ## Budżet jak w Budget Studio (zadanie nocne 14/15.10)
 

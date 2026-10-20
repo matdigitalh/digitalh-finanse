@@ -4,7 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from . import baza, budzet, dopasowanie, klienci, konfig, laczenie, widoki, zmiany
+from . import baza, budzet, dopasowanie, klienci, konfig, laczenie, widoki, wydatki, zmiany
 from .importy import budget_studio, fakturownia, faktury_dysk, ing, rejestr_biura, wyniki_biura
 from .importy.wspolne import pliki, sha256, teraz
 
@@ -35,6 +35,7 @@ def odcisk_kodu() -> str:
     h.update((Path(budzet.__file__).parent / 'biblioteka.py').read_bytes())   # pakiet 4
     h.update((Path(budzet.__file__).parent / 'controlling.py').read_bytes())
     h.update((Path(budzet.__file__).parent / 'lista_plac.py').read_bytes())   # listy płac (wpis „lista_plac”)   # pozycje rezerwy (wpis „rezerwa”)
+    h.update(Path(wydatki.__file__).read_bytes())   # analiza wydatków: kategorie, cele, koszty stałe
     return h.hexdigest()[:16]
 
 
@@ -113,6 +114,8 @@ def odbuduj(cel: Path | None = None) -> dict:
             con.execute('RELEASE klienci')
             raport['bledy'].append(f'Klienci i koszty: {e}')
         kroki = (('budzet', 'Budżet', lambda: budzet.zbuduj(con, wpisy)), ('laczenie', 'Łączenie planów', lambda: laczenie.policz(con)),
+                 # po budżecie: pensje rozpoznaje też po osobach z wierszy umów (lista płac)
+                 ('wydatki', 'Kategorie wydatków', lambda: wydatki.przypisz(con, klienci.wczytaj_reczne(wpisy))),
                  ('widoki', 'Widoki list i Do weryfikacji', lambda: widoki.zbuduj(con, wpisy)))
         for nazwa, opis, krok in kroki:
             con.execute(f'SAVEPOINT {nazwa}')

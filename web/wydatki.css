@@ -1,0 +1,11 @@
+/* Ekran Wydatki (web/wydatki.js): tabela kategorii z rozwijaniem, szeroka karta kontrahenta. */
+#wyd-kat tr.rozwijany { cursor: pointer; font-weight: 600; }
+#wyd-kat tr.rozwijany:hover, #wyd-kat tr.klik:hover { background: var(--fiolet-tlo); }
+#wyd-kat tr.klik { cursor: pointer; }
+#wyd-kat .rozwin { all: unset; display: inline-grid; place-items: center; width: 16px; color: var(--fiolet); cursor: pointer; }
+#wyd-kat td.wcieta { padding-left: 34px; }
+#wyd-kat tfoot td { font-weight: 600; }
+.karta:has(.wyd-karta) { width: min(820px, 100vw); }
+.wyd-karta textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--linia); border-radius: 4px; background: var(--tlo); padding: 6px 8px; }
+.wyd-karta td select { margin-top: 4px; max-width: 220px; font-size: 11px; }
+.filtry .eksport-pasek { margin-left: auto; align-self: center; }
