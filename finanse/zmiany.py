@@ -31,6 +31,7 @@ TYPY = {
     'korekta': ('numer', 'faktura', 'kwota'),  # korekta wpisana ręcznie: numer, faktura pierwotna, kwota brutto (grosze)
     'konto_reklamowe': ('konto', 'klient'),   # konto Google Ads / Meta należy do klienta
     'cel': ('klucz', 'wartosc'),              # cel controllingu: obrót roczny (grosze), marża %, rezerwa w miesiącach
+    'rezerwa': ('pozycje',),                  # rezerwa gotówki: pozycje włączone, kwota własna (grosze/mies.), lista księgowości
     'bud': ('op',),                           # zmiana w budżecie (arkusz, wiersz, komórka, płatność, przenieś, decyzja planu)
     'ustawienie': ('klucz', 'wartosc'),       # ustawienia apki, np. planowanie w apce włączone
     'estymata': ('klient', 'udzial'),         # udział czasu zespołu dla klienta (%), do rentowności
@@ -86,6 +87,8 @@ def sprawdz(typ: str, dane) -> dict:
         return {'klucz': dane['klucz'], 'wartosc': dane['wartosc']}
     if typ == 'umowa':
         return _sprawdz_umowe(dane)
+    if typ == 'rezerwa':
+        return _sprawdz_rezerwe(dane)
     if typ == 'kopia_bs':
         return _sprawdz_kopie(dane)
     if typ == 'widok':
@@ -145,6 +148,43 @@ def sprawdz(typ: str, dane) -> dict:
     if typ == 'poza_bankiem' and dane.get('data'):   # wyjątek poza bankiem z datą przelewu (kompensata, karta w walucie)
         czyste['data'] = _data(dane['data'], 'data zapłaty')
     return czyste
+
+
+def _sprawdz_rezerwe(dane: dict) -> dict:
+    """Wpis „rezerwa” (decyzja Mata 2026-10-20): zmienia tylko podane pozycje; kolejne wpisy nakładają się po czasie, cofnięcie
+    przywraca stan sprzed wpisu. Pozycja: {wlaczona: bool, kwota: grosze miesięcznie albo null = średnia z banku}."""
+    from .controlling import KLUCZE_POZYCJI
+    if set(dane) - {'pozycje', 'ksiegowosc'}:
+        raise ValueError('rezerwa: nieznane pole')
+    pozycje = dane.get('pozycje', {})
+    if not isinstance(pozycje, dict):
+        raise ValueError('rezerwa: pozycje jako słownik')
+    czyste = {}
+    for k, v in pozycje.items():
+        if k not in KLUCZE_POZYCJI:
+            raise ValueError(f'rezerwa: nieznana pozycja {k}')
+        if not isinstance(v, dict) or not v or set(v) - {'wlaczona', 'kwota'}:
+            raise ValueError(f'rezerwa: pozycja {k} bez zmian albo z nieznanym polem')
+        c = {}
+        if 'wlaczona' in v:
+            if not isinstance(v['wlaczona'], bool):
+                raise ValueError(f'rezerwa: pozycja {k}, włączona tak albo nie')
+            c['wlaczona'] = v['wlaczona']
+        if 'kwota' in v:
+            kw = v['kwota']
+            if kw is not None and (not isinstance(kw, int) or isinstance(kw, bool) or not 0 <= kw < 10 ** 10):
+                raise ValueError(f'rezerwa: pozycja {k}, kwota własna w groszach (0 lub więcej) albo pusta')
+            c['kwota'] = kw
+        czyste[k] = c
+    wynik = {'pozycje': czyste}
+    if 'ksiegowosc' in dane:
+        lista = dane['ksiegowosc']
+        if not isinstance(lista, list) or len(lista) > 20 or not all(isinstance(x, str) and 0 < len(x.strip()) <= 80 for x in lista):
+            raise ValueError('rezerwa: lista kontrahentów księgowości (najwyżej 20 nazw)')
+        wynik['ksiegowosc'] = list(dict.fromkeys(x.strip().lower() for x in lista))
+    if not czyste and 'ksiegowosc' not in wynik:
+        raise ValueError('rezerwa: brak zmian')
+    return wynik
 
 
 def zapisz(typ: str, dane: dict) -> dict:

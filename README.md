@@ -105,6 +105,19 @@ miara bez kosztów klientów), obrót do celu (plan liniowy i prognoza ze średn
 Cele jako wpis `cel` w pliku zmian. Pomoc: przycisk „?” przy kaflach i wykresach (dymek po najechaniu, panel po
 kliknięciu) i „Pomoc” w menu; treści w `POMOC` w `web/app.js`. Wykresy: `web/wykresy.js`.
 
+**Rezerwa na koszty krytyczne (decyzja Mata 2026-10-20).** Rezerwa liczy się od kosztów, których nie można nie zapłacić,
+a pozycje wybiera Mat (Pulpit, Cele). Pozycje (`controlling.POZYCJE_REZERWY`): wynagrodzenia (rodzaj `praca`), księgowość
+(`staly` kontrahentów z listy, domyślnie `brixen fk`; lista nadpisywalna kluczem `rezerwa_ksiegowosc` w `ustawienia.json`
+i wpisem z apki), narzędzia i inne stałe (`staly` bez księgowości), podatki, koszty klientów (`przenoszony`), nieprzypisane.
+Domyślnie włączone: wynagrodzenia i księgowość. Każda pozycja: średnia miesięczna z banku z tego samego okna 6 pełnych miesięcy
+co dotąd (grosze), przełącznik i opcjonalna kwota własna miesięcznie (zastępuje średnią; `null` = średnia). Wynik: `koszt_krytyczny`
+(suma włączonych), `wymagana` = koszt × `rezerwa_miesiecy`, `pokrycie_miesiecy`, `nadwyzka`, `status` (zielony od celu, żółty od 2/3),
+rozbicie w `pozycje`. Stare pola zostają (`srednie_koszty`, `srednie_stale` czytane przez `cashflow.py`, `pokrycie_stalych`),
+plus `pokrycie_wszystkich` i `wymagana_wszystkie`. Zapis: wpis `rezerwa` w pliku zmian (`{pozycje: {klucz: {wlaczona, kwota}},
+ksiegowosc: [...]}`, tylko podane pola; kolejne wpisy nakładają się po czasie, `cofnij` przywraca stan sprzed wpisu). Walidacja
+w `zmiany._sprawdz_rezerwe` (znane klucze, kwota int ≥ 0 albo null), serwer sprawdza, że kontrahent księgowości jest w wydatkach
+z banku; złożenie w `klienci.wczytaj_reczne` (meta `rezerwa`). Testy: `testy/test_controlling.py` (`TestRezerwaKrytyczna`).
+
 ## Budżet jak w Budget Studio (zadanie nocne 14/15.10)
 
 Folder → kategoria → arkusz → wiersz → płatność (`finanse/budzet.py`). Źródła: plik importu

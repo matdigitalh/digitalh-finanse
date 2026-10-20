@@ -33,6 +33,7 @@ def odcisk_kodu() -> str:
     h.update((Path(budzet.__file__).parent / 'podatki.py').read_bytes())
     h.update(Path(widoki.__file__).read_bytes())
     h.update((Path(budzet.__file__).parent / 'biblioteka.py').read_bytes())   # pakiet 4
+    h.update((Path(budzet.__file__).parent / 'controlling.py').read_bytes())   # pozycje rezerwy (wpis „rezerwa”)
     return h.hexdigest()[:16]
 
 

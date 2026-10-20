@@ -63,7 +63,7 @@ def _dzien(s):
 
 def wczytaj_reczne(wpisy):
     cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
-    r = {'klient_nip': {}, 'klient_faktura': {}, 'koszt_regula': {}, 'koszt_operacja': {}, 'wpis': {}, 'cele': {}, 'konta': {}}
+    r = {'klient_nip': {}, 'klient_faktura': {}, 'koszt_regula': {}, 'koszt_operacja': {}, 'wpis': {}, 'cele': {}, 'konta': {}, 'rezerwa': {'pozycje': {}}}
     for w in wpisy:
         if w.get('id') in cofniete:
             continue
@@ -76,6 +76,11 @@ def wczytaj_reczne(wpisy):
             r['wpis'][('konto_reklamowe', d['konto'])] = w.get('id')
         elif typ == 'cel':
             r['cele'][d['klucz']] = d['wartosc']
+        elif typ == 'rezerwa':   # pozycje rezerwy: późniejszy wpis nadpisuje tylko pola, które podał
+            for k, v in (d.get('pozycje') or {}).items():
+                r['rezerwa']['pozycje'].setdefault(k, {}).update(v)
+            if 'ksiegowosc' in d:
+                r['rezerwa']['ksiegowosc'] = d['ksiegowosc']
         elif typ == 'klient_faktura':
             r['klient_faktura'][d['faktura']] = d['klient']
             r['wpis'][('klient_faktura', d['faktura'])] = w.get('id')
@@ -96,6 +101,7 @@ def policz(con, wpisy) -> dict:
     reczne = wczytaj_reczne(wpisy)
     import json
     con.execute("INSERT OR REPLACE INTO meta VALUES ('cele', ?)", (json.dumps(reczne['cele']),))
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('rezerwa', ?)", (json.dumps(reczne['rezerwa']),))
     wiersze = [('klient_nip', k, v, reczne['wpis'].get(('klient_nip', k), '')) for k, v in reczne['klient_nip'].items()]
     wiersze += [('klient_faktura', k, v, reczne['wpis'].get(('klient_faktura', k), '')) for k, v in reczne['klient_faktura'].items()]
     wiersze += [('koszt_regula', k, f'{RODZAJE[a]}{", " + b if b else ""}', reczne['wpis'].get(('koszt_regula', k), ''))

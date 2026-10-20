@@ -147,7 +147,8 @@ async function zmiana(typ, dane) {
   await sprawdzStan();
   await pokaz();
   komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.', false,
-    typ === 'bud' && typeof cofnijOstatni === 'function' ? { nazwa: 'Cofnij', akcja: cofnijOstatni } : null);
+    typ === 'bud' && typeof cofnijOstatni === 'function' ? { nazwa: 'Cofnij', akcja: cofnijOstatni }
+      : typ === 'rezerwa' && w.wpis ? { nazwa: 'Cofnij', akcja: () => zmiana('cofnij', { wpis: w.wpis }) } : null);
   return true;
 }
 
@@ -450,7 +451,7 @@ const WIDOKI = {
     setTimeout(() => {
       document.querySelectorAll('.pasek-celu [data-w]').forEach(x => { x.style[x.tagName === 'I' ? 'width' : 'left'] = `${Math.max(0, Math.min(100, x.dataset.w))}%`; });
       document.querySelectorAll('.pasek-proporcji[data-w]').forEach(x => { x.style.width = `calc(74px + ${x.dataset.w} * (100% - 74px))`; });
-      const b = $('#ustaw-cele'); if (b) b.onclick = e => { e.stopPropagation(); kartaCelow(c.cele); };
+      const b = $('#ustaw-cele'); if (b) b.onclick = e => { e.stopPropagation(); kartaCelow(c.cele, c.rezerwa); };
       const pm = $('#pulpit-pomoc'); if (pm) pm.onclick = () => otworzPomoc('kafle_bs');
       if (typeof pulpitDodatki === 'function') pulpitDodatki();   // pakiet 11: alerty umów, rachunek VAT, lista płac (pulpit.js)
     });
@@ -495,9 +496,9 @@ const WIDOKI = {
       <div class="kontrolka">
         <a class="kafel-st ${r.status}" href="#/rentownosc/koszty">
           <div class="tytul">Rezerwa gotówki ${pytajnik('rezerwa')}</div>
-          <div class="wartosc">${mies1(r.pokrycie_miesiecy)}</div>
-          ${chipStatus(r.status, r.status === 'dobrze' ? `co najmniej ${r.miesiecy_cel} mies. kosztów` : `cel ${r.miesiecy_cel} mies., ${brakuje}`)}
-          <div class="dop">gotówka ${zl(s.gotowka)} przy średnich kosztach ${zl(r.srednie_koszty)} miesięcznie; same koszty pracy i stałe: ${mies1(r.pokrycie_stalych)}</div>
+          <div class="wartosc">${r.pokrycie_miesiecy == null ? 'brak' : `na ${mies1(r.pokrycie_miesiecy)}`}</div>
+          ${chipStatus(r.status, r.status === 'dobrze' ? `co najmniej ${r.miesiecy_cel} mies. kosztów krytycznych` : `cel ${r.miesiecy_cel} mies., ${brakuje}`)}
+          <div class="dop">kosztów krytycznych (${r.wlaczone.length ? `${esc(r.wlaczone.join(', ').toLowerCase())}: ${zlOkragle(r.koszt_krytyczny)}/mies.` : 'nie wybrano żadnej pozycji, ustaw w Cele'}); gotówka ${zl(s.gotowka)}; przy wszystkich kosztach: ${mies1(r.pokrycie_wszystkich)}</div>
         </a>
         <a class="kafel-st ${o.status}" href="#/rentownosc/klienci">
           <div class="tytul">Obrót do celu rocznego ${pytajnik('obrot')}</div>
@@ -817,28 +818,87 @@ Object.assign(WIDOKI, {
 const STATUS = { dobrze: ['✓', 'w normie'], uwaga: ['!', 'uwaga'], zle: ['✕', 'poniżej celu'], brak: ['?', 'brak danych'] };
 const chipStatus = (st, tekst) => `<div class="chip-st ${st}"><b aria-hidden="true">${STATUS[st][0]}</b><span>${esc(STATUS[st][1])}</span><small>${esc(tekst)}</small></div>`;
 
-function kartaCelow(cele) {
+// Kwota w pełnych złotych (kafle, tabela rezerwy): 47 700 zł.
+const zlOkragle = gr => `${zl(Math.round(gr / 100) * 100, false).replace(/,00$/, '')} zł`;
+// Pole „zł miesięcznie” na grosze: puste = null (średnia z banku), inaczej liczba ≥ 0; zły tekst = undefined.
+function groszeZPola(tekst) {
+  const t = tekst.replace(/\s/g, '').replace(',', '.');
+  if (!t) return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return undefined;
+  const [c, u = ''] = t.split('.');
+  return Number(c) * 100 + Number(u.padEnd(2, '0'));
+}
+
+function tabelaRezerwy(r) {
+  const tr = r.pozycje.map(p => `<tr data-poz="${p.klucz}"><td><label class="przelacznik"><input type="checkbox" data-wl ${p.wlaczona ? 'checked' : ''} aria-label="Wchodzi do rezerwy: ${esc(p.nazwa)}"><span class="suwak"></span>
+      <span><b>${esc(p.nazwa)}</b><br><small class="szary">${esc(p.opis)}</small></span></label></td>
+    <td class="liczba-kol">${zlOkragle(p.srednia)}</td>
+    <td class="liczba-kol"><input data-kw inputmode="decimal" placeholder="średnia" aria-label="Kwota własna: ${esc(p.nazwa)}"
+      value="${p.kwota_wlasna == null ? '' : zl(p.kwota_wlasna, false).replace(/,00$/, '')}"></td>
+    <td class="liczba-kol" data-liczona>${p.wlaczona ? zlOkragle(p.liczona) : '<span class="szary">nie wchodzi</span>'}</td></tr>`).join('');
+  return `<div class="tabela-ramka niska"><table class="tabela-rezerwy"><thead><tr><th>Pozycja</th><th class="liczba-kol">Średnia z banku</th>
+    <th class="liczba-kol">Kwota własna (zł/mies.)</th><th class="liczba-kol">Liczona kwota</th></tr></thead><tbody>${tr}</tbody>
+    <tfoot><tr><td>Koszt krytyczny miesięcznie</td><td></td><td></td><td class="liczba-kol" id="rez-suma">${zlOkragle(r.koszt_krytyczny)}</td></tr></tfoot></table></div>`;
+}
+
+function kartaCelow(cele, r) {
   const k = $('#karta');
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>Cele</h2>
     <p class="szary">Na nich opierają się kolory na pulpicie. Zapis idzie do pliku zmian tego Maca, więc drugi Mac zobaczy te same cele.</p>
     <div class="formularz">
       ${pole('', 'Obrót netto w roku (zł)', `<input id="cel-obrot" inputmode="numeric" value="${Math.round(cele.cel_obrot_rok / 100)}">`)}
       ${pole('', 'Marża zysku na czysto (%)', `<input id="cel-marza" inputmode="decimal" value="${String(cele.cel_marza_proc).replace('.', ',')}">`)}
-      ${pole('', 'Rezerwa gotówki (miesięcy kosztów)', `<input id="cel-rezerwa" inputmode="decimal" value="${String(cele.rezerwa_miesiecy).replace('.', ',')}">`)}
     </div>
+    ${r ? `<h3>Rezerwa gotówki na koszty krytyczne ${pytajnik('rezerwa')}</h3>
+    <p class="szary">Zaznacz koszty, których nie możesz nie zapłacić. Średnia z banku to ${r.okno.length} pełnych miesięcy (${esc(mies(r.okno[0]))} do ${esc(mies(r.okno[r.okno.length - 1]))}). Kwota własna zastępuje średnią; puste pole = średnia.</p>
+    ${tabelaRezerwy(r)}
+    <div class="formularz">
+      ${pole('', 'Rezerwa gotówki (miesięcy kosztów krytycznych)', `<input id="cel-rezerwa" inputmode="decimal" value="${String(cele.rezerwa_miesiecy).replace('.', ',')}">`)}
+      ${pole('', 'Kontrahenci księgowości (po przecinku)', `<input id="rez-ksiegowosc" list="rez-kontrahenci" value="${esc(r.ksiegowosc.join(', '))}">
+        <datalist id="rez-kontrahenci">${r.kontrahenci_stali.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`)}
+    </div>
+    <p id="rez-wynik">wymagana rezerwa <b>${zl(r.wymagana)}</b> (${String(r.miesiecy_cel).replace('.', ',')} mies. × ${zlOkragle(r.koszt_krytyczny)}); gotówka ${zl(r.gotowka)} wystarcza na <b>${r.pokrycie_miesiecy == null ? 'brak' : String(r.pokrycie_miesiecy).replace('.', ',') + ' mies.'}</b> kosztów krytycznych${r.nadwyzka < 0 ? `, brakuje ${zl(-r.nadwyzka)}` : `, ponad cel ${zl(r.nadwyzka)}`}.</p>`
+    : `<div class="formularz">${pole('', 'Rezerwa gotówki (miesięcy kosztów)', `<input id="cel-rezerwa" inputmode="decimal" value="${String(cele.rezerwa_miesiecy).replace('.', ',')}">`)}</div>`}
     <div class="akcje"><button class="glowny" id="zapisz-cele">Zapisz</button></div>
     <p class="szary">${pytajnik('cele')} Jak cele przekładają się na kolory: rezerwa zielona od pełnej liczby miesięcy, żółta od 2/3; obrót zielony, gdy prognoza na koniec roku sięga celu, żółty od 90%; marża zielona od celu, żółta od połowy.</p>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
+  // Podgląd sumy na żywo (przed zapisem): włączone pozycje, kwota własna albo średnia.
+  const przelicz = () => {
+    let suma = 0;
+    for (const p of r?.pozycje || []) {
+      const w = $(`tr[data-poz="${p.klucz}"]`, k), wl = $('[data-wl]', w).checked, kw = groszeZPola($('[data-kw]', w).value);
+      const liczona = kw == null ? p.srednia : kw;
+      $('[data-liczona]', w).innerHTML = !wl ? '<span class="szary">nie wchodzi</span>' : kw === undefined ? '<span class="minus">zła kwota</span>' : zlOkragle(liczona);
+      if (wl && kw !== undefined) suma += liczona;
+    }
+    if (r) $('#rez-suma').textContent = zlOkragle(suma);
+  };
+  k.querySelectorAll('.tabela-rezerwy input').forEach(x => { x.oninput = przelicz; });
   $('#zapisz-cele').onclick = async () => {
     const liczba = s => s.replace(/\s/g, '').replace(',', '.');
-    const zmiany = [['cel_obrot_rok', String(Math.round(parseFloat(liczba($('#cel-obrot').value)) * 100))],
+    const wpisy = [['cel_obrot_rok', String(Math.round(parseFloat(liczba($('#cel-obrot').value)) * 100))],
       ['cel_marza_proc', liczba($('#cel-marza').value)], ['rezerwa_miesiecy', liczba($('#cel-rezerwa').value)]]
-      .filter(([kl, v]) => String(cele[kl]) !== v && String(Math.round(cele[kl] * 100) / 100) !== v);
-    if (!zmiany.length) { k.hidden = true; return; }
-    for (const [kl, v] of zmiany.slice(0, -1)) if (!(await zmianaCicha('cel', { klucz: kl, wartosc: v }))) return;
-    const [kl, v] = zmiany[zmiany.length - 1];
-    zmiana('cel', { klucz: kl, wartosc: v });
+      .filter(([kl, v]) => String(cele[kl]) !== v && String(Math.round(cele[kl] * 100) / 100) !== v)
+      .map(([kl, v]) => ['cel', { klucz: kl, wartosc: v }]);
+    if (r) {
+      const pozycje = {};
+      for (const p of r.pozycje) {
+        const w = $(`tr[data-poz="${p.klucz}"]`, k), wl = $('[data-wl]', w).checked, kw = groszeZPola($('[data-kw]', w).value);
+        if (kw === undefined) { komunikat(`${p.nazwa}: kwota własna to liczba złotych albo puste pole.`, true); return; }
+        const zm = {};
+        if (wl !== p.wlaczona) zm.wlaczona = wl;
+        if (kw !== p.kwota_wlasna) zm.kwota = kw;
+        if (Object.keys(zm).length) pozycje[p.klucz] = zm;
+      }
+      const ksieg = $('#rez-ksiegowosc').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+      const dane = Object.keys(pozycje).length ? { pozycje } : {};
+      if (ksieg.join('|') !== r.ksiegowosc.join('|')) dane.ksiegowosc = ksieg;
+      if (Object.keys(dane).length) wpisy.push(['rezerwa', dane]);
+    }
+    if (!wpisy.length) { k.hidden = true; return; }
+    for (const [typ, d] of wpisy.slice(0, -1)) if (!(await zmianaCicha(typ, d))) return;
+    zmiana(...wpisy[wpisy.length - 1]);
   };
 }
 
@@ -853,11 +913,11 @@ const POMOC = {
     skad: 'Przed dniem stanu przepływy z banku, po nim prognoza (należności z faktur i plany z budżetu, scenariusz ostrożny).',
     jak: 'Tydzień od wtorku do poniedziałku, jak w Budget Studio. Jaśniejsza część słupka to plany, pełna to dokumenty i bank.',
     zrob: 'Kliknij wykres, żeby otworzyć pełny ekran Cash flow.' },
-  rezerwa: { tytul: 'Rezerwa gotówki', krotko: 'Na ile miesięcy kosztów wystarczy gotówka na rachunkach, gdyby wpłaty od klientów stanęły.',
-    co: 'Gotówka na rachunku głównym i online podzielona przez średni miesięczny wypływ na koszty. Pokazuje, ile miesięcy agencja przetrwa bez żadnej wpłaty.',
-    skad: 'Saldo z ostatniej operacji w eksporcie ING. Koszty: wydatki z banku z ostatnich 6 pełnych miesięcy, rodzaje: koszty klientów, praca, stałe, nieprzypisane i podatki. Bez VAT, podziału zysku, zwrotów i przelewów między własnymi rachunkami.',
-    jak: 'Status liczony od wszystkich kosztów (ostrożnie). Druga liczba w opisie pomija koszty klientów, bo te zwykle płacimy dopiero z wpłaty klienta; to minimum, które utrzymuje agencję.',
-    zrob: 'Czerwony: wstrzymać wydatki niepilne, przyspieszyć windykację (kafel należności), nie wypłacać zysku. Cel ustawiasz przyciskiem Cele.' },
+  rezerwa: { tytul: 'Rezerwa gotówki', krotko: 'Na ile miesięcy kosztów krytycznych wystarczy gotówka, gdyby wpłaty od klientów stanęły.',
+    co: 'Koszty krytyczne to te, których nie możesz nie zapłacić. Domyślnie wynagrodzenia (pensje, ZUS, PIT, PPK, Medicover) i księgowość. Sam wybierasz, co wchodzi: w Cele zaznaczasz pozycje (też narzędzia, podatki, koszty klientów, nieprzypisane).',
+    skad: 'Gotówka: saldo rachunku głównego i online z ostatniej operacji w eksporcie ING. Koszty: średnia miesięczna z banku z 6 ostatnich pełnych miesięcy, bez VAT, podziału zysku, zwrotów i przelewów między własnymi rachunkami. Księgowość to koszty stałe kontrahentów z listy w Cele.',
+    jak: 'Koszt krytyczny = suma zaznaczonych pozycji; przy każdej możesz wpisać własną kwotę miesięczną, która zastępuje średnią (puste pole = średnia). Wymagana rezerwa = koszt krytyczny razy liczba miesięcy z celu. Zielony od pełnej liczby miesięcy, żółty od 2/3. W opisie kafla dla porównania: na ile starczy przy wszystkich kosztach.',
+    zrob: 'Czerwony: wstrzymać wydatki niepilne, przyspieszyć windykację (kafel należności), nie wypłacać zysku. Pozycje, kwoty i liczbę miesięcy ustawiasz przyciskiem Cele.' },
   obrot: { tytul: 'Obrót do celu rocznego', krotko: 'Obrót netto z faktur od początku roku, plan na dziś i prognoza na koniec roku.',
     co: 'Ile zafakturowaliśmy netto od 1 stycznia, ile powinno być przy równym tempie przez cały rok (pomarańczowa kreska na pasku) i dokąd dojdziemy w obecnym tempie.',
     skad: 'Faktury z eksportu Fakturowni wg daty sprzedaży, korekty ze znakiem minus.',

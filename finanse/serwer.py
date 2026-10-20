@@ -99,6 +99,10 @@ def _sprawdz_odwolania(con, typ, dane):
         umowy.sprawdz_odwolania(con, dane)
     if typ == 'do_weryfikacji' and not dane.get('usun') and not con.execute(OBIEKTY_SQL[dane['obiekt']], (dane['ref'],)).fetchone():
         raise ValueError(f"nie ma pozycji {dane['ref']}")
+    if typ == 'rezerwa':   # lista księgowości: tylko kontrahenci, którzy są w wydatkach z banku
+        for k in dane.get('ksiegowosc', []):
+            if not con.execute('SELECT 1 FROM wydatki WHERE kontrahent_klucz = ?', (k,)).fetchone():
+                raise ValueError(f'nie ma kontrahenta „{k}” w wydatkach z banku')
     ekrany.sprawdz_odwolania(con, typ, dane)   # pakiet 11: przypięcie i widok arkusza wskazują istniejący arkusz
     for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
         if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
