@@ -90,6 +90,8 @@ def wczytaj_reczne(wpisy):
         elif typ == 'koszt_operacja':
             r['koszt_operacja'][d['operacja']] = (d['rodzaj'], d.get('klient', ''))
             r['wpis'][('koszt_operacja', d['operacja'])] = w.get('id')
+    from .wydatki import wczytaj as wczytaj_wydatki   # analiza wydatków: kategorie, cele, obszary (wydatki.py)
+    r['wydatki'] = wczytaj_wydatki(wpisy, cofniete)
     return r
 
 

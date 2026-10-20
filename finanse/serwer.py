@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import (baza, budzet, cashflow, controlling, eksport, konfig, kopia_bs, laczenie, odbudowa, podatki, rentownosc, wynik,
                zapytania, zapytania_budzet, zapytania_listy, zmiany)
+from . import wydatki   # analiza wydatków: kategorie, cele, koszty stałe
 from . import ekrany   # pakiet 11: karta klienta, alerty pulpitu, rentowność przestawna, widoki arkuszy
 from .importy import podsumowanie as importy_podsumowanie, reczny
 
@@ -107,6 +108,7 @@ def _sprawdz_odwolania(con, typ, dane):
         for k in dane.get('ksiegowosc', []):
             if not con.execute('SELECT 1 FROM wydatki WHERE kontrahent_klucz = ?', (k,)).fetchone():
                 raise ValueError(f'nie ma kontrahenta „{k}” w wydatkach z banku')
+    wydatki.sprawdz_odwolania(con, typ, dane)   # analiza wydatków: kontrahent i obszar istnieją
     ekrany.sprawdz_odwolania(con, typ, dane)   # pakiet 11: przypięcie i widok arkusza wskazują istniejący arkusz
     for n in dane.get('faktury', []) + ([dane['faktura']] if 'faktura' in dane else []):
         if not con.execute('SELECT 1 FROM faktury WHERE numer = ?', (n,)).fetchone():
@@ -278,6 +280,8 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = zapytania.wyniki_biura(con)
             elif sciezka in ekrany.ODCZYTY:   # pakiet 11: nowe ekrany (finanse/ekrany.py)
                 dane = ekrany.ODCZYTY[sciezka](con, q)
+            elif sciezka in wydatki.ODCZYTY:   # ekran Wydatki: analiza, koszty stałe, do decyzji, karta kontrahenta
+                dane = wydatki.ODCZYTY[sciezka](con, q)
             else:
                 return self._json({'blad': 'nieznany adres'}, 404)
         except (ValueError, TypeError) as e:

@@ -83,8 +83,14 @@ CREATE TABLE faktury_klient (numer TEXT PRIMARY KEY REFERENCES faktury(numer), k
 
 CREATE TABLE wydatki (
   operacja_id INTEGER PRIMARY KEY REFERENCES operacje(id), kontrahent_klucz TEXT, rodzaj TEXT NOT NULL, klient TEXT,
-  zrodlo TEXT, wpis TEXT, dokument TEXT, netto_dok INTEGER, konto TEXT
+  zrodlo TEXT, wpis TEXT, dokument TEXT, netto_dok INTEGER, konto TEXT,
+  -- analiza wydatków (wydatki.py): kategoria (drugi poziom pod rodzajem), skąd, wpis Mata, kontrahent w analizie
+  kategoria TEXT, kategoria_zrodlo TEXT, kategoria_wpis TEXT, kontrahent_grupa TEXT
 );
+CREATE INDEX wydatki_grupa ON wydatki(kontrahent_grupa);
+-- Cel wydatku per kontrahent (wpis „cel_wydatku”): obszar, kto, uzasadnienie, ocena, data oceny, stały (NULL = wykrywanie).
+CREATE TABLE wydatki_cel (kontrahent TEXT PRIMARY KEY, obszar TEXT, kto TEXT, uzasadnienie TEXT, ocena TEXT, data_oceny TEXT,
+  staly INTEGER, wpis TEXT);
 CREATE TABLE wydatki_dok (operacja_id INTEGER NOT NULL, nr_ewid TEXT NOT NULL, metoda TEXT);
 CREATE INDEX wydatki_dok_op ON wydatki_dok(operacja_id);
 CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);

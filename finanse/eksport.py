@@ -617,6 +617,46 @@ def _platnosci7(con, q):
     return _platnosci_bs(con, q, lista_wszystkie(con, 'platnosci', q))
 
 
+# ---------- analiza wydatków (wydatki.py): kategorie z kontrahentami i koszty stałe ----------
+
+KATEGORIE_WYD = [('Kategoria', 'nazwa', 'tekst'), ('Suma (brutto z banku)', 'suma', 'kwota'), ('Średnio miesięcznie (pełne miesiące)', 'srednia', 'kwota'),
+                 ('Udział %', 'udzial', 'proc'), ('Płatności', 'ile', 'liczba')]
+KONTRAHENCI_WYD = [('Kategoria', 'kategoria', 'tekst'), ('Kontrahent', 'nazwa', 'tekst'), ('Klucz', 'klucz', 'tekst'),
+                   ('Suma (brutto z banku)', 'suma', 'kwota'), ('Płatności', 'ile', 'liczba'), ('Ostatnia płatność', 'ostatnia', 'data')]
+STALE_WYD = [('Kontrahent', 'nazwa', 'tekst'), ('Kategoria', 'kategoria_nazwa', 'tekst'), ('Miesięcznie', 'miesiecznie', 'kwota'),
+             ('Rocznie', 'rocznie', 'kwota'), ('Ostatnia płatność', 'ostatnia_data', 'data'), ('Kwota ostatniej', 'ostatnia_kwota', 'kwota'),
+             ('Zmiana ceny %', lambda x: (x.get('zmiana_ceny') or {}).get('proc'), 'proc'), ('Skąd stały', 'sposob', 'tekst'),
+             ('Obszar', 'obszar', 'tekst'), ('Kto', 'kto', 'tekst'), ('Ocena', lambda x: x.get('ocena', '').replace('_', ' '), 'tekst'),
+             ('Data oceny', 'data_oceny', 'data'), ('Uzasadnienie', 'uzasadnienie', 'tekst')]
+SUMY_STALYCH = [('Grupa', 'nazwa', 'tekst'), ('Pozycji', 'ile', 'liczba'), ('Miesięcznie', 'miesiecznie', 'kwota'), ('Rocznie', 'rocznie', 'kwota')]
+
+
+def _wydatki_analiza(con, q):
+    from . import wydatki
+    d = wydatki.analiza(con, q.get('od'), q.get('do'))
+    kontr = [{**k, 'kategoria': x['nazwa']} for x in d['kategorie'] for k in x['kontrahenci']]
+    s = wydatki.koszty_stale(con)
+    pods = _podsumowanie([('Okres', f"{d['od']} do {d['do']}", None), ('Miesiące niepełne', ', '.join(d['niepelne']) or 'brak', None),
+                          ('Kwoty', 'brutto z banku (netto z dokumentu w szczegółach płatności)', None),
+                          ('Wydatki razem', '', d['razem']), ('Bez kosztów klientów i VAT', '', d['bez_klientow_vat']),
+                          ('Koszt pracy (pensje, ZUS, PIT-4, PPK, benefity)', '', d['kafle']['koszt_pracy']['suma']),
+                          ('Podatki (VAT, CIT i opłaty)', '', d['kafle']['podatki']['suma']),
+                          ('Narzędzia średnio miesięcznie', '', d['kafle']['narzedzia']['srednia']),
+                          ('Koszty stałe miesięcznie', '', s['razem']['miesiecznie'])])
+    return (_nazwa('wydatki wg kategorii', d['od'], 'do', d['do']),
+            [_tab('Kategorie', KATEGORIE_WYD, d['kategorie']), _tab('Kontrahenci', KONTRAHENCI_WYD, kontr),
+             _tab('Koszty stałe', STALE_WYD, s['pozycje']), pods], False)
+
+
+def _wydatki_stale(con, q):
+    from . import wydatki
+    s = wydatki.koszty_stale(con)
+    poz = [x for x in s['pozycje'] if (not q.get('ocena') or x['ocena'] == q['ocena']) and (not q.get('obszar') or x['obszar'] == q['obszar'])]
+    return (_nazwa('koszty stałe', s['dzien_stanu']),
+            [_tab('Koszty stałe', STALE_WYD, poz), _tab('Wg obszaru', SUMY_STALYCH, s['wg_obszaru']),
+             _tab('Wg osoby', SUMY_STALYCH, s['wg_osoby'])], False)
+
+
 # Ścieżka zapytania ekranu → eksport. Funkcja zwraca (nazwa pliku bez rozszerzenia, tabele, czy CSV w formacie BS).
 EKSPORTY = {
     'budzet/lista': platnosci_bs,
@@ -653,6 +693,8 @@ EKSPORTY = {
     'lista/wplaty': _lista7('wplaty', 'Wpłaty do połączenia', WPLATY, nazwa_pliku='wpłaty'),
     'lista/do-weryfikacji': _lista7('do_weryfikacji', 'Do weryfikacji', WERYFIKACJA),
     'lista/wydatki': _lista7('wydatki', 'Wydatki z banku', WYDATKI),
+    'wydatki/analiza': _wydatki_analiza,   # ekran Wydatki: kategorie, kontrahenci, koszty stałe
+    'wydatki/stale': _wydatki_stale,
     # adresy sprzed pakietu 10 (przyciski w arkuszu, cash flow i rentowności)
     'arkusz': _arkusz,
     'cashflow': _cashflow_13,

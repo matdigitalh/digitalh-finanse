@@ -11,6 +11,7 @@ const IKONY = {
   cashflow: '<path d="M3 8c3-3 6 3 9 0s6 3 9 0M3 13c3-3 6 3 9 0s6 3 9 0M3 18c3-3 6 3 9 0s6 3 9 0"/>',
   rentownosc: '<path d="M6 20V11M11 20V5M16 20v-8M3 20h18"/>',
   eksport: '<path d="M12 4v11M7 10l5 5 5-5M4 19h16"/>',
+  wydatki: '<rect x="3" y="6" width="18" height="13" rx="1.5"/><path d="M3 10h18M16 14.5h2M6 6V4.5h12V6"/>',
 };
 
 // Drobne ikony interfejsu (obrys, 24 × 24), wstawiane funkcją ik().
@@ -42,12 +43,13 @@ const IK = {
 const ik = (nazwa, klasa = '') => `<svg class="ik${klasa ? ' ' + klasa : ''}" viewBox="0 0 24 24" aria-hidden="true">${IK[nazwa] || ''}</svg>`;
 
 const MENU = [
-  { id: 'pulpit', nazwa: 'Pulpit' },
+  { id: 'pulpit', nazwa: 'Pulpit', bezPanelu: true },
   { id: 'budzet', nazwa: 'Budżet' },
   { id: 'platnosci', nazwa: 'Płatności' },
   { id: 'cashflow', nazwa: 'Cash flow' },
   { id: 'rentownosc', nazwa: 'Rentowność' },
-  { id: 'eksport', nazwa: 'Eksport' },
+  { id: 'wydatki', nazwa: 'Wydatki', bezPanelu: true },   // analiza wydatków (web/wydatki.js)
+  { id: 'eksport', nazwa: 'Eksport', bezPanelu: true },
 ];
 
 // Podstrony w wysuwanym panelu, jak w Budget Studio (grupa, ikona, licznik). Budżet ma osobny panel z drzewem arkuszy.
@@ -148,7 +150,7 @@ async function zmiana(typ, dane) {
   await pokaz();
   komunikat('Zapisane. Decyzja jest w pliku zmian tego Maca, drugi Mac zobaczy ją po synchronizacji iCloud.', false,
     typ === 'bud' && typeof cofnijOstatni === 'function' ? { nazwa: 'Cofnij', akcja: cofnijOstatni }
-      : (typ === 'rezerwa' || typ === 'lista_plac') && w.wpis ? { nazwa: 'Cofnij', akcja: () => zmiana('cofnij', { wpis: w.wpis }) } : null);
+      : ['rezerwa', 'lista_plac', 'kategoria_regula', 'kategoria_operacja', 'cel_wydatku', 'koszt_regula', 'seria'].includes(typ) && w.wpis ? { nazwa: 'Cofnij', akcja: () => zmiana('cofnij', { wpis: w.wpis }) } : null);
   return true;
 }
 
@@ -199,7 +201,7 @@ function zbudujMenu() {
     const b = e.target.closest('button');
     if (!b) return;
     const id = b.dataset.id;
-    if (id === 'pulpit' || id === 'eksport') { zamknijWysuw(); location.hash = `#/${id}`; return; }
+    if (MENU.find(m => m.id === id)?.bezPanelu) { zamknijWysuw(); location.hash = `#/${id}`; return; }
     if (!$('#wysuw').hidden && $('#wysuw').dataset.sekcja === id) return zamknijWysuw();
     otworzWysuw(id);
   });
