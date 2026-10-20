@@ -627,7 +627,7 @@ def _duplikuj_arkusz(st: dict, d: dict, scisle: bool):
         return 'nie ma arkusza do zduplikowania', None, nid
     if nid in ark:
         return 'arkusz o tym identyfikatorze już jest', None, nid
-    ark[nid] = {**o, 'zrodlo': 'apka'}
+    ark[nid] = {'przypiety': True, **o, 'zrodlo': 'apka'}   # A-OPS-06: kopia przypięta
     zrodlowe = sorted((wie[x] for x in _wiersze_ark(st, src)),
                       key=lambda w: (-w['rodzaj'], w.get('kontrahent') or '', w.get('komentarz') or '', w['id']))
     for w in zrodlowe:
@@ -882,6 +882,8 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             if bylo is None and not all(obiekt.get(k) for k in ('nazwa', 'folder', 'kategoria', 'od', 'do')):
                 return 'nie ma takiego arkusza', None, oid
             nowy = {**(bylo or {}), **obiekt, 'zrodlo': 'apka'}
+            if bylo and set(obiekt) <= {'id', 'przypiety'}:   # przypięcie nie zmienia źródła arkusza (pakiet 4)
+                nowy['zrodlo'] = bylo.get('zrodlo', '')
             if bylo:
                 powod = _zmien_zakres(st, bylo, nowy, scisle)
                 if powod:
@@ -1187,8 +1189,9 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
                        else (1, nr)) for nr, w in enumerate(model['wiersze'])}
     kolejnosc = {wid: i for i, wid in enumerate(sorted(klucz, key=klucz.get))}
     for a in model['arkusze']:
-        con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo) VALUES (?,?,?,?,?,?,?)',
-                    (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', '')))
+        con.execute('INSERT INTO bud_arkusz (id, folder, kategoria, nazwa, od, do, zrodlo, przypiety) VALUES (?,?,?,?,?,?,?,?)',
+                    (a['id'], a['folder'], a['kategoria'], a['nazwa'], a['od'], a['do'], a.get('zrodlo', ''),
+                     int(a.get('przypiety', True) is not False)))   # pakiet 4: bez decyzji arkusz jest przypięty
     for w in model['wiersze']:
         con.execute('INSERT INTO bud_wiersz (id, arkusz, rodzaj, podstawa, kontrahent, komentarz, przedmiot, sekcja, stawka_vat,'
                     ' dzien_wystawienia, dni_na_platnosc, metoda, ksiegowane, w_cashflow, cykl, plan, zrodlo, split, proporcje, kup, kolejnosc)'

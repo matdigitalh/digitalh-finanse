@@ -32,6 +32,21 @@ Object.assign(POMOC, {
 });
 if (typeof OPISY_OP === 'object') Object.assign(OPISY_OP, { slownik: 'zmiana w Bibliotece', struktura: 'foldery i kategorie' });
 if (typeof NAZWY_OP === 'object') Object.assign(NAZWY_OP, { slownik: 'Biblioteka', struktura: 'foldery i kategorie' });
+// Historia zmian: opis zmian w Bibliotece (było: poprzedni wpis, lista usuniętych albo łączone pozycje).
+if (typeof opisZmiany === 'function') {
+  const opisPoprzedni = opisZmiany;
+  opisZmiany = h => {
+    const op = String(h.op || '').replace(/^seria: /, '');
+    if (op !== 'slownik' && op !== 'struktura') return opisPoprzedni(h);
+    let b = null;
+    try { b = JSON.parse(h.bylo || 'null'); } catch (e) { /* stary wpis */ }
+    const nazwa = x => x?.nazwa || '(wpis systemowy)', co = String(h.obiekt || '').replace(/^[a-z]+:/, '');
+    if (op === 'slownik') return !b ? `dodano: ${co}` : Array.isArray(b) ? `usunięto: ${b.map(nazwa).join(', ')}`
+      : b.cel ? `połączono ${b.zrodla.map(nazwa).join(', ')} z „${nazwa(b.cel)}”` : `zmieniono: ${nazwa(b)}`;
+    return !b ? `dodano: ${co}` : b.foldery ? 'nowa kolejność folderów' : b.kategorie && !b.arkusze && b.arkusze !== 0 && !b.folder ? `nowa kolejność kategorii: ${co}`
+      : 'arkusze' in b ? `usunięto: ${co}${b.arkusze ? `, przeniesione arkusze: ${b.arkusze}` : ''}` : `zmiana nazwy: ${co}`;
+  };
+}
 
 Object.assign(WIDOKI, {
   async 'budzet/biblioteka'(p) {
@@ -128,7 +143,7 @@ function pasekBib(r) {
 
 function kartaUsunieciaBib(r, xs) {
   kartaFormularza(xs.length === 1 ? `Usuń: ${esc(xs[0].etykieta)}` : `Usuń ${xs.length} pozycji`,
-    `<p>${xs.length === 1 ? 'Pozycja zniknie' : 'Pozycje znikną'} z Biblioteki (${esc(NAZWA_BIB[r].toLowerCase())}). Nie mają wystąpień, więc w arkuszach nic się nie zmieni.
+    `<p>${xs.length === 1 ? 'Pozycja zniknie' : 'Pozycje znikną'} z Biblioteki (${esc(NAZWA_BIB[r].toLowerCase())}). ${xs.length === 1 ? 'Nie ma' : 'Nie mają'} wystąpień, więc w arkuszach nic się nie zmieni.
       Cofniesz to w Historii zmian.</p><ul class="lista">${xs.slice(0, 30).map(x => `<li>${esc(x.etykieta)}</li>`).join('')}${xs.length > 30 ? `<li>i ${xs.length - 30} innych</li>` : ''}</ul>`,
     'Tak, usuń', async () => { if (await zmiana('bud', { op: 'slownik', akcja: 'usun', rodzaj: r, nazwy: xs.map(x => x.nazwa) })) BIB_ZAZN[r].clear(); });
 }
@@ -219,7 +234,7 @@ function kartaSlownika(r, x) {
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${nowy ? DODAJ_BIB[r] : esc(x.etykieta)}</h2>
     <div class="formularz">${pola}</div>${ust}${liczba}
     <div class="akcje">${edycja ? `<button class="glowny" id="b-zapisz">${nowy ? 'Dodaj' : 'Zapisz'}</button>` : ''}
-      ${!nowy && edycja ? `<button id="b-polacz" data-karta>${ik('link')}Połącz z istniejącym</button><button id="b-usun" data-karta${powodUsun ? ` disabled title="${esc(powodUsun)}"` : ''}>${ik('zamknij')}Usuń</button>` : ''}
+      ${!nowy && edycja ? `${sys ? '' : `<button id="b-polacz" data-karta>${ik('link')}Połącz z istniejącym</button>`}<button id="b-usun" data-karta${powodUsun ? ` disabled title="${esc(powodUsun)}"` : ''}>${ik('zamknij')}Usuń</button>` : ''}
       <button id="b-anuluj">Anuluj</button></div>
     ${!nowy && powodUsun && edycja ? `<p class="szary">Usuwanie: ${esc(powodUsun)}</p>` : ''}`;
   k.hidden = false;
@@ -455,15 +470,24 @@ function kartaUsunieciaStruktury(d, typ, f, x) {
 function widokArkuszyBib(d, p) {
   const q = (p.q || '').trim().toLowerCase();
   const dane = d.arkusze.filter(a => !q || [a.nazwa, a.folder, a.kategoria].some(v => String(v).toLowerCase().includes(q)));
-  const kol = [{ naglowek: 'Arkusz', html: a => `<a href="#/budzet/arkusz?id=${encodeURIComponent(a.id)}">${esc(a.nazwa)}</a>`, sortKlucz: a => a.nazwa },
+  const pin = a => d.planowanie && a.zrodlo !== 'system'
+    ? `<button class="pin-ark${a.przypiety ? ' przypiety' : ''}" data-pin="${esc(a.id)}" data-karta title="${a.przypiety ? 'Przypięty: widać go w drzewie Budżetu. Kliknij, żeby odpiąć.' : 'Nieprzypięty. Kliknij, żeby przypiąć do drzewa Budżetu.'}" aria-label="${a.przypiety ? 'Odepnij' : 'Przypnij'}">${ik('pinezka')}</button>`
+    : `<span class="pin-ark${a.przypiety ? ' przypiety' : ''}">${ik('pinezka')}</span>`;
+  const kol = [{ naglowek: 'Przypięty', html: pin, sortKlucz: a => (a.przypiety ? 0 : 1) },
+    { naglowek: 'Arkusz', html: a => `<a href="#/budzet/arkusz?id=${encodeURIComponent(a.id)}">${esc(a.nazwa)}</a>`, sortKlucz: a => a.nazwa },
     { naglowek: 'Folder', wartosc: a => a.folder }, { naglowek: 'Kategoria', wartosc: a => a.kategoria },
     { naglowek: 'Zakres', wartosc: a => `${mies(a.od)} - ${mies(a.do)}`, sortKlucz: a => a.od }, { naglowek: 'Wierszy', liczba: true, wartosc: a => a.wierszy },
     { naglowek: 'Źródło', wartosc: a => a.zrodlo === 'system' ? 'systemowy (podatki)' : a.zrodlo || '' }];
   setTimeout(() => {   // filtr w miejscu: wiersze bez frazy chowamy (bez przerysowania, fokus zostaje w polu)
     const s = $('#bib-szukaj-ark');
     if (s) s.oninput = () => { const f = s.value.trim().toLowerCase(); document.querySelectorAll('.bib-arkusze tbody tr').forEach(tr => { tr.hidden = !!f && !tr.textContent.toLowerCase().includes(f); }); };
+    document.querySelectorAll('.bib-arkusze [data-pin]').forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const a = d.arkusze.find(x => x.id === b.dataset.pin);
+      if (a) przypnijArkusz(a.id, !a.przypiety);
+    });
   });
   return `<div class="ark-pasek"><input class="szukaj" id="bib-szukaj-ark" type="search" placeholder="Wyszukaj arkusz, folder, kategorię" value="${esc(p.q || '')}" aria-label="Wyszukaj arkusz"></div>
-    <p class="notka">${d.arkusze.length} arkuszy w ${d.struktura.length} folderach. Kliknij nazwę, żeby otworzyć arkusz; miejsce arkusza zmienisz w zakładce Foldery i kategorie albo w arkuszu (Zarządzaj).</p>
+    <p class="notka">${d.arkusze.length} arkuszy w ${d.struktura.length} folderach, przypiętych: ${d.arkusze.filter(a => a.przypiety).length} (tylko przypięte widać w drzewie w menu Budżet). Kliknij nazwę, żeby otworzyć arkusz; miejsce arkusza zmienisz w zakładce Foldery i kategorie albo w arkuszu (Zarządzaj).</p>
     <div class="bib-arkusze">${tabela({ kolumny: kol, dane, sortLokalny: true, niska: true, onWiersz: a => { location.hash = `#/budzet/arkusz?id=${encodeURIComponent(a.id)}`; } })}</div>`;
 }

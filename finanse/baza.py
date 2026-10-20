@@ -90,7 +90,7 @@ CREATE INDEX wydatki_dok_op ON wydatki_dok(operacja_id);
 CREATE TABLE reguly (typ TEXT, klucz TEXT, wartosc TEXT, wpis TEXT);
 
 -- Budżet (budzet.py): import z Budget Studio + zdarzenia Mata.
-CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT);
+CREATE TABLE bud_arkusz (id TEXT PRIMARY KEY, folder TEXT, kategoria TEXT, nazwa TEXT, od TEXT, do TEXT, zrodlo TEXT, przypiety INTEGER DEFAULT 1);
 CREATE TABLE bud_wiersz (id TEXT PRIMARY KEY, arkusz TEXT, rodzaj INTEGER, podstawa TEXT, kontrahent TEXT, komentarz TEXT,
   przedmiot TEXT, sekcja TEXT, stawka_vat TEXT, dzien_wystawienia TEXT, dni_na_platnosc TEXT, metoda TEXT, ksiegowane INTEGER,
   w_cashflow INTEGER, cykl TEXT, plan TEXT, zrodlo TEXT, split INTEGER, proporcje TEXT, kup INTEGER, kolejnosc INTEGER);

@@ -57,7 +57,8 @@
 .drzewo a.naglowek-miejsca:hover { color: var(--fiolet); text-decoration: none; }
 
 /* Wybór folderu i kategorii w karcie arkusza: lista w karcie, nie wyskakująca (Zarządzaj, Zmień folder / kategorię) */
-.karta .dwie-kolumny .wybor-lista { position: static; display: flex; flex-direction: column; gap: 0; padding: 0; max-height: 220px; box-shadow: none; border-radius: 0; }
+.karta .dwie-kolumny { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.karta .dwie-kolumny .wybor-lista { position: static; display: flex; flex-direction: column; gap: 0; padding: 0; min-width: 0; max-height: 220px; box-shadow: none; border-radius: 0; }
 .karta .dwie-kolumny .wybor-lista button { padding: 6px 10px; }
 
 @media (max-width: 900px) {
@@ -65,3 +66,20 @@
   .bib-kol { border-right: none; border-bottom: 1px solid var(--linia); }
   .bib-ust { grid-template-columns: 1fr; }
 }
+
+/* Przypinanie arkuszy (A-OPS-07): pinezka przy arkuszu na ekranie Arkusze budżetu i w tytule arkusza */
+.arkusz-poz { display: grid; grid-template-columns: 28px 1fr; align-items: center; }
+.arkusz-poz[hidden], .drzewo .kategoria[hidden], .drzewo section.folder[hidden] { display: none; }
+.arkusz-poz.nieprzypiety .arkusz-link span { color: var(--tekst-2); }
+.pin-ark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 0; background: none; color: var(--tekst-2); opacity: .45; cursor: default; }
+button.pin-ark { cursor: pointer; border-radius: 6px; }
+button.pin-ark:hover { background: var(--fiolet-tlo); opacity: 1; }
+.pin-ark.przypiety { color: var(--fiolet); opacity: 1; }
+.pin-ark svg { width: 16px; height: 16px; }
+h1 .pin-ark { width: 30px; height: 30px; vertical-align: middle; }
+h1 .pin-ark svg { width: 20px; height: 20px; }
+.wysuw-nieprzypiete { margin: 10px 0 2px; padding: 0 12px; font-size: 11px; color: var(--tekst-2); text-transform: uppercase; letter-spacing: .04em; }
+#wysuw-drzewo a.ark-wysuw.nieprzypiety { color: var(--tekst-2); }
+/* Wyszukiwarki ekranów Arkusze budżetu i Biblioteka, Arkusze: pełny placeholder widoczny */
+#ark-drzewo-szukaj, #bib-szukaj-ark { width: 300px; max-width: 100%; }
+.ark-pasek:has(#ark-drzewo-szukaj) { align-items: center; margin: 8px 0 12px; }

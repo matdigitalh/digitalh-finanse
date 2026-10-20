@@ -242,17 +242,21 @@ async function otworzWysuw(id) {
     w.innerHTML = `${naglowek()}<div class="pusto-wysuw">Wczytuję arkusze…</div>`;
     const d = await api('budzet/drzewo').catch(() => null);
     if (w.dataset.sekcja !== 'budzet') return;
+    // Drzewo pokazuje przypięte arkusze (A-OPS-07); wyszukiwarka filtruje po nazwie arkusza, kategorii i folderu (A-BUD-12),
+    // a pasujące nieprzypięte dopisuje pod spodem, żeby fraza znalazła każdy arkusz.
     const drzewo = (q = '') => {
       const f = q.trim().toLowerCase();
       const pasuje = t => !f || String(t).toLowerCase().includes(f);
-      const html = (d?.foldery || []).map(fo => {
+      const galaz = przypiete => (d?.foldery || []).map(fo => {
         const kat = Object.entries(fo.kategorie).map(([k, ark]) => {
-          const a = ark.filter(x => pasuje(x.nazwa) || pasuje(k) || pasuje(fo.folder));
-          return a.length ? `<a class="kat-wysuw" href="#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(fo.folder)}&kategoria=${encodeURIComponent(k)}">${esc(k)}</a>${a.map(x => `<a class="ark-wysuw" href="#/budzet/arkusz?id=${encodeURIComponent(x.id)}">${esc(x.nazwa)}</a>`).join('')}` : '';
+          const a = ark.filter(x => !x.przypiety !== przypiete && (pasuje(x.nazwa) || pasuje(k) || pasuje(fo.folder)));
+          return a.length ? `<a class="kat-wysuw" href="#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(fo.folder)}&kategoria=${encodeURIComponent(k)}">${esc(k)}</a>${a.map(x => `<a class="ark-wysuw${przypiete ? '' : ' nieprzypiety'}" href="#/budzet/arkusz?id=${encodeURIComponent(x.id)}">${esc(x.nazwa)}</a>`).join('')}` : '';
         }).join('');
         return kat ? `<a class="folder-wysuw" href="#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(fo.folder)}">${ik('folder')}${esc(fo.folder)}</a>${kat}` : '';
       }).join('');
-      return html || '<div class="pusto-wysuw">Brak arkuszy dla tej frazy.</div>';
+      const html = galaz(true), reszta = f ? galaz(false) : '';
+      if (!html && !reszta) return `<div class="pusto-wysuw">${f ? 'Brak arkuszy dla tej frazy.' : 'Brak przypiętych arkuszy. Wszystkie znajdziesz niżej, w „Zobacz wszystkie arkusze”.'}</div>`;
+      return html + (reszta ? `<div class="wysuw-nieprzypiete">Nieprzypięte</div>${reszta}` : '');
     };
     w.innerHTML = `${naglowek(d?.planowanie ? `<button class="przycisk glowny" id="wysuw-dodaj-arkusz">Dodaj ${ik('plus')}</button>` : '')}
       <input class="szukaj-wysuw" id="wysuw-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj arkusz">

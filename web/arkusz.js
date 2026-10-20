@@ -1061,7 +1061,7 @@ function akcjaWierszy(a, ws) {
   }
 }
 
-// ---------- Zarządzaj (A-OPS-02 do 07): nazwa, zakres miesięcy, folder i kategoria, duplikat, usunięcie ----------
+// ---------- Zarządzaj (A-OPS-01 do 07): dodaj, nazwa, zakres miesięcy, folder i kategoria, duplikat, przypięcie, usunięcie ----------
 function menuZarzadzaj(przycisk, d) {
   document.querySelectorAll('.zarzadzaj-menu').forEach(x => x.remove());
   const m = document.createElement('div');
@@ -1072,15 +1072,17 @@ function menuZarzadzaj(przycisk, d) {
     <button data-m="zakres"${wyl}>${ik('kalendarz')}Zmodyfikuj czas trwania</button>
     <button data-m="miejsce"${wyl}>${ik('folder')}Zmień folder / kategorię</button>
     <button data-m="duplikuj"${wyl}>${ik('warstwy')}Duplikuj</button>
+    <button data-m="pin"${d.systemowy ? ' disabled title="Arkusz systemowy jest zawsze przypięty."' : wyl}>${ik('pinezka')}${d.arkusz.przypiety ? 'Odepnij z drzewa' : 'Przypnij do drzewa'}</button>
     <button data-m="usun"${d.planowanie && maRz ? ' disabled title="Arkusz ma płatności rzeczywiste, więc go nie usuniesz. Przenieś wiersze z rzeczywistymi do innego arkusza."' : wyl}>${ik('zamknij')}Usuń arkusz</button>
     <div class="oddziel"></div>
     <a href="/api/eksport/arkusz?id=${encodeURIComponent(d.arkusz.id)}">${ik('plik')}Eksport arkusza do Excela</a>
-    ${d.planowanie ? `<button data-m="wiersz">${ik('plus')}Dodaj wiersz (pełny formularz)</button>` : ''}
+    ${d.planowanie ? `<button data-m="wiersz">${ik('plus')}Dodaj wiersz (pełny formularz)</button><button data-m="nowy">${ik('plus')}Dodaj nowy arkusz</button>` : ''}
     <a href="#/budzet/historia">${ik('historia')}Historia zmian planów</a>`;
   const r = przycisk.getBoundingClientRect();
   m.style.left = `${r.left + window.scrollX}px`; m.style.top = `${r.bottom + window.scrollY + 2}px`;
   document.body.appendChild(m);
-  const akcje = { nazwa: kartaNazwy, zakres: kartaZakresu, miejsce: kartaMiejsca, duplikuj: kartaDuplikatu, usun: kartaUsunieciaArkusza, wiersz: x => kartaWiersza(null, x) };
+  const akcje = { nazwa: kartaNazwy, zakres: kartaZakresu, miejsce: kartaMiejsca, duplikuj: kartaDuplikatu, usun: kartaUsunieciaArkusza, wiersz: x => kartaWiersza(null, x),
+    pin: x => przypnijArkusz(x.arkusz.id, !x.arkusz.przypiety), nowy: () => kartaArkusza(null, { foldery: [] }) };
   m.querySelectorAll('button[data-m]').forEach(b => b.onclick = e => { e.stopPropagation(); m.remove(); akcje[b.dataset.m](d); });
   setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }));
 }
@@ -1141,6 +1143,7 @@ function kartaMiejsca(d) {
         ${pole('', 'albo nowa kategoria', '<input id="z-nowa-kategoria" maxlength="80">')}</div>`;
     k.querySelectorAll('[data-f]').forEach(b => b.onclick = e => { e.stopPropagation(); folder = b.dataset.f; if (!foldery[folder].has(kategoria)) kategoria = [...foldery[folder]][0]; rysuj(); });
     k.querySelectorAll('[data-k]').forEach(b => b.onclick = e => { e.stopPropagation(); kategoria = b.dataset.k; rysuj(); });
+    k.querySelectorAll('#z-miejsce .aktywna').forEach(b => b.scrollIntoView({ block: 'nearest' }));
   };
   rysuj();
 }

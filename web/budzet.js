@@ -55,23 +55,61 @@ Object.assign(POMOC, {
 });
 
 // ---------- Drzewo arkuszy ----------
+// Przypięcie arkusza (A-OPS-07): wpis „bud” z polem przypiety; przypięte widać w drzewie w menu Budżet.
+function przypnijArkusz(id, przypiety) {
+  return zmiana('bud', { op: 'arkusz', obiekt: { id, przypiety } });
+}
+
+// Filtr ekranu Arkusze budżetu: fraza w nazwie arkusza pokazuje arkusz, w kategorii albo folderze całą kategorię albo folder.
+function filtrujDrzewo(q) {
+  const f = q.trim().toLowerCase();
+  let widac = 0;
+  document.querySelectorAll('.drzewo section.folder').forEach(sec => {
+    const wF = !f || sec.dataset.szukaj.includes(f);
+    let wSec = false;
+    sec.querySelectorAll('.kategoria').forEach(kat => {
+      const wK = wF || kat.dataset.szukaj.includes(f);
+      let wKat = false;
+      kat.querySelectorAll('.arkusz-poz').forEach(a => { const ok = wK || a.dataset.szukaj.includes(f); a.hidden = !ok; wKat ||= ok; widac += ok; });
+      kat.hidden = !wKat; wSec ||= wKat;
+    });
+    sec.hidden = !wSec;
+  });
+  const p = $('#ark-drzewo-pusto'); if (p) p.hidden = widac > 0;
+}
 Object.assign(WIDOKI, {
   async 'budzet/arkusze'() {
     const d = await api('budzet/drzewo');
     const imp = d.import;
     const doBib = (f, k) => `#/budzet/biblioteka?zakladka=struktura&folder=${encodeURIComponent(f)}${k ? `&kategoria=${encodeURIComponent(k)}` : ''}`;   // A-BUD-08
-    const foldery = d.foldery.map(f => `<section class="folder"><h2 class="sekcja"><a class="naglowek-miejsca" href="${doBib(f.folder)}" title="Foldery i kategorie w Bibliotece">${esc(f.folder)}</a> <span class="szary">${zl(f.saldo)}</span></h2>
-      ${Object.entries(f.kategorie).map(([k, ark]) => `<div class="kategoria"><h3><a class="naglowek-miejsca" href="${doBib(f.folder, k)}">${esc(k)}</a></h3>
-        ${ark.map(a => `<a class="arkusz-link" href="#/budzet/arkusz?id=${a.id}"><span>${esc(a.nazwa)}</span>
+    // A-BUD-12, A-OPS-07: tu są wszystkie arkusze, także nieprzypięte (drzewo w menu Budżet pokazuje tylko przypięte)
+    const pin = a => d.planowanie && a.zrodlo !== 'system'
+      ? `<button class="pin-ark${a.przypiety ? ' przypiety' : ''}" data-pin="${esc(a.id)}" data-karta title="${a.przypiety ? 'Przypięty: widać go w drzewie Budżetu. Kliknij, żeby odpiąć.' : 'Nieprzypięty: nie ma go w drzewie Budżetu. Kliknij, żeby przypiąć.'}" aria-label="${a.przypiety ? 'Odepnij' : 'Przypnij'} arkusz">${ik('pinezka')}</button>`
+      : `<span class="pin-ark${a.przypiety ? ' przypiety' : ''}" title="${a.przypiety ? 'Przypięty' : 'Nieprzypięty'}">${ik('pinezka')}</span>`;
+    const foldery = d.foldery.map(f => `<section class="folder" data-szukaj="${esc(f.folder.toLowerCase())}"><h2 class="sekcja"><a class="naglowek-miejsca" href="${doBib(f.folder)}" title="Foldery i kategorie w Bibliotece">${esc(f.folder)}</a> <span class="szary">${zl(f.saldo)}</span></h2>
+      ${Object.entries(f.kategorie).map(([k, ark]) => `<div class="kategoria" data-szukaj="${esc(k.toLowerCase())}"><h3><a class="naglowek-miejsca" href="${doBib(f.folder, k)}">${esc(k)}</a></h3>
+        ${ark.map(a => `<div class="arkusz-poz${a.przypiety ? '' : ' nieprzypiety'}" data-szukaj="${esc(a.nazwa.toLowerCase())}">${pin(a)}<a class="arkusz-link" href="#/budzet/arkusz?id=${a.id}"><span>${esc(a.nazwa)}${a.przypiety ? '' : ' <span class="chip neutral">nieprzypięty</span>'}</span>
           <small>${mies(a.od)} – ${mies(a.do)} · ${a.wierszy} wierszy${a.po_terminie ? ` · <b class="minus">${a.po_terminie} po terminie</b>` : ''}</small>
-          <b class="${a.saldo < 0 ? 'minus' : ''}">${zl(a.saldo, false)}</b></a>`).join('')}</div>`).join('')}</section>`).join('');
-    setTimeout(() => { const b = $('#dodaj-arkusz'); if (b) b.onclick = () => kartaArkusza(null, d); });
+          <b class="${a.saldo < 0 ? 'minus' : ''}">${zl(a.saldo, false)}</b></a></div>`).join('')}</div>`).join('')}</section>`).join('');
+    const wszystkie = d.foldery.flatMap(f => Object.values(f.kategorie).flat()), przypietych = wszystkie.filter(a => a.przypiety).length;
+    setTimeout(() => {
+      const b = $('#dodaj-arkusz'); if (b) b.onclick = () => kartaArkusza(null, d);
+      document.querySelectorAll('[data-pin]').forEach(x => x.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        const a = wszystkie.find(y => y.id === x.dataset.pin);
+        if (a) przypnijArkusz(a.id, !a.przypiety);
+      });
+      const s = $('#ark-drzewo-szukaj');   // filtr w miejscu po nazwie arkusza, kategorii albo folderu (A-BUD-12)
+      if (s) s.oninput = () => filtrujDrzewo(s.value);
+    });
     return `<div class="naglowek-strony"><div><h1>Arkusze budżetu ${pytajnik('budzet')}</h1>
         <div class="okruszki">Budżet / ${d.planowanie ? 'planowanie w apce włączone' : 'planowanie wyłączone (Ustawienia budżetu): plany z Budget Studio, tylko do odczytu'}</div></div>
         ${d.planowanie ? '<button class="przycisk" id="dodaj-arkusz">Dodaj arkusz</button>' : ''}</div>
       ${banerOsieroconych(d.osierocone)}
       ${imp ? `<p class="notka">Import z ${esc(imp.plik)} (${imp.wierszy} płatności, ostatnia zmiana w BS ${esc(imp.najnowsza_modyfikacja)}). Saldo arkusza jak w Budget Studio: netto wpływów minus obciążeń, razem z pozycjami nieaktualnymi.</p>` : '<p class="notka">Brak eksportu Budget Studio w folderze Dane.</p>'}
-      <div class="drzewo">${foldery}</div>`;
+      <div class="ark-pasek"><input class="szukaj" id="ark-drzewo-szukaj" type="search" placeholder="Wyszukaj arkusz, kategorię, folder" aria-label="Wyszukaj arkusz, kategorię albo folder">
+        <span class="szary">Wszystkie arkusze: ${wszystkie.length}, przypięte (widać je w drzewie w menu Budżet): ${przypietych}.</span></div>
+      <div class="drzewo">${foldery}</div><div class="pusto" id="ark-drzewo-pusto" hidden>Brak arkuszy dla tej frazy.</div>`;
   },
 
   // ---------- Widok arkusza jak w BS: zakładki Arkusz / Płatności / Cash flow / Zarządzaj ----------
@@ -88,14 +126,18 @@ Object.assign(WIDOKI, {
         location.hash = `#/budzet/arkusz?id=${encodeURIComponent(a.id)}${b.dataset.zakl === 'arkusz' ? '' : '&zakladka=' + b.dataset.zakl}`;
       });
       // A-ARK-01: klik w nazwę = zmiana nazwy, ikona folderu = zmiana folderu i kategorii
-      const n = $('#ark-nazwa'), f = $('#ark-miejsce');
+      const n = $('#ark-nazwa'), f = $('#ark-miejsce'), pn = $('#ark-pin');
+      if (pn) pn.onclick = e => { e.stopPropagation(); przypnijArkusz(a.id, !a.przypiety); };
       if (n) n.onclick = e => { e.stopPropagation(); kartaNazwy(d); };
       if (f) f.onclick = e => { e.stopPropagation(); kartaMiejsca(d); };
     });
     const tytul = d.planowanie ? `<button class="tytul-ark" id="ark-nazwa" data-karta title="Zmień nazwę">${esc(a.nazwa)}</button>` : esc(a.nazwa);
     const miejsce = d.planowanie ? `<button class="ikona-ark" id="ark-miejsce" data-karta title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}. Kliknij, żeby zmienić.">${ik('folderOko', 'ik-tytul szary')}</button>`
       : `<span title="Folder: ${esc(a.folder)}, kategoria: ${esc(a.kategoria)}">${ik('folderOko', 'ik-tytul szary')}</span>`;
-    const naglowek = `<h1>${ik('pinezka', 'ik-tytul')}${tytul}${miejsce}</h1>
+    const pinTxt = a.przypiety ? 'Przypięty: widać go w drzewie Budżetu. Kliknij, żeby odpiąć.' : 'Nieprzypięty: nie ma go w drzewie Budżetu (jest w „Zobacz wszystkie arkusze”). Kliknij, żeby przypiąć.';
+    const pinezka = d.planowanie && !d.systemowy ? `<button class="pin-ark${a.przypiety ? ' przypiety' : ''}" id="ark-pin" data-karta title="${esc(pinTxt)}" aria-label="${a.przypiety ? 'Odepnij' : 'Przypnij'} arkusz">${ik('pinezka')}</button>`
+      : `<span class="pin-ark${a.przypiety ? ' przypiety' : ''}" title="${a.przypiety ? 'Przypięty' : 'Nieprzypięty'}">${ik('pinezka')}</span>`;
+    const naglowek = `<h1>${pinezka}${tytul}${miejsce}</h1>
       <div class="pigulki"><span class="pigulka">${ik('warstwy')}${nazwyZakl[zakl]} / Widok główny</span>
         <span class="szary">${esc(a.folder)} / ${esc(a.kategoria)} · ${mies(a.od)} - ${mies(a.do)} · źródło: ${esc(a.zrodlo)}</span></div>
       <div class="zakladki" role="tablist">
@@ -217,6 +259,8 @@ function opisZmiany(h) {
     if (op === 'przesun_arkusz') return `${b?.od ? `${mies(b.od)} - ${mies(b.do)}` : ''} → ${j?.od ? `${mies(j.od)} - ${mies(j.do)}` : ''}`;
     if (!b) return 'dodano';
     if (!j) return 'usunięto';
+    if (op === 'arkusz' && 'przypiety' in j && Object.keys(j).every(k => ['id', 'przypiety', 'zrodlo'].includes(k) || JSON.stringify(b[k]) === JSON.stringify(j[k])))
+      return j.przypiety ? 'przypięty do drzewa' : 'odpięty z drzewa';
     return Object.keys(j).filter(k => JSON.stringify(b[k]) !== JSON.stringify(j[k]) && k !== 'zrodlo')
       .map(k => `${k}: ${JSON.stringify(b[k])} → ${JSON.stringify(j[k])}`).join('; ') || 'bez zmian';
   } catch (e) { return ''; }
@@ -493,17 +537,24 @@ async function kartaArkusza(a, drzewo) {
   const kategorie = [...new Set(struktura.flatMap(f => f.kategorie.map(x => x.kategoria)))];
   const start = (STAN?.naleznosci?.dzien_stanu || new Date().toISOString()).slice(0, 7);   // A-OPS-01: 12 mies. od bieżącego
   k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${a ? 'Arkusz' : 'Nowy arkusz'}</h2>
-    <div class="formularz">${pole('', 'Nazwa', '<input id="a-nazwa">')}
+    <div class="formularz">${pole('', 'Nazwa (do 80 znaków, nie musi być unikalna)', '<input id="a-nazwa" maxlength="80">')}
       ${pole('', 'Folder (klient albo obszar)', `<input id="a-folder" list="a-foldery">`)}<datalist id="a-foldery">${foldery.map(f => `<option value="${esc(f)}">`).join('')}</datalist>
       ${pole('', 'Kategoria (możesz wpisać nową)', `<input id="a-kategoria" list="a-kategorie">`)}<datalist id="a-kategorie">${kategorie.map(f => `<option value="${esc(f)}">`).join('')}</datalist>
       ${pole('', 'Od miesiąca', `<input id="a-od" type="month" value="${start}">`)}${pole('', 'Do miesiąca', `<input id="a-do" type="month" value="${nastMies(start, 11)}">`)}</div>
     <div class="akcje"><button class="glowny" id="a-zapisz">Zapisz arkusz</button></div>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
-  $('#a-zapisz').onclick = () => {
+  // podpowiedzi kategorii z wybranego folderu (kategoria jest unikalna w folderze, nie w całej apce)
+  $('#a-folder').oninput = () => {
+    const f = struktura.find(x => x.folder.toLowerCase() === $('#a-folder').value.trim().toLowerCase());
+    $('#a-kategorie').innerHTML = (f ? f.kategorie.map(x => x.kategoria) : kategorie).map(x => `<option value="${esc(x)}">`).join('');
+  };
+  $('#a-nazwa').focus();
+  $('#a-zapisz').onclick = async () => {
     const o = { id: nowyId('a'), nazwa: $('#a-nazwa').value.trim(), folder: $('#a-folder').value.trim(), kategoria: $('#a-kategoria').value.trim(), od: $('#a-od').value, do: $('#a-do').value };
-    if (!o.nazwa || !o.folder || !o.kategoria || !o.od || !o.do || o.od > o.do) return komunikat('Uzupełnij nazwę, folder, kategorię i zakres miesięcy.', true);
-    zmiana('bud', { op: 'arkusz', obiekt: o });
+    if (!o.nazwa || !o.folder || !o.kategoria || !o.od || !o.do) return komunikat('Uzupełnij nazwę, folder, kategorię i zakres miesięcy.', true);
+    if (o.od > o.do) return komunikat('Początek zakresu jest po końcu. Arkusz ma co najmniej 1 miesiąc.', true);
+    if (await zmiana('bud', { op: 'arkusz', obiekt: o })) location.hash = `#/budzet/arkusz?id=${encodeURIComponent(o.id)}`;
   };
 }
 

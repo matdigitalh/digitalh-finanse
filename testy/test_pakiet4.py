@@ -351,3 +351,119 @@ class TestStruktura(Pakiet4):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestPrzypinanie(Pakiet4):
+    """A-OPS-07: przypięte arkusze widać w drzewie Budżetu, wszystkie w „Zobacz wszystkie arkusze”."""
+
+    def drzewo(self):
+        d = zapytania_budzet.drzewo(self.con)
+        return {a['id']: a['przypiety'] for f in d['foldery'] for ark in f['kategorie'].values() for a in ark}
+
+    def test_domyslnie_przypiety_odpiecie_zapisane_zdarzeniem_i_cofane(self):
+        self.assertTrue(all(self.drzewo().values()))   # arkusze z BS i nowe bez decyzji: przypięte
+        zrodlo = self.con.execute("SELECT zrodlo FROM bud_arkusz WHERE id = 'a-test'").fetchone()[0]
+        self.bud({'op': 'arkusz', 'obiekt': {'id': 'a-test', 'przypiety': False}})
+        self.przelicz()
+        self.assertEqual(self.drzewo()['a-test'], 0)   # nadal w danych drzewa (ekran wszystkich arkuszy), ale odpięty
+        a = dict(self.con.execute("SELECT * FROM bud_arkusz WHERE id = 'a-test'").fetchone())
+        self.assertEqual((a['przypiety'], a['zrodlo']), (0, zrodlo))   # przypięcie nie zmienia źródła arkusza
+        self.assertEqual(zapytania_budzet.arkusz(self.con, 'a-test')['arkusz']['przypiety'], 0)
+        self.assertEqual(next(x for x in self.bib()['arkusze'] if x['id'] == 'a-test')['przypiety'], 0)
+        zmiany.zapisz('cofnij', {'wpis': zapytania_budzet.ostatni(self.con)['wpis']})
+        self.przelicz()
+        self.assertEqual(self.drzewo()['a-test'], 1)
+
+    def test_kopia_przypieta_i_walidacja_pola(self):
+        self.bud({'op': 'arkusz', 'obiekt': {'id': 'a-test', 'przypiety': False}})
+        self.bud({'op': 'duplikuj_arkusz', 'arkusz': 'a-test', 'przesuniecie': 0, 'wartosci': False,
+                  'obiekt': {'id': 'a-kopia', 'nazwa': 'Testowy - kopia', 'folder': 'Firma', 'kategoria': 'Koszty', 'od': '2025-01', 'do': '2026-12'}})
+        self.przelicz()
+        self.assertEqual(self.drzewo()['a-kopia'], 1)
+        with self.assertRaisesRegex(ValueError, 'przypiety: tak albo nie'):
+            zmiany.sprawdz('bud', {'op': 'arkusz', 'obiekt': {'id': 'a-test', 'przypiety': 'tak'}})
+        with self.assertRaisesRegex(ValueError, 'nie ma takiego arkusza'):
+            self.bud({'op': 'arkusz', 'obiekt': {'id': 'nie-ma', 'przypiety': True}})
+
+
+class TestKryteriumOdbioru(Pakiet4):
+    """Kryterium odbioru pakietu 4 (pakiety.md), każda reguła osobno."""
+
+    def arkusz_bs(self):   # z test_pakiet2: 2026-07 do 2026-12, rzeczywiste w sierpniu i wrześniu, plan w lipcu
+        return self.con.execute("SELECT id FROM bud_arkusz WHERE nazwa = 'Obsługa stała Alfa'").fetchone()[0]
+
+    def platnosci(self, aid):
+        return [dict(r) for r in self.con.execute('SELECT p.* FROM bud_platnosc p JOIN bud_wiersz w ON w.id = p.wiersz'
+                                                  ' WHERE w.arkusz = ? ORDER BY p.id', (aid,))]
+
+    def test_wydluzenie_o_2027_dodaje_kolumny_bez_zmiany_platnosci(self):
+        aid = self.arkusz_bs()
+        przed = [(p['id'], p['miesiac'], p['netto'], p['vat'], p['termin'], p['typ']) for p in self.platnosci(aid)]
+        self.bud({'op': 'arkusz', 'obiekt': {'id': aid, 'do': '2027-12'}})
+        self.przelicz()
+        m = zapytania_budzet.arkusz(self.con, aid)['miesiace']
+        self.assertEqual((m[0], m[-1], len(m)), ('2026-07', '2027-12', 18))
+        self.assertEqual([(p['id'], p['miesiac'], p['netto'], p['vat'], p['termin'], p['typ']) for p in self.platnosci(aid)], przed)
+
+    def test_wyciecie_miesiaca_z_rzeczywista_odrzucone(self):
+        aid = self.arkusz_bs()
+        przed = self.ile_wpisow()
+        with self.assertRaisesRegex(ValueError, 'sierpień 2026.*muszą zostać w zakresie'):
+            self.bud({'op': 'arkusz', 'obiekt': {'id': aid, 'od': '2026-09'}})
+        self.assertEqual(self.ile_wpisow(), przed)
+
+    def test_duplikat_2026_na_2027_bez_wartosci_i_z_wartosciami(self):
+        aid = self.arkusz_bs()
+        a = dict(self.con.execute('SELECT * FROM bud_arkusz WHERE id = ?', (aid,)).fetchone())
+        obiekt = {'nazwa': f"{a['nazwa']} - kopia", 'folder': a['folder'], 'kategoria': a['kategoria'], 'od': '2027-07', 'do': '2027-12'}
+        self.bud({'op': 'duplikuj_arkusz', 'arkusz': aid, 'obiekt': {**obiekt, 'id': 'a-bez'}, 'przesuniecie': 12, 'wartosci': False})
+        self.bud({'op': 'duplikuj_arkusz', 'arkusz': aid, 'obiekt': {**obiekt, 'id': 'a-z'}, 'przesuniecie': 12, 'wartosci': True})
+        self.przelicz()
+        cechy = lambda x: sorted((w['rodzaj'], w['podstawa'], w['kontrahent'], w['sekcja'], w['metoda'], w['stawka_vat'])
+                                 for w in self.con.execute('SELECT * FROM bud_wiersz WHERE arkusz = ?', (x,)))
+        self.assertEqual(cechy('a-bez'), cechy(aid))
+        self.assertEqual(cechy('a-z'), cechy(aid))
+        self.assertEqual(self.platnosci('a-bez'), [])   # bez wartości: sama struktura, zero płatności
+        # z wartościami: same plany, kwoty oryginału (plany i rzeczywiste) przesunięte o 12 miesięcy
+        oryg, kopia = {}, {}
+        for p in self.platnosci(aid):
+            k = (p['kontrahent'], f"{int(p['miesiac'][:4]) + 1}{p['miesiac'][4:]}")
+            oryg[k] = oryg.get(k, 0) + p['netto']
+        z = self.platnosci('a-z')
+        for p in z:
+            kopia[(p['kontrahent'], p['miesiac'])] = kopia.get((p['kontrahent'], p['miesiac']), 0) + p['netto']
+        self.assertTrue(oryg)
+        self.assertEqual(kopia, oryg)
+        self.assertEqual({p['typ'] for p in z}, {'plan'})
+
+    def test_polaczenie_dwoch_kontrahentow_przenosi_wystapienia_i_usuwa_duplikat(self):
+        self.wiersz('w1', kontrahent='Meta')
+        self.wiersz('w2', kontrahent='Meta Platforms')
+        self.bud({'op': 'seria', 'operacje': [{'op': 'komorka', 'wiersz': w, 'miesiac': '2026-10', 'kwota': 1000} for w in ('w1', 'w2')]})
+        self.przelicz()
+        razem = self.rek('kontrahent', 'Meta')['uzyc'] + self.rek('kontrahent', 'Meta Platforms')['uzyc']
+        self.bud({'op': 'slownik', 'akcja': 'polacz', 'rodzaj': 'kontrahent', 'zrodla': ['Meta'], 'cel': 'Meta Platforms'})
+        self.przelicz()
+        self.assertFalse(any(x['nazwa'] == 'Meta' for x in self.bib()['kontrahent']))
+        self.assertEqual(self.rek('kontrahent', 'Meta Platforms')['uzyc'], razem)
+        self.assertEqual({r[0] for r in self.con.execute("SELECT kontrahent FROM bud_wiersz WHERE id IN ('w1', 'w2')")}, {'Meta Platforms'})
+        self.assertEqual({r[0] for r in self.con.execute("SELECT kontrahent FROM bud_platnosc WHERE wiersz IN ('w1', 'w2')")}, {'Meta Platforms'})
+
+    def test_usuniecie_folderu_z_arkuszem_zablokowane_z_powodem(self):
+        przed = self.ile_wpisow()
+        with self.assertRaisesRegex(ValueError, r'Folder „Firma” ma arkusze \(1\)'):
+            self.bud({'op': 'struktura', 'akcja': 'usun_folder', 'folder': 'Firma'})
+        self.assertEqual(self.ile_wpisow(), przed)
+        f = next(x for x in self.bib()['struktura'] if x['folder'] == 'Firma')
+        self.assertEqual(f['arkuszy'], 1)   # licznik, z którego ekran pokazuje wyszarzony kosz z powodem
+
+    def test_kontrahent_z_ustawieniami_jako_pierwsza_akcja_wypelnia_wiersz_jako_druga_nie(self):
+        ust = {'rodzaj': -1, 'podstawa': 'Bez faktury', 'dzien_wystawienia': '1.', 'dni_na_platnosc': 30, 'metoda': 'Karta'}
+        self.bud({'op': 'slownik', 'akcja': 'dodaj', 'rodzaj': 'kontrahent', 'nazwa': 'Canva', 'ustawienia': ust})
+        self.nowy('pierwsza', kontrahent='Canva')
+        self.nowy('druga', komentarz='licencje')
+        self.bud({'op': 'wiersz', 'obiekt': {'id': 'druga', 'kontrahent': 'Canva'}})
+        self.przelicz()
+        p, d = self.w('pierwsza'), self.w('druga')
+        self.assertEqual((p['podstawa'], p['dni_na_platnosc'], p['metoda']), ('Bez faktury', '30', 'Karta'))
+        self.assertEqual((d['kontrahent'], d['podstawa'], d['dni_na_platnosc'], d['metoda']), ('Canva', 'Faktura (jedna)', '14', 'Konto firmowe'))

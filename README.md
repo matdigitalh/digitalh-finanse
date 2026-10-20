@@ -242,7 +242,7 @@ budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikat
   miesiąc z rzeczywistą, musi zostać; znak planu = plany znikną po wycięciu; najwyżej 240 miesięcy), przesunięcie startu (tylko bez
   rzeczywistych, plany od nowa z ustawień), folder i kategoria (też ikona przy tytule; nowa nazwa równa istniejącej, także inną wielkością
   liter, odrzucona), duplikat (bez zmian, wybrany zakres albo przesunięty start; z wartościami albo sama struktura; rzeczywiste stają się
-  planami), usunięcie arkusza bez rzeczywistych. Przypinania arkuszy jeszcze nie ma (pakiet 4).
+  planami), usunięcie arkusza bez rzeczywistych. Przypinanie arkuszy: pakiet 4.
 - **Sekcje (A-ARK-05):** kolejność sekcji z sortowania kolumny Sekcja sprzed włączenia przełącznika (`sekcje_kier` w adresie).
 - **Blokady z komunikatem „co zrobić zamiast” (A-INN-05):** podstawa i rodzaj wiersza z rzeczywistą, komórka nie-worek z rzeczywistą,
   worek poniżej sumy rzeczywistych, usunięcie wiersza, płatności rzeczywistej i arkusza z rzeczywistymi, wycięcie miesiąca
@@ -293,6 +293,17 @@ Reguły w `finanse/biblioteka.py`, ekran Budżet, Biblioteka (`web/biblioteka.js
   kategorię”. Folder „System” zarezerwowany dla arkusza z podatkami. Klik w folder i kategorię w drzewie (panel Budżet i ekran
   Arkusze budżetu) otwiera Bibliotekę na tym miejscu (A-BUD-08). Arkusz w folderze różniącym się tylko wielkością liter: odrzucony
   na serwerze. Nowy arkusz: zakres domyślnie 12 miesięcy od bieżącego (A-OPS-01).
+- **Przypinanie arkuszy (A-OPS-07) i menu Budżet (A-BUD-12).** Pole `przypiety` arkusza w zdarzeniu `bud` (op `arkusz`, biała
+  lista pól, cofanie jak każda zmiana arkusza); bez decyzji arkusz jest przypięty (kopia z BS i nowe), kopia arkusza zawsze
+  przypięta; przypięcie nie zmienia źródła arkusza. Drzewo w menu Budżet pokazuje tylko przypięte; wyszukiwarka filtruje je po
+  fragmencie nazwy arkusza, kategorii albo folderu i dopisuje pod spodem pasujące nieprzypięte. „Zobacz wszystkie arkusze”
+  (ekran Arkusze budżetu) pokazuje wszystkie, z pinezką do przypięcia lub odpięcia, znacznikiem „nieprzypięty” i wyszukiwarką
+  w miejscu; to samo w Bibliotece, zakładka Arkusze budżetu (kolumna Przypięty). Pinezka w tytule arkusza i pozycja w Zarządzaj.
+  Historia zmian opisuje to jako „przypięty do drzewa” albo „odpięty z drzewa”. Kolumna `bud_arkusz.przypiety`.
+- **Zarządzaj (A-OPS-01 do 07):** Dodaj nowy arkusz (nazwa do 80 znaków, nieunikalna; podpowiedzi kategorii z wybranego folderu,
+  także pustego z Biblioteki; zakres domyślnie 12 miesięcy od bieżącego, co najmniej 1 miesiąc, najwyżej 20 lat; po zapisie
+  apka otwiera nowy arkusz), zmień nazwę, folder i kategorię, zakres z kłódką i znakiem planu, przesuń start, duplikuj z i bez
+  wartości, przypnij lub odepnij, usuń (z pakietu 3 i wyżej).
 - Zmiany w istniejących plikach: `budzet.py` (stan i zapis Biblioteki, operacje przez `_zastosuj_op`, uzupełnienie nowego wiersza,
   wchłanianie nowych nazw po wpisie), `zmiany.py` (operacje `slownik`, `struktura`, flaga `domyslne`), `zapytania_budzet.py`
   (listy w arkuszu, wzorce kontrahentów i kolejność drzewa z Biblioteki), `baza.py`, `odbudowa.py`, `serwer.py` (jedna ścieżka),
@@ -301,13 +312,15 @@ Reguły w `finanse/biblioteka.py`, ekran Budżet, Biblioteka (`web/biblioteka.js
 - Testy: `testy/test_pakiet4.py` (słowniki z danych i liczniki, łączenie duplikatów jedną serią z cofnięciem, zmiana nazwy
   wszędzie, blokada usuwania użytych, systemowych, domyślnych i podatkowych, NIP, ustawienia domyślne kontrahenta wg reguły BS
   w pięciu wariantach, seria wszystko albo nic, foldery i kategorie: unikalność, zmiana nazwy, usuwanie z przeniesieniem,
-  kolejność, cofnięcie).
+  kolejność, cofnięcie), przypinanie (domyślnie przypięty, odpięcie zdarzeniem i cofnięcie, źródło bez zmian, kopia przypięta,
+  walidacja pola) i osobna klasa `TestKryteriumOdbioru` z każdą regułą kryterium odbioru pakietu (wydłużenie o 2027 bez zmiany
+  płatności, wycięcie miesiąca z rzeczywistą odrzucone bez wpisu, duplikat 2026 na 2027 bez wartości i z wartościami, połączenie
+  dwóch kontrahentów, blokada usunięcia folderu z arkuszem z powodem, kontrahent jako pierwsza i druga akcja).
 
 Do dokończenia:
-- Pozostały przegląd w przeglądarce: tryb jasny, karta przedmiotu, sekcji i metody, wklejanie bloku do nowych wierszy.
 - Automatyczne dodawanie kontrahentów z importów (B-LIS-12, Fakturownia i ING jako nowe wpisy): jest tylko podpowiedź pełnej
   nazwy i NIP-u z Fakturowni; apka nie tworzy płatności rzeczywistych z dokumentów w budżecie, więc nie ma momentu „zatwierdzenia”.
-- Przypinanie arkuszy i widoki arkusza: pakiet 11.
+- Widoki arkusza: pakiet 11.
 - Wpisy Biblioteki sprzed przyjęcia kopii z BS przestają obowiązywać razem z innymi zmianami budżetu sprzed kopii (jak w pakiecie 6).
 
 ## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)

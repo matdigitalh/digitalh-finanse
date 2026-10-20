@@ -369,7 +369,7 @@ def _plan(v, pole):
 # Biała lista pól obiektów budżetu (APK-BUG-05): nieznane pole albo zła wartość = odrzucenie z komunikatem.
 POLA_BUD = {
     'arkusz': {'id': _niepusty(80), 'nazwa': _niepusty(80), 'folder': _niepusty(80), 'kategoria': _niepusty(80),
-               'od': _miesiac, 'do': _miesiac},
+               'od': _miesiac, 'do': _miesiac, 'przypiety': _tak_nie},   # pakiet 4: przypięty = widoczny w drzewie budżetu
     'wiersz': {'id': _niepusty(80), 'arkusz': _niepusty(80), 'rodzaj': _rodzaj, 'podstawa': _podstawa, 'kontrahent': _tekst(200),
                'komentarz': _tekst(170), 'przedmiot': _tekst(200), 'sekcja': _tekst(100), 'stawka_vat': _stawka,
                'dzien_wystawienia': _dzien_wyst, 'dni_na_platnosc': _dni, 'metoda': _tekst(60), 'ksiegowane': _tak_nie,

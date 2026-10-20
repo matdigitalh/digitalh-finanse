@@ -795,7 +795,7 @@ def widok(con, planowanie: bool) -> dict:
     for r in RODZAJE:
         rek[r].sort(key=lambda x: (not x.get('systemowy'), klucz_pl(x['nazwa']), x['nazwa']))
     arkusze = [dict(a) for a in con.execute(
-        'SELECT a.id, a.folder, a.kategoria, a.nazwa, a.od, a.do, a.zrodlo, COUNT(w.id) AS wierszy FROM bud_arkusz a'
+        'SELECT a.id, a.folder, a.kategoria, a.nazwa, a.od, a.do, a.zrodlo, a.przypiety, COUNT(w.id) AS wierszy FROM bud_arkusz a'
         ' LEFT JOIN bud_wiersz w ON w.arkusz = a.id GROUP BY a.id')]
     kolej = kolejnosc_folderow(con)
     arkusze.sort(key=lambda a: (kolej.get((a['folder'], a['kategoria']), (10 ** 6, 0)), klucz_pl(a['nazwa'])))
