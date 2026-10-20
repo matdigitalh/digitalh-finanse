@@ -43,6 +43,7 @@ TYPY = {
     'cofnij': ('wpis',),                      # unieważnij wcześniejszy wpis
     'kopia_bs': ('plik', 'sha256'),           # pakiet 6: przyjęta kopia z BS (plik Aplikacja/kopia_bs_*.json i jego suma)
     'lista_plac': ('miesiac', 'pozycje'),     # lista płac za miesiąc od biura (dane rzeczywiste, nie planowanie; lista_plac.py)
+    'ppk_plan': ('miesiac',),                 # plan PPK w miesiącu listy, dopóki listy płac nie ma (BL-06; lista_plac.py)
 }
 # Co może wejść do serii z listy (akcje grupowe, pakiet 7); budżet ma własną serię w „bud” (op „seria”, pakiet 1).
 TYPY_W_SERII = ('polacz', 'bez_faktury', 'zatwierdz', 'odrzuc', 'poza_bankiem', 'klient_faktura', 'koszt_regula', 'koszt_operacja',
@@ -95,6 +96,8 @@ def sprawdz(typ: str, dane) -> dict:
         return _sprawdz_kopie(dane)
     if typ == 'lista_plac':
         return sprawdz_liste_plac(dane)
+    if typ == 'ppk_plan':
+        return sprawdz_plan_ppk(dane)
     if typ == 'widok':
         return _sprawdz_widok(dane)
     if typ == 'do_weryfikacji':
@@ -555,6 +558,29 @@ def sprawdz_liste_plac(d: dict) -> dict:
             wynik['ppk']['termin'] = _data(p['termin'], 'PPK, termin')
     if d.get('uwaga'):
         wynik['uwaga'] = _tekst(500)(d['uwaga'], 'uwaga')
+    return wynik
+
+
+def sprawdz_plan_ppk(d: dict) -> dict:
+    """Plan PPK w miesiącu listy (BL-06, decyzja Mata 2026-10-20): miesiąc listy, kwota (grosze, więcej niż 0), termin
+    przelewu, zbiorczy wiersz PPK, opcjonalnie komórka BS do zastąpienia (domyślnie miesiąc terminu) i uwaga; albo usun.
+    Termin nie wcześniej niż w miesiącu po miesiącu listy. Odwołania sprawdza serwer próbą na budżecie."""
+    if not isinstance(d, dict) or set(d) - {'miesiac', 'kwota', 'termin', 'wiersz', 'komorka_bs', 'uwaga', 'usun'}:
+        raise ValueError('Plan PPK: nieznane pole.')
+    wynik = {'miesiac': _miesiac(d.get('miesiac'), 'Plan PPK, miesiąc listy')}
+    if d.get('usun'):
+        return {**wynik, 'usun': True}
+    kw = _kwota(d.get('kwota'), 'Plan PPK, kwota')
+    if not kw:
+        raise ValueError('Plan PPK: kwota większa niż 0.')
+    termin = _data(d.get('termin'), 'Plan PPK, termin')
+    if not termin or termin[:7] <= wynik['miesiac']:
+        raise ValueError('Plan PPK: termin przelewu po miesiącu listy.')
+    wynik.update(kwota=kw, termin=termin, wiersz=_niepusty(80)(d.get('wiersz'), 'wiersz PPK'))
+    if d.get('komorka_bs'):
+        wynik['komorka_bs'] = _miesiac(d['komorka_bs'], 'Plan PPK, komórka BS')
+    if d.get('uwaga'):
+        wynik['uwaga'] = _tekst(300)(d['uwaga'], 'uwaga')
     return wynik
 
 

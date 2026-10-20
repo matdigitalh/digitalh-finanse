@@ -231,7 +231,7 @@ def _plan_ppk(st: dict, m: str, d: dict, plany: list[dict], scisle: bool):
     mies_wyplaty = wyplaty[0][:7] if wyplaty else plan.przesun_miesiac(m, 1)
     termin = ppk.get('termin') or f'{plan.przesun_miesiac(mies_wyplaty, 1)}-{DZIEN["ppk"]:02d}'
     kom_bs = ppk.get('miesiac') or termin[:7]
-    w_bs = [p for p in st['platnosc'].values() if p['wiersz'] == ppk['wiersz'] and p['miesiac'] == kom_bs and not _ppk_z_listy(p)]
+    w_bs = [p for p in st['platnosc'].values() if p['wiersz'] == ppk['wiersz'] and p['miesiac'] == kom_bs and not _ppk_poza_bs(p)]
     obce = [p for p in w_bs if p['typ'] != 'plan' and not _bs(p)]
     if obce:
         return (f'Komórka PPK za {_mies_pl(kom_bs)} ma już płatność spoza BS ({obce[0].get("dokument") or obce[0]["id"]}). '
@@ -310,3 +310,83 @@ def zastosuj(st: dict, d: dict, scisle: bool = False) -> str | None:
                                                                           if pk else d.get('ppk')),
                                       'pozycje': [pp['wid'] for pp in plany]}
     return '; '.join(bledy) or None
+
+
+# Plan PPK w miesiącu listy (decyzja Mata 2026-10-20, BL-06): estymacja PPK za miesiąc, dla którego listy płac jeszcze nie ma.
+# Osobny wpis „ppk_plan” (nie planowanie w apce, nie zdarzenie „bud”), bo planowanie jest wyłączone, a w miesiącach X i XI
+# komórki BS zajęły PPK z list za VIII i IX. Plan stoi w zbiorczym wierszu PPK w miesiącu listy (jak PPK z listy), termin jak
+# w liście (15. dnia drugiego miesiąca po miesiącu listy), i zastępuje komórkę BS miesiąca przelewu (plan BS to ta sama PPK),
+# więc nic się nie dubluje. Lista płac za ten miesiąc z PPK ma pierwszeństwo: plan wtedy nie działa. Księgowanie (CIT, BL-07)
+# jak w BS: miesiąc przelewu (z zastąpionej płatności BS, inaczej miesiąc terminu).
+ZRODLO_PLAN = 'plan PPK'
+
+
+def ref_planu(m: str) -> str:
+    return f'lista:{m}:ppk-plan'
+
+
+def _ppk_poza_bs(p: dict) -> bool:
+    """PPK z innej listy płac albo z planu PPK innego miesiąca: nie jest płatnością BS do zastąpienia."""
+    return _ppk_z_listy(p) or p.get('zrodlo') == ZRODLO_PLAN
+
+
+def obowiazujace_plany(wpisy: list[dict]) -> dict[str, dict]:
+    """Miesiąc → ostatni nie cofnięty wpis „ppk_plan” (po czasie)."""
+    cofniete = {w['dane'].get('wpis') for w in wpisy if w.get('typ') == 'cofnij'}
+    wynik = {}
+    for w in sorted((w for w in wpisy if w.get('typ') == 'ppk_plan' and w.get('id') not in cofniete),
+                    key=lambda w: (w.get('czas', ''), w.get('id', ''))):
+        wynik[w['dane']['miesiac']] = w
+    return dict(sorted(wynik.items()))
+
+
+def zastosuj_plan(st: dict, d: dict, scisle: bool = False) -> str | None:
+    """Plan PPK za miesiąc listy na stanie budżetu. Zwraca powód odrzucenia (scisle) albo pominięcia (odbudowa)."""
+    from .budzet import _mies_pl, _odlacz, _przelicz_realizacje
+    from .format import zl
+    m, ref = d['miesiac'], ref_planu(d['miesiac'])
+    if ref in st['polaczenia']:
+        _odlacz(st, ref, False)
+    if d.get('usun'):
+        return None
+    if f'lista:{m}:ppk' in st['polaczenia']:   # lista płac z PPK za ten miesiąc ma pierwszeństwo
+        return (f'Za {_mies_pl(m)} jest już lista płac z PPK, więc plan PPK nie jest potrzebny.') if scisle else None
+    w = st['wiersz'].get(d['wiersz'])
+    if not w:
+        return 'nie ma zbiorczego wiersza PPK wskazanego w planie PPK'
+    if w.get('rodzaj') != -1 or plan.jest_umowa(w.get('podstawa', '')) or plan.skladowa_umowy(w.get('podstawa', '')):
+        return f'Wiersz „{_kto(w)}” nie nadaje się na PPK (wybierz obciążenie bez faktury, np. wiersz PPK z Budget Studio).'
+    termin = d['termin']
+    kom_bs = d.get('komorka_bs') or termin[:7]
+    ps = [p for p in st['platnosc'].values() if p['wiersz'] == d['wiersz'] and p['miesiac'] == kom_bs and not _ppk_poza_bs(p)]
+    obce = [p for p in ps if p['typ'] != 'plan' and not _bs(p)]
+    if obce:
+        return (f'Komórka PPK za {_mies_pl(kom_bs)} ma już płatność spoza BS ({obce[0].get("dokument") or obce[0]["id"]}). '
+                'Wybierz inną komórkę BS do zastąpienia.')
+    rek = {'czesci': [], 'platnosci': [], 'komorki': {}, 'zastapione': [], 'dodane': [], 'reszta': 'usun', 'zrodlo': ZRODLO_PLAN,
+           'kwoty': {'ppk': d['kwota']}, 'bs': {}, 'plan': {}, 'ppk': True, 'estymacja': True, 'miesiac_listy': m,
+           'komorka_bs': kom_bs, 'uwaga': d.get('uwaga') or ''}
+    bs = [p for p in ps if _bs(p)]
+    if bs:
+        rek['bs']['ppk'] = sum(p['netto'] for p in bs)
+    if any(p['typ'] == 'plan' for p in ps):
+        rek['plan']['ppk'] = sum(p['netto'] for p in ps if p['typ'] == 'plan')
+    wz = _pierwsza(ps) or {}
+    _zastap(st, rek, d['wiersz'], kom_bs, ps)
+    zast = sum(p['netto'] for p in ps)
+    gdzie = f'w BS w komórce {_mies_pl(kom_bs)}' + (f': {zl(zast)}' if ps else ': brak')
+    p = {'id': f'plan:ppk:{m}', 'wiersz': d['wiersz'], 'miesiac': m, 'typ': 'plan', 'etap_bs': 'Planowana', 'aktualna': True,
+         'netto': d['kwota'], 'brutto': d['kwota'], 'vat': 0, 'stawka': None, 'nr_dok': '', 'nr_wewn': '',
+         'tytul': f'Plan PPK z listy płac za {_mies_pl(m)} (estymacja; {gdzie})',
+         'wystawienie': wz.get('wystawienie') or termin, 'termin': termin, 'realny': termin,
+         'ksiegowanie': wz.get('ksiegowanie') or f'{termin[:7]}-01',
+         'metoda': wz.get('metoda') or w.get('metoda', ''), 'komentarz': wz.get('komentarz') or w.get('komentarz', ''),
+         'kontrahent': wz.get('kontrahent') or w.get('kontrahent', ''),
+         'ksiegowane': bool(wz.get('ksiegowane', w.get('ksiegowane', True))),
+         'w_cashflow': bool(wz.get('w_cashflow', w.get('w_cashflow', True))), 'zrodlo': ZRODLO_PLAN}
+    st['platnosc'][p['id']] = p
+    rek['czesci'].append({'wiersz': d['wiersz'], 'miesiac': m, 'kwota': d['kwota']})
+    rek['platnosci'].append(p['id'])
+    st['polaczenia'][ref] = rek
+    _przelicz_realizacje(st, list(rek['komorki']))
+    return None

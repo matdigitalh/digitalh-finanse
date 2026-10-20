@@ -335,6 +335,105 @@ class TestTrwalosc(Baza):
         self.assertEqual(next(x for x in f['osoby'] if x['wiersz'] == self.anna)['bs'], {'osoba': 740000, 'us': 78003, 'zus': 427915})
 
 
+class TestPlanPPK(Baza):
+    """BL-06 (decyzja Mata 2026-10-20): plan PPK w miesiącu listy dla miesięcy bez listy płac, przy wyłączonym planowaniu.
+    Kwota zawyżona (770,00 zł), termin 15. dnia drugiego miesiąca po miesiącu listy; plan BS w komórce przelewu (ta sama PPK)
+    zastąpiony, nie dodany; lista płac z PPK za ten miesiąc zastępuje plan."""
+    PLAN = 77000
+
+    def plan_ppk(self, m, termin, przelicz=True, **kw):
+        czyste = zmiany.sprawdz('ppk_plan', {'miesiac': m, 'kwota': self.PLAN, 'termin': termin, 'wiersz': self.ppk, **kw})
+        serwer._sprawdz_odwolania(self.con, 'ppk_plan', czyste)
+        w = zmiany.zapisz('ppk_plan', czyste)
+        if przelicz:
+            self.przelicz()
+        return w
+
+    def blad_planu(self, d) -> str:
+        with self.assertRaises(ValueError) as e:
+            czyste = zmiany.sprawdz('ppk_plan', {'wiersz': self.ppk, 'kwota': self.PLAN, **d})
+            serwer._sprawdz_odwolania(self.con, 'ppk_plan', czyste)
+        return str(e.exception)
+
+    def wrzesien(self):
+        self.lista({'miesiac': '2026-09', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-10-06', 'ppk_pracownik': 20778,
+                                                       'ppk_pracodawca': 15584}], 'ppk': {'wiersz': self.ppk}})
+
+    def trzy_plany(self):
+        self.wrzesien()
+        self.plan_ppk('2026-10', '2026-12-15', przelicz=False)
+        self.plan_ppk('2026-11', '2027-01-15', przelicz=False)
+        self.plan_ppk('2026-12', '2027-02-15')
+
+    def test_plany_w_miesiacu_listy_bez_dublowania_z_planem_bs(self):
+        self.trzy_plany()
+        self.assertFalse(zapytania_budzet.planowanie(self.con))   # planowanie dalej wyłączone
+        po_m = self.ppk_po_miesiacach()
+        self.assertEqual(po_m['2026-09'], [(20778 + 15584, 'lista płac')])
+        for m in ('2026-10', '2026-11', '2026-12'):   # grudzień: plan BS 765,86 (PPK z listy za X) zastąpiony, nie dodany
+            self.assertEqual(po_m[m], [(self.PLAN, 'plan PPK')], m)
+        ps = {p['miesiac']: p for p in self.platnosci("AND p.wiersz = ? AND p.zrodlo = 'plan PPK'", self.ppk)}
+        self.assertEqual({m: (p['typ'], p['termin'], p['realny']) for m, p in ps.items()},
+                         {'2026-10': ('plan', '2026-12-15', '2026-12-15'), '2026-11': ('plan', '2027-01-15', '2027-01-15'),
+                          '2026-12': ('plan', '2027-02-15', '2027-02-15')})
+        # księgowanie (CIT, BL-07) jak w BS: miesiąc przelewu
+        self.assertEqual({m: p['ksiegowanie'][:7] for m, p in ps.items()}, {'2026-10': '2026-12', '2026-11': '2027-01', '2026-12': '2027-02'})
+        self.assertIn('w BS w komórce grudzień 2026: 765,86 zł', ps['2026-10']['tytul'])
+        poz = cashflow.pozycje(self.con, cashflow._d(DZIS), None, cashflow._d('2027-03-31'), cashflow.parametry(scenariusz='pelny'))['pozycje']
+        ppk = sorted((str(z['data'])[:10], z['kwota']) for z in poz if z.get('kontrahent') == 'Kontrahent')
+        self.assertEqual(ppk, [('2026-11-15', -(20778 + 15584)), ('2026-12-15', -self.PLAN), ('2027-01-15', -self.PLAN),
+                               ('2027-02-15', -self.PLAN)])
+        f = laczenie.lista_plac(self.con, '2026-10')
+        self.assertEqual((f['ppk']['plan_ppk']['kwota'], f['ppk']['plan_ppk']['termin'], f['ppk']['miesiac'], f['ppk']['plan']),
+                         (self.PLAN, '2026-12-15', '2026-12', 76586))
+        mapa = {(x['budzet'], x['lista']): x for x in f['ppk_mapa']}
+        self.assertTrue(mapa[('2026-10', '2026-10')]['plan'])
+        self.assertEqual(mapa[('2026-10', '2026-10')]['komorka'], '2026-12')
+        self.assertNotIn(('2026-12', None), mapa)   # plan XII nie udaje kwoty z BS
+        pol = json.loads(self.con.execute("SELECT wartosc FROM meta WHERE klucz = 'polaczenia'").fetchone()[0])
+        self.assertEqual(pol['lista:2026-10:ppk-plan']['bs_zastapione'], ['306'])
+        self.assertNotIn('2026-10', laczenie._meta_json(self.con, 'listy_plac', {}))   # plan to nie lista płac
+
+    def test_lista_z_ppk_zastepuje_plan_a_lista_bez_ppk_nie(self):
+        self.trzy_plany()
+        self.lista({'miesiac': '2026-10', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-11-05', 'ppk_pracownik': 20000,
+                                                       'ppk_pracodawca': 15000}], 'ppk': {'wiersz': self.ppk}})
+        self.lista({'miesiac': '2026-11', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-12-05', 'osoba': 700000}]})
+        po_m = self.ppk_po_miesiacach()
+        self.assertEqual(po_m['2026-10'], [(35000, 'lista płac')])   # plan X zastąpiony listą
+        self.assertEqual(po_m['2026-11'], [(self.PLAN, 'plan PPK')])   # lista XI bez PPK: plan zostaje
+        self.assertEqual(po_m['2026-12'], [(self.PLAN, 'plan PPK')])   # plan XII nietknięty, plan BS nie wraca
+        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_osierocone').fetchone()[0], 0)
+        self.lista({'miesiac': '2026-10', 'usun': True})   # bez listy X wraca plan X
+        self.assertEqual(self.ppk_po_miesiacach()['2026-10'], [(self.PLAN, 'plan PPK')])
+
+    def test_usuniecie_planu_i_walidacja(self):
+        self.wrzesien()
+        self.plan_ppk('2026-10', '2026-12-15')
+        self.assertIn('lista płac z PPK', self.blad_planu({'miesiac': '2026-09', 'termin': '2026-11-15'}))
+        self.assertIn('po miesiącu listy', self.blad_planu({'miesiac': '2026-10', 'termin': '2026-10-15'}))
+        self.assertIn('większa niż 0', self.blad_planu({'miesiac': '2026-10', 'termin': '2026-12-15', 'kwota': 0}))
+        self.assertIn('nie nadaje się', self.blad_planu({'miesiac': '2026-10', 'termin': '2026-12-15', 'wiersz': self.anna}))
+        czyste = zmiany.sprawdz('ppk_plan', {'miesiac': '2026-10', 'usun': True})
+        zmiany.zapisz('ppk_plan', czyste)
+        self.przelicz()
+        po_m = self.ppk_po_miesiacach()
+        self.assertNotIn('2026-10', po_m)
+        self.assertEqual(po_m['2026-12'], [(76586, 'Budget Studio')])
+
+    def test_plan_przetrwa_przyjecie_kopii_z_bs(self):
+        self.trzy_plany()
+        przed = self.ppk_po_miesiacach()
+        p = kopia_bs.podglad(wpisy=zmiany.wczytaj()[0])
+        self.assertEqual(p['roznic'], 0, p['platnosci'][:3])
+        kopia_bs.przyjmij(p['eksport_sha256'], zmiany.wczytaj()[0])
+        self.przelicz()
+        po = self.ppk_po_miesiacach()
+        self.assertEqual({m: po[m] for m in ('2026-09', '2026-10', '2026-11', '2026-12')},
+                         {m: przed[m] for m in ('2026-09', '2026-10', '2026-11', '2026-12')})
+        self.assertEqual(self.con.execute('SELECT COUNT(*) FROM bud_osierocone').fetchone()[0], 0)
+
+
 class TestSerwerListy(unittest.TestCase):
     def test_post_listy_bez_planowania_i_get(self):
         with Srodowisko() as srod:

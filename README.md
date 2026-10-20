@@ -409,6 +409,16 @@ Decyzja Mata 12 uzupełniona 2026-10-20 („żeby w aplikacji było dobrze”). 
   z przesunięciem w miesiącach, termin, kwotę BS, z listy i różnicę; tytuł płatności „PPK z listy płac za … (w BS w komórce
   …: kwota)”. Bez wskazanego wiersza PPK zostaje tylko w koszcie pracodawcy. W bazie połączenie listy trzyma ID płatności BS,
   które zastąpiło (`bs_zastapione`); odbiór „eksport 1:1 z plikiem BS” pomija je jawnie.
+- **Plan PPK w miesiącu listy (BL-06, decyzja Mata 2026-10-20).** Dla miesięcy bez listy płac (dziś X, XI, XII 2026) PPK stoi
+  w budżecie jako plan (estymacja, celowo lekko zawyżona: 770,00 zł) w zbiorczym wierszu PPK, w miesiącu listy, jak PPK z listy.
+  Osobny wpis `ppk_plan` w pliku zmian (nie planowanie w apce i nie zdarzenie „bud”), więc działa przy wyłączonym planowaniu
+  i przetrwa przyjęcie kopii z BS. Termin: 15. dnia drugiego miesiąca po miesiącu listy (X: 15.12, XI: 15.01, XII: 15.02).
+  Plan zastępuje komórkę BS miesiąca przelewu (domyślnie miesiąc terminu; grudzień: plan BS 765,86 = PPK z listy za X), więc
+  nic się nie dubluje; zastąpione ID BS idą do `bs_zastapione` jak przy liście. Księgowanie (CIT, BL-07) jak w BS: miesiąc
+  przelewu. **Lista płac z PPK za ten miesiąc ma pierwszeństwo**: plan wtedy nie działa (wraca po usunięciu listy); lista bez
+  PPK zostawia plan. Plan nie jest listą płac (nie gasi ostrzeżeń o liście). Ekran listy płac pokazuje plan w sekcji PPK
+  i w mapie PPK („plan PPK, estymacja”). Wpis: `POST /api/zmiana` z `typ: ppk_plan`, `{miesiac, kwota, termin, wiersz,
+  komorka_bs?, uwaga?}` albo `{miesiac, usun: true}`; kod `lista_plac.zastosuj_plan`, testy `TestPlanPPK`.
 - **Pakiet medyczny i potrącenia** są częścią kosztu pracodawcy osoby, ale bez osobnej płatności: opłaca je faktura za pakiet
   medyczny (Mediccentre 364 zł = pakiet 89 zł × 2 + potrącenia 80 i 106 zł), która już jest w budżecie. Osobna płatność
   liczyłaby ten koszt dwa razy.

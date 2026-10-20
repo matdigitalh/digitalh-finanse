@@ -840,15 +840,28 @@ def _ppk_listy(con, miesiac, listy, pol, kandydaci, mies_wyplaty) -> dict:
     from . import lista_plac as lp
     zapis = (listy.get(miesiac) or {}).get('ppk') or {}
     rek = pol.get(f'lista:{miesiac}:ppk')
+    rek_plan = None if rek else pol.get(lp.ref_planu(miesiac))   # plan PPK (estymacja, BL-06), dopóki listy z PPK nie ma
     termin = f"{plan.przesun_miesiac(mies_wyplaty, 1)}-{lp.DZIEN['ppk']:02d}"
-    wiersz = zapis.get('wiersz') or lp.wiersz_ppk_domyslny(kandydaci)
-    kom = zapis.get('miesiac') or termin[:7]
-    w_komorce = [dict(r) for r in con.execute('SELECT * FROM bud_platnosc WHERE wiersz = ? AND miesiac = ?', (wiersz, kom))] if wiersz else []
-    bs = (rek or {}).get('bs', {}).get('ppk') if rek else (sum(p['netto'] for p in w_komorce if _bs_platnosc(p)) if any(map(_bs_platnosc, w_komorce)) else None)
+    wiersz = zapis.get('wiersz') or (rek_plan or {}).get('czesci', [{}])[0].get('wiersz') or lp.wiersz_ppk_domyslny(kandydaci)
+    kom = zapis.get('miesiac') or (rek_plan or {}).get('komorka_bs') or termin[:7]
+    w_komorce = [dict(r) for r in con.execute("SELECT * FROM bud_platnosc WHERE wiersz = ? AND miesiac = ? AND COALESCE(zrodlo, '') != ?",
+                                              (wiersz, kom, lp.ZRODLO_PLAN))] if wiersz else []
+    if rek_plan:
+        bs = rek_plan.get('bs', {}).get('ppk')
+    else:
+        bs = (rek or {}).get('bs', {}).get('ppk') if rek else (sum(p['netto'] for p in w_komorce if _bs_platnosc(p)) if any(map(_bs_platnosc, w_komorce)) else None)
     lista = (rek or {}).get('kwoty', {}).get('ppk')
-    return {'wiersz': wiersz, 'miesiac': kom, 'miesiac_budzetu': miesiac, 'termin': zapis.get('termin') or termin, 'wpisane': bool(rek),
+    plan_ppk = None
+    if rek_plan:
+        p = con.execute('SELECT netto, termin FROM bud_platnosc WHERE id = ?', (rek_plan['platnosci'][0],)).fetchone() if rek_plan.get('platnosci') else None
+        plan_ppk = {'kwota': rek_plan['kwoty']['ppk'], 'termin': p['termin'] if p else None, 'komorka_bs': rek_plan.get('komorka_bs'),
+                    'bs': bs, 'plan_bs': rek_plan.get('plan', {}).get('ppk')}
+    return {'wiersz': wiersz, 'miesiac': kom, 'miesiac_budzetu': miesiac,
+            'termin': zapis.get('termin') or (plan_ppk or {}).get('termin') or termin, 'wpisane': bool(rek),
             'bs': bs, 'lista': lista,
-            'plan': (rek or {}).get('plan', {}).get('ppk') if rek else sum(p['netto'] for p in w_komorce if p['typ'] == 'plan') or None,
+            'plan': ((rek or {}).get('plan', {}).get('ppk') if rek else rek_plan.get('plan', {}).get('ppk') if rek_plan
+                     else sum(p['netto'] for p in w_komorce if p['typ'] == 'plan') or None),
+            'plan_ppk': plan_ppk,
             'roznica': (lista - bs) if lista is not None and bs is not None else None, 'osoby': (rek or {}).get('osoby') or {}}
 
 
@@ -867,10 +880,21 @@ def _ppk_mapa(con, listy, pol) -> list[dict]:
         kom = rek.get('komorka_bs') or ppk.get('miesiac')
         wynik.append({'lista': m, 'wiersz': ppk['wiersz'], 'komorka': kom, 'budzet': m, 'termin': ppk.get('termin'), 'bs': bs,
                       'z_listy': kw, 'roznica': kw - bs if bs is not None else None, 'przesuniecie': _miesiecy_miedzy(m, kom)})
+    from . import lista_plac as lp
+    for ref, rek in sorted(pol.items()):   # plan PPK (estymacja, BL-06) w miesiącu listy, dopóki listy z PPK nie ma
+        if not rek.get('estymacja') or not rek.get('czesci'):
+            continue
+        m, wid = rek['miesiac_listy'], rek['czesci'][0]['wiersz']
+        wiersze.add(wid)
+        p = con.execute('SELECT termin FROM bud_platnosc WHERE id = ?', (rek['platnosci'][0],)).fetchone() if rek.get('platnosci') else None
+        bs, kw = rek.get('bs', {}).get('ppk', rek.get('plan', {}).get('ppk')), rek['kwoty']['ppk']
+        wynik.append({'lista': m, 'plan': True, 'plan_kwota': kw, 'wiersz': wid, 'komorka': rek.get('komorka_bs'), 'budzet': m,
+                      'termin': p['termin'] if p else None, 'bs': bs, 'z_listy': None, 'roznica': kw - bs if bs is not None else None,
+                      'przesuniecie': _miesiecy_miedzy(m, rek.get('komorka_bs'))})
     zajete = {(x['wiersz'], x['komorka']) for x in wynik}
     for wid in sorted(wiersze):
         for r in con.execute("SELECT miesiac, SUM(netto) FROM bud_platnosc WHERE wiersz = ? AND COALESCE(dokument, '') = ''"
-                             " AND aktualna = 1 GROUP BY miesiac ORDER BY miesiac", (wid,)):
+                             " AND aktualna = 1 AND COALESCE(zrodlo, '') != ? GROUP BY miesiac ORDER BY miesiac", (wid, lp.ZRODLO_PLAN)):
             if (wid, r[0]) not in zajete:
                 wynik.append({'lista': None, 'wiersz': wid, 'komorka': r[0], 'budzet': r[0], 'termin': None, 'bs': r[1], 'z_listy': None,
                               'roznica': None, 'przesuniecie': 0})
