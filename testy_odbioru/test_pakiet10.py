@@ -8,6 +8,7 @@
 Wypisuje tylko liczby zgodności, bez kwot i nazw."""
 import csv
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -58,8 +59,14 @@ class OdbiorPakiet10(unittest.TestCase):
         po_id = defaultdict(list)
         for x in nasze:
             po_id[x['ID']].append(x)
-        brak, zgodne, rozne = 0, 0, defaultdict(int)
+        # lista płac (dane rzeczywiste, 2026-10-20) zastępuje płatności BS w swoich komórkach: te pomijamy jawnie, po ID
+        pol = json.loads((self.con.execute("SELECT wartosc FROM meta WHERE klucz = 'polaczenia'").fetchone() or ['{}'])[0])
+        z_listy = {i for r in pol.values() for i in r.get('bs_zastapione', [])}
+        brak, zgodne, rozne, zastapione = 0, 0, defaultdict(int), 0
         for x in bs:
+            if x['ID'] in z_listy and not po_id.get(x['ID']):
+                zastapione += 1
+                continue
             kand = po_id.get(x['ID'], [])
             if not kand:
                 brak += 1
@@ -71,7 +78,7 @@ class OdbiorPakiet10(unittest.TestCase):
             for k in roznice:
                 rozne[k] += 1
         print(f'\n  eksport płatności vs plik BS: {zgodne} z {len(bs)} wierszy zgodnych we wszystkich {len(PORÓWNYWANE)} kolumnach,'
-              f' brak w eksporcie: {brak}, różnice wg kolumn: {dict(rozne) or "brak"}')
+              f' brak w eksporcie: {brak}, zastąpione listą płac: {zastapione}, różnice wg kolumn: {dict(rozne) or "brak"}')
         self.assertEqual(brak, 0, 'każda płatność z pliku BS jest w eksporcie')
         for k in ('Rodzaj', 'Netto (wartość)', 'Brutto (wartość)', 'VAT', 'Miesiąc budżetowy', 'Arkusz', 'Folder', 'Kategoria'):
             self.assertEqual(rozne.get(k, 0), 0, k)

@@ -1723,8 +1723,11 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_reczne (id, dane, wpis) VALUES (?,?,?)',
                     [(rid, json.dumps(o, ensure_ascii=False, sort_keys=True), wpis_recznej.get(rid)) for rid, o in sorted(model.get('reczne', {}).items())])
     lekkie = {r: {k: v for k, v in rek.items() if k in ('czesci', 'platnosci', 'reszta', 'zrodlo', 'kwoty', 'bs', 'plan', 'osoby',
-                                                          'data_wyplaty', 'uwaga', 'ppk', 'miesiac_listy')}
-              for r, rek in model.get('polaczenia', {}).items()}   # bez planów zastąpionych (te są tylko do odłączenia)
+                                                          'data_wyplaty', 'uwaga', 'ppk', 'miesiac_listy', 'komorka_bs')}
+              | ({'bs_zastapione': sorted(p['bs_id'] for p in rek.get('zastapione', []) if p.get('bs_id'))}
+                 if rek.get('zrodlo') == 'lista płac' else {})
+              for r, rek in model.get('polaczenia', {}).items()}   # bez planów zastąpionych (te są tylko do odłączenia); lista płac:
+    # ID płatności BS, które zastąpiła (odbiór 1:1 z plikiem BS pomija je jawnie)
     con.execute("INSERT OR REPLACE INTO meta VALUES ('polaczenia', ?)", (json.dumps(lekkie, ensure_ascii=False, sort_keys=True),))
     con.execute("INSERT OR REPLACE INTO meta VALUES ('listy_plac', ?)", (json.dumps(model.get('listy', {}), ensure_ascii=False, sort_keys=True),))
     con.execute("INSERT OR REPLACE INTO meta VALUES ('realizacja', ?)", (json.dumps(model.get('realizacja', []), ensure_ascii=False),))

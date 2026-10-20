@@ -10,8 +10,11 @@ Co robi wpis z komórkami budżetu (osoba × miesiąc × składowa):
   rzeczywistą z kopii BS (kwota BS to estymacja z podziałem procentowym); zastąpiona płatność BS zostaje w zapisie połączenia
   (kwota BS do wglądu, różnica, powrót po usunięciu listy);
 - wiersz bez umowy (powołanie zarządu: w BS jedna kwota brutto) dostaje trzy płatności: na konto, zdrowotna (ZUS), PIT;
-- PPK (pracownika i pracodawcy) to jedna płatność w zbiorczym wierszu PPK z BS, w komórce wskazanej we wpisie (domyślnie
-  miesiąc terminu, bo BS trzyma PPK wg miesiąca przelewu); zastępuje to, co BS ma w tej komórce, więc nic się nie dubluje;
+- PPK (pracownika i pracodawcy) to jedna płatność w zbiorczym wierszu PPK z BS, w miesiącu budżetowym listy (decyzja Mata
+  2026-10-20: jak ZUS i PIT tej listy; koszt, rentowność i wynik w miesiącu, za który jest lista). BS trzyma PPK wg miesiąca
+  przelewu, więc lista zastępuje komórkę BS wskazaną we wpisie (domyślnie miesiąc terminu: lista za styczeń → komórka marzec)
+  i stawia PPK w komórce miesiąca listy; nic się nie dubluje, a rozjazd z BS to układ miesięcy, nie kwota. Komórki BS bez
+  listy (np. styczeń i luty 2026 = PPK z list za XI i XII 2025) zostają z kwotą BS;
 - pakiet medyczny i potrącenia z wypłaty (np. Luxmed) to część kosztu pracodawcy osoby, ale bez osobnej płatności: opłaca je
   faktura za pakiet medyczny, która już jest w budżecie (inaczej koszt liczyłby się dwa razy);
 - pole puste (brak na liście) = ta składowa zostaje jak w BS albo w planie; nic nie zgadujemy.
@@ -136,7 +139,7 @@ def _plan_pozycji(st: dict, m: str, x: dict, scisle: bool):
 
 def _wspolne(m: str, ref: str, wzor: dict | None, w: dict) -> dict:
     wzor = wzor or {}
-    return {'miesiac': m, 'typ': 'rzeczywista', 'etap_bs': wzor.get('etap_bs', '') if _bs(wzor) else '', 'aktualna': True,
+    return {'miesiac': m, 'typ': 'rzeczywista', 'etap_bs': wzor.get('etap_bs', '') if wzor and _bs(wzor) else '', 'aktualna': True,
             'vat': 0, 'stawka': None, 'nr_dok': f'lista płac {m[5:7]}/{m[:4]}', 'nr_wewn': '', 'komentarz': wzor.get('komentarz', ''),
             'kontrahent': wzor.get('kontrahent') or w.get('kontrahent', ''), 'metoda': wzor.get('metoda') or w.get('metoda', ''),
             'ksiegowane': bool(wzor.get('ksiegowane', w.get('ksiegowane', True))),
@@ -204,8 +207,14 @@ def _zastosuj_pozycje(st: dict, m: str, pp: dict):
     _przelicz_realizacje(st, [k for k in rek['komorki']])
 
 
+def _ppk_z_listy(p: dict) -> bool:
+    """Płatność PPK z innej listy płac (stoi w komórce miesiąca swojej listy)."""
+    return (p.get('dokument') or '').startswith('lista:') and p['dokument'].endswith(':ppk')
+
+
 def _plan_ppk(st: dict, m: str, d: dict, plany: list[dict], scisle: bool):
-    """PPK z listy: (powód, plan albo None). Kwota = suma PPK pracownika i pracodawcy wszystkich osób z listy."""
+    """PPK z listy: (powód, plan albo None). Kwota = suma PPK pracownika i pracodawcy wszystkich osób z listy. Płatność
+    w komórce miesiąca listy (m), termin 15. dnia miesiąca po wypłacie; zastępowana komórka BS = miesiąc przelewu."""
     from .budzet import _mies_pl
     kwoty = {pp['wid']: sum(int(pp['kwoty'].get(k) or 0) for k in PPK) for pp in plany if any(k in pp['kwoty'] for k in PPK)}
     ppk = d.get('ppk') or {}
@@ -221,36 +230,38 @@ def _plan_ppk(st: dict, m: str, d: dict, plany: list[dict], scisle: bool):
     wyplaty = sorted(pp['data_wyplaty'] for pp in plany if pp['data_wyplaty'])
     mies_wyplaty = wyplaty[0][:7] if wyplaty else plan.przesun_miesiac(m, 1)
     termin = ppk.get('termin') or f'{plan.przesun_miesiac(mies_wyplaty, 1)}-{DZIEN["ppk"]:02d}'
-    cel_m = ppk.get('miesiac') or termin[:7]
-    ps = [p for p in st['platnosc'].values() if p['wiersz'] == ppk['wiersz'] and p['miesiac'] == cel_m]
-    obce = [p for p in ps if p['typ'] != 'plan' and not _bs(p)]
+    kom_bs = ppk.get('miesiac') or termin[:7]
+    w_bs = [p for p in st['platnosc'].values() if p['wiersz'] == ppk['wiersz'] and p['miesiac'] == kom_bs and not _ppk_z_listy(p)]
+    obce = [p for p in w_bs if p['typ'] != 'plan' and not _bs(p)]
     if obce:
-        return (f'Komórka PPK za {_mies_pl(cel_m)} ma już płatność spoza BS ({obce[0].get("dokument") or obce[0]["id"]}), '
-                'np. PPK z listy za inny miesiąc. Wybierz inną komórkę PPK.'), None
-    return None, {'wiersz': ppk['wiersz'], 'w': w, 'miesiac': cel_m, 'termin': termin, 'kwoty': kwoty, 'ps': ps,
+        return (f'Komórka PPK za {_mies_pl(kom_bs)} ma już płatność spoza BS ({obce[0].get("dokument") or obce[0]["id"]}). '
+                'Wybierz inną komórkę BS do zastąpienia.'), None
+    return None, {'wiersz': ppk['wiersz'], 'w': w, 'miesiac': kom_bs, 'termin': termin, 'kwoty': kwoty, 'ps': w_bs,
                   'ref': f'lista:{m}:ppk'}
 
 
 def _zastosuj_ppk(st: dict, m: str, pk: dict):
-    from .budzet import _przelicz_realizacje, id_rzeczywistej
+    from .budzet import _mies_pl, _przelicz_realizacje, id_rzeczywistej
+    from .format import zl
     rek = {'czesci': [], 'platnosci': [], 'komorki': {}, 'zastapione': [], 'dodane': [], 'reszta': 'usun', 'zrodlo': ZRODLO,
            'kwoty': {'ppk': sum(pk['kwoty'].values())}, 'osoby': pk['kwoty'], 'bs': {}, 'plan': {}, 'ppk': True,
-           'miesiac_listy': m}
-    ps, cel, cm = pk['ps'], pk['wiersz'], pk['miesiac']
+           'miesiac_listy': m, 'komorka_bs': pk['miesiac']}
+    ps, cel, kom_bs = pk['ps'], pk['wiersz'], pk['miesiac']
     bs = [p for p in ps if _bs(p)]
     if bs:
         rek['bs']['ppk'] = sum(p['netto'] for p in bs)
     if any(p['typ'] == 'plan' for p in ps):
         rek['plan']['ppk'] = sum(p['netto'] for p in ps if p['typ'] == 'plan')
     wz = _pierwsza(ps)
-    _zastap(st, rek, cel, cm, ps)
+    _zastap(st, rek, cel, kom_bs, ps)   # komórka BS (miesiąc przelewu) ustępuje liście
     suma = rek['kwoty']['ppk']
-    p = {**_wspolne(cm, pk['ref'], wz, pk['w']), 'id': id_rzeczywistej(pk['ref']), 'wiersz': cel, 'netto': suma, 'brutto': suma,
-         'tytul': 'PPK z l' + _tytul(m, rek['bs'].get('ppk'))[1:],
+    gdzie = f' (w BS w komórce {_mies_pl(kom_bs)}' + (f': {zl(rek["bs"]["ppk"])})' if 'ppk' in rek['bs'] else ')')
+    p = {**_wspolne(m, pk['ref'], wz, pk['w']), 'id': id_rzeczywistej(pk['ref']), 'wiersz': cel, 'netto': suma, 'brutto': suma,
+         'tytul': f'PPK z listy płac za {_mies_pl(m)}' + gdzie,
          'wystawienie': (wz or {}).get('wystawienie') or pk['termin'], 'termin': pk['termin'], 'realny': pk['termin'],
-         'ksiegowanie': (wz or {}).get('ksiegowanie') or f'{cm}-01', 'skladniki': dict(pk['kwoty'])}
+         'ksiegowanie': f'{m}-01', 'skladniki': dict(pk['kwoty'])}
     st['platnosc'][p['id']] = p
-    rek['czesci'].append({'wiersz': cel, 'miesiac': cm, 'kwota': suma})
+    rek['czesci'].append({'wiersz': cel, 'miesiac': m, 'kwota': suma})
     rek['platnosci'].append(p['id'])
     st['polaczenia'][pk['ref']] = rek
     _przelicz_realizacje(st, list(rek['komorki']))

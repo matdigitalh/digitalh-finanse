@@ -10,7 +10,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 
-from finanse import baza, cashflow, konfig, kopia_bs, laczenie, lista_plac, odbudowa, serwer, zapytania_budzet, zmiany
+from finanse import baza, cashflow, konfig, kopia_bs, laczenie, lista_plac, odbudowa, przestawna, serwer, zapytania_budzet, zmiany
 from testy.pomoc import Srodowisko, operacja, zapisz_fakturownie, zapisz_ing
 from testy.test_budzet import KOLUMNY, bs
 
@@ -124,6 +124,12 @@ class Baza(unittest.TestCase):
     def komorka(self, kto, podstawa, m):
         return self.platnosci('AND w.kontrahent = ? AND w.podstawa = ? AND p.miesiac = ?', kto, podstawa, m)
 
+    def ppk_po_miesiacach(self):
+        po_m = {}
+        for p in self.platnosci('AND p.wiersz = ?', self.ppk):
+            po_m.setdefault(p['miesiac'], []).append((p['netto'], p['zrodlo']))
+        return {m: sorted(v) for m, v in po_m.items()}
+
 
 class TestRzeczywistaZBS(Baza):
     def test_lista_zastepuje_kwoty_bs_przy_wylaczonym_planowaniu(self):
@@ -186,30 +192,64 @@ class TestRzeczywistaZBS(Baza):
 
 
 class TestNowePolaIPPK(Baza):
-    def test_ppk_zastepuje_komorke_bs_wg_miesiaca_przelewu(self):
-        """Pkt 2: PPK pracownika i pracodawcy = jedna płatność w zbiorczym wierszu PPK, w komórce miesiąca terminu (lista za
-        styczeń, wypłata 4.02, PPK do 15.03 → komórka marzec), zamiast kwoty BS; mapa i różnica widoczne; reszta BS bez zmian."""
+    def test_ppk_w_miesiacu_listy_jak_zus_i_pit(self):
+        """Decyzja Mata 2026-10-20: PPK z listy za styczeń stoi w budżecie w styczniu (koszt, rentowność, wynik), jak ZUS i PIT
+        tej listy; termin bez zmian (wypłata 4.02, PPK do 15.03); komórka BS marzec (miesiąc przelewu) ustępuje liście, a BS
+        stycznia (PPK za grudzień 2025) zostaje. Rozjazd z BS = układ miesięcy (+2), nie kwota."""
         self.styczen()
-        ppk = self.platnosci('AND p.wiersz = ?', self.ppk)
-        po_m = {}
-        for p in ppk:
-            po_m.setdefault(p['miesiac'], []).append((p['netto'], p['zrodlo']))
-        self.assertEqual(po_m['2026-03'], [(19290 + 14468, 'lista płac')])
-        self.assertEqual(po_m['2026-01'], [(28000, 'Budget Studio')])   # PPK za grudzień 2025 zapłacone w styczniu zostaje
-        p3 = next(p for p in ppk if p['miesiac'] == '2026-03')
-        self.assertEqual((p3['termin'], p3['etap']), ('2026-03-15', 'Opłacona'))   # przelew PPK 337,58 z 13.03
+        po_m = self.ppk_po_miesiacach()
+        self.assertEqual(po_m['2026-01'], sorted([(19290 + 14468, 'lista płac'), (28000, 'Budget Studio')]))
+        self.assertNotIn('2026-03', po_m)   # komórka BS marzec zastąpiona listą za styczeń
+        self.assertEqual(po_m['2026-02'], [(27573, 'Budget Studio')])
+        p1 = next(p for p in self.platnosci("AND p.wiersz = ? AND p.zrodlo = 'lista płac'", self.ppk))
+        zus = self.komorka('Anna Nowak', 'Umowa o pracę - ZUS', '2026-01')[0]
+        self.assertEqual((p1['miesiac'], p1['termin'], p1['realny'], p1['etap']), ('2026-01', '2026-03-15', '2026-03-15', 'Opłacona'))
+        self.assertEqual((p1['miesiac'], p1['termin']), (zus['miesiac'], zus['termin']))   # jak ZUS z tej listy
+        self.assertEqual(p1['ksiegowanie'][:7], '2026-01')
+        self.assertIn('w BS w komórce marzec 2026: 594,78 zł', p1['tytul'])
         f = laczenie.lista_plac(self.con, '2026-01')
-        self.assertEqual({k: f['ppk'][k] for k in ('wiersz', 'miesiac', 'termin', 'bs', 'lista', 'roznica')},
-                         {'wiersz': self.ppk, 'miesiac': '2026-03', 'termin': '2026-03-15', 'bs': 59478, 'lista': 33758, 'roznica': 33758 - 59478})
-        mapa = {(x['komorka'], x['lista']): (x['bs'], x['z_listy']) for x in f['ppk_mapa']}
-        self.assertEqual(mapa[('2026-03', '2026-01')], (59478, 33758))
-        self.assertEqual(mapa[('2026-01', None)], (28000, None))
+        self.assertEqual({k: f['ppk'][k] for k in ('wiersz', 'miesiac', 'miesiac_budzetu', 'termin', 'bs', 'lista', 'roznica')},
+                         {'wiersz': self.ppk, 'miesiac': '2026-03', 'miesiac_budzetu': '2026-01', 'termin': '2026-03-15', 'bs': 59478,
+                          'lista': 33758, 'roznica': 33758 - 59478})
+        mapa = {(x['budzet'], x['lista']): (x['komorka'], x['przesuniecie'], x['bs'], x['z_listy']) for x in f['ppk_mapa']}
+        self.assertEqual(mapa[('2026-01', '2026-01')], ('2026-03', 2, 59478, 33758))
+        self.assertEqual(mapa[('2026-01', None)], ('2026-01', 0, 28000, None))
+        self.assertNotIn(('2026-03', None), mapa)
+        # rentowność budżetu (oś: miesiąc budżetowy): PPK z listy w styczniu, w marcu PPK już nie ma
+        ark = przestawna.policz(self.con, '2026', 'arkusz,kontrahent', 'budzet')['wiersze'][0]
+        ppk = next(x for x in ark['dzieci'] if x['nazwa'] == 'Kontrahent')['miesiace']
+        self.assertEqual((ppk['2026-01']['obciazenia'], ppk.get('2026-03', {}).get('obciazenia', 0)), (28000 + 33758, 0))
+
+    def test_ppk_bez_dublowania_przy_kilku_listach_i_ponownym_zapisie(self):
+        """Listy za styczeń, luty i marzec: każda w swoim miesiącu, komórki BS marzec i kwiecień (przelewy za I i II) zastąpione,
+        BS stycznia i lutego (listy 2025) zostaje; ponowny zapis listy za styczeń przechodzi, choć w zastępowanej komórce BS
+        marzec stoi już PPK z listy za marzec, i niczego nie dubluje."""
+        self.styczen()
+        self.lista({'miesiac': '2026-02', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-03-04', 'ppk_pracownik': 20778,
+                                                       'ppk_pracodawca': 15584}], 'ppk': {'wiersz': self.ppk}})
+        self.lista({'miesiac': '2026-03', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-04-08', 'ppk_pracownik': 7229,
+                                                       'ppk_pracodawca': 5422}], 'ppk': {'wiersz': self.ppk}})
+        oczek = {'2026-01': sorted([(33758, 'lista płac'), (28000, 'Budget Studio')]),
+                 '2026-02': sorted([(20778 + 15584, 'lista płac'), (27573, 'Budget Studio')]),
+                 '2026-03': [(7229 + 5422, 'lista płac')]}
+        po_m = self.ppk_po_miesiacach()
+        self.assertEqual({m: po_m[m] for m in oczek}, oczek)
+        self.assertNotIn('2026-04', po_m)   # BS kwiecień = PPK z listy za luty
+        terminy = {p['miesiac']: p['termin'] for p in self.platnosci("AND p.wiersz = ? AND p.zrodlo = 'lista płac'", self.ppk)}
+        self.assertEqual(terminy, {'2026-01': '2026-03-15', '2026-02': '2026-04-15', '2026-03': '2026-05-15'})
+        self.styczen()   # ponowny zapis (próba na budżecie z listą za marzec w komórce marzec)
+        self.assertEqual(self.ppk_po_miesiacach(), po_m)
+        self.lista({'miesiac': '2026-01', 'usun': True})   # usunięcie: wraca BS marzec, lista za marzec zostaje obok
+        self.assertEqual(self.ppk_po_miesiacach()['2026-03'], sorted([(59478, 'Budget Studio'), (7229 + 5422, 'lista płac')]))
 
     def test_ppk_bez_podwojnego_liczenia_w_cash_flow(self):
-        """PPK z listy za wrzesień (wypłata 6.10, termin 15.11) zastępuje plan BS w komórce listopad; w cash flow jest jedna
-        pozycja PPK w listopadzie (z listy, zamiast planu BS 765,86 z terminem 21.11), a plan BS z grudnia zostaje."""
+        """PPK z listy za wrzesień (wypłata 6.10, termin 15.11) stoi w budżecie we wrześniu i zastępuje plan BS w komórce
+        listopad; w cash flow termin bez zmian: jedna pozycja PPK w listopadzie (z listy, zamiast planu BS 765,86 z terminem
+        21.11), a plan BS z grudnia zostaje."""
         self.lista({'miesiac': '2026-09', 'pozycje': [{'wiersz': self.anna, 'data_wyplaty': '2026-10-06', 'ppk_pracownik': 20778,
                                                        'ppk_pracodawca': 15584}], 'ppk': {'wiersz': self.ppk}})
+        po_m = self.ppk_po_miesiacach()
+        self.assertEqual((po_m['2026-09'], po_m.get('2026-11')), ([(20778 + 15584, 'lista płac')], None))
         poz = cashflow.pozycje(self.con, cashflow._d(DZIS), None, cashflow._d('2027-03-31'), cashflow.parametry(scenariusz='pelny'))['pozycje']
         ppk = sorted((str(z['data'])[:7], z['kwota']) for z in poz if z.get('kontrahent') == 'Kontrahent')
         self.assertEqual(ppk, [('2026-11', -(20778 + 15584)), ('2026-12', -76586)])
@@ -263,17 +303,17 @@ class TestTrwalosc(Baza):
 
     def test_nowy_eksport_bs_i_przyjecie_kopii_nie_kasuja_listy_ani_nie_dubluja_ppk(self):
         """Pkt 6, regresja: lista płac przetrwa nowy eksport BS (inne kwoty BS) i przyjęcie kopii z BS (dwa razy); PPK z listy
-        jest w budżecie jeden raz, kwota BS w tej komórce nie wraca."""
+        jest w budżecie jeden raz, w miesiącu listy, a kwota BS z komórki przelewu (marzec) nie wraca."""
         self.styczen()
 
         def stan():
             skl = {'Umowa o pracę - dla wykonawcy': 'osoba', 'Umowa o pracę - PIT': 'us', 'Umowa o pracę - ZUS': 'zus'}
             listy = sorted((p['w_kontrahent'], p['skladowa'] or skl.get(p['podstawa'], p['podstawa']), p['netto'], p['termin'])
                            for p in self.platnosci("AND p.zrodlo = 'lista płac'"))
-            ppk_marzec = [(p['netto'], p['zrodlo']) for p in self.platnosci('AND w.kontrahent = ? AND p.miesiac = ?', 'Kontrahent', '2026-03')]
-            return listy, ppk_marzec
+            ppk = {m: [(k, z == 'lista płac') for k, z in v] for m, v in self.ppk_po_miesiacach().items() if m in ('2026-01', '2026-03')}
+            return listy, ppk
         przed = stan()
-        self.assertEqual(przed[1], [(33758, 'lista płac')])
+        self.assertEqual(przed[1], {'2026-01': [(28000, False), (33758, True)]})   # marzec BS nie wraca
         # nowy eksport BS z inną estymacją wynagrodzenia i PPK
         nowe = [dict(x) for x in wiersze_bs()]
         for x in nowe:
