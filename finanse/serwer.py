@@ -206,7 +206,9 @@ class Obsluga(BaseHTTPRequestHandler):
                 dane = laczenie.karta(con, q.get('ref', ''), q.get('q', ''))
             elif sciezka == 'lista-plac':
                 dane = laczenie.lista_plac(con, q.get('miesiac') or None)
-            elif sciezka == 'ostrzezenia':   # pakiet 5: ostrzeżenia kosztu pracy (pulpit, Do weryfikacji)
+            elif sciezka == 'laczenie/polaczone':   # pakiet 5: płatność → dokument połączony w apce (odłączanie z cash flow)
+                dane = laczenie.polaczone(con)
+            elif sciezka == 'ostrzezenia':   # pakiet 5: ostrzeżenia kosztu pracy (pulpit, Do weryfikacji, kafel pakietu 11)
                 lista_ = laczenie.ostrzezenia(con)
                 dane = {'ostrzezenia': lista_, 'liczba': len(lista_), 'do_polaczenia': laczenie.ile_do_polaczenia(con)}
             elif sciezka == 'budzet/rozjazdy':

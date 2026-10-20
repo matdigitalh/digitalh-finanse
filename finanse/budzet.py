@@ -816,8 +816,25 @@ def rodzina_wiersza(podstawa: str) -> str | None:
 
 
 def wynagrodzenie(w: dict) -> bool:
-    """Wiersz wynagrodzenia: umowa (praca, zlecenie, dzieło) albo wiersz oznaczony do listy płac (np. powołanie prezesa)."""
-    return plan.jest_umowa(w.get('podstawa', '')) or bool(w.get('lista_plac'))
+    """Wiersz wynagrodzenia: umowa (praca, zlecenie, dzieło), wiersz jednej składowej umowy z kopii BS („Umowa o pracę -
+    PIT”) albo wiersz oznaczony do listy płac (np. powołanie prezesa)."""
+    p = w.get('podstawa', '')
+    return plan.jest_umowa(p) or bool(plan.skladowa_umowy(p)) or bool(w.get('lista_plac'))
+
+
+def rodzenstwo_umowy(wiersze: dict, w: dict) -> dict | None:
+    """Wiersze składowych tej samej umowy tej samej osoby w arkuszu (kopia BS: osobny wiersz na wypłatę, PIT i ZUS):
+    {składowa: id wiersza}. None, gdy wiersz nie jest składową umowy."""
+    su = plan.skladowa_umowy(w.get('podstawa', ''))
+    if not su:
+        return None
+    osoba = (w.get('kontrahent') or '').strip().casefold()
+    wynik = {}
+    for x in sorted(wiersze.values(), key=lambda x: x['id']):
+        t = plan.skladowa_umowy(x.get('podstawa', ''))
+        if t and t[0] == su[0] and x['arkusz'] == w['arkusz'] and (x.get('kontrahent') or '').strip().casefold() == osoba:
+            wynik.setdefault(t[1], x['id'])
+    return wynik
 
 
 def _dzis_wpisu(dzis: str | None) -> str:
@@ -1191,10 +1208,14 @@ def _lista_plac(st: dict, d: dict, scisle: bool):
     m = d['miesiac']
     for x in d['pozycje']:
         wid = x['wiersz']
-        ref = f'lista:{m}:{wid}'
         w = wie.get(wid)
         if not w:
-            return 'nie ma wiersza z listy płac', None, ref
+            return 'nie ma wiersza z listy płac', None, f'lista:{m}:{wid}'
+        rodz = rodzenstwo_umowy(wie, w)
+        if rodz:   # kopia BS: składowe umowy w osobnych wierszach, lista płac na wiersz wypłaty
+            wid = rodz.get('osoba') or wid
+            w = wie[wid]
+        ref = f'lista:{m}:{wid}'
         if not wynagrodzenie(w):
             return f"Wiersz „{w.get('kontrahent') or wid}” nie jest wierszem wynagrodzenia (umowa albo wiersz oznaczony do listy płac).", None, ref
         if ref in st['polaczenia']:   # poprawka listy: najpierw stara znika, wraca plan
@@ -1202,6 +1223,11 @@ def _lista_plac(st: dict, d: dict, scisle: bool):
             if powod:
                 return powod, None, ref
         if d.get('usun'):
+            continue
+        if rodz:
+            powod = _lista_plac_skladowe(st, x, m, ref, w, rodz, scisle)
+            if powod:
+                return powod, None, ref
             continue
         rz_w = [p for p in pla.values() if p['wiersz'] == wid and p['miesiac'] == m and p['typ'] != 'plan']
         if scisle and rz_w:
@@ -1250,6 +1276,58 @@ def _lista_plac(st: dict, d: dict, scisle: bool):
                                  'kwoty': kwoty}
         _przelicz_realizacje(st, [k])
     return None, None, f'lista:{m}'
+
+
+def _lista_plac_skladowe(st: dict, x: dict, m: str, ref: str, w: dict, rodz: dict, scisle: bool) -> str | None:
+    """Lista płac dla umowy z kopii BS, w której wypłata, PIT i ZUS są osobnymi wierszami: każda kwota zastępuje plan
+    w komórce swojego wiersza (jedno połączenie „lista:<miesiąc>:<wiersz wypłaty>” na wszystkie komórki)."""
+    pla, wie = st['platnosc'], st['wiersz']
+    umowa = plan.skladowa_umowy(w['podstawa'])[0]
+    kto = w.get('kontrahent') or 'Ta osoba'
+    kwoty = {k: int(x.get(k) or 0) for k in SKLADNIKI_LISTY}
+    if scisle and not sum(kwoty.values()):
+        return f'{kto}: wpisz co najmniej jedną kwotę (wypłata, PIT albo ZUS).'
+    nazwy = {'osoba': 'wypłaty', 'us': 'PIT', 'zus': 'ZUS'}
+    baza_id = id_rzeczywistej(ref)
+    rek = {'czesci': [], 'platnosci': [], 'komorki': {}, 'zastapione': [], 'dodane': [], 'reszta': 'usun', 'zrodlo': ZRODLO_DOKUMENTU['lista'],
+           'kwoty': kwoty}
+    for s in plan.UMOWY[umowa]:
+        sw = rodz.get(s)
+        if not sw:
+            if kwoty[s] and scisle:
+                return f'{kto}: w arkuszu nie ma wiersza {nazwy[s]} tej umowy, więc kwoty {nazwy[s]} nie zapiszesz.'
+            continue
+        if scisle and any(p['wiersz'] == sw and p['miesiac'] == m and p['typ'] != 'plan' for p in pla.values()):
+            return (f'{kto} ma już za {_mies_pl(m)} płatność rzeczywistą {nazwy[s]} (np. z kopii Budget Studio). '
+                    'Lista płac zastępuje tylko plany.')
+        plany = _plany_komorki(st, sw, m)
+        if not plany:
+            if kwoty[s] and scisle:
+                return f'{kto} nie ma planu {nazwy[s]} za {_mies_pl(m)}. Wpisz w arkuszu kwotę planu (choćby 0), potem listę płac.'
+            continue
+        wzor = sorted(plany, key=lambda p: (p.get('wystawienie') or '', p['id']))[0]
+        stan, zast, dod = _zastap_plany(st, sw, m, kwoty[s], 'usun')
+        p = {'id': f'{baza_id}:{s}', 'wiersz': sw, 'miesiac': m, 'typ': 'rzeczywista', 'etap_bs': '', 'aktualna': True, 'vat': 0,
+             'stawka': None, 'netto': kwoty[s], 'brutto': kwoty[s], 'nr_dok': f'lista płac {m[5:7]}/{m[:4]}', 'nr_wewn': '',
+             'tytul': f'Lista płac za {_mies_pl(m)}', 'komentarz': wzor.get('komentarz', ''),
+             'kontrahent': wzor.get('kontrahent') or wie[sw].get('kontrahent', ''), 'metoda': wzor.get('metoda', ''), 'ksiegowane': True,
+             'w_cashflow': bool(wzor.get('w_cashflow', True)), 'zrodlo': ZRODLO_DOKUMENTU['lista'], 'dokument': ref,
+             'wystawienie': wzor.get('wystawienie'), 'termin': wzor.get('termin'), 'realny': wzor.get('realny') or wzor.get('termin'),
+             'ksiegowanie': wzor.get('ksiegowanie')}
+        if s != 'osoba' and rodz.get('osoba'):
+            p['spinacz'] = f'{baza_id}:osoba'   # PIT i ZUS opłacone dopiero po wypłacie dla osoby
+        pla[p['id']] = p
+        k = _klucz(sw, m)
+        rek['czesci'].append({'wiersz': sw, 'miesiac': m, 'kwota': kwoty[s]})
+        rek['platnosci'].append(p['id'])
+        rek['komorki'][k] = stan
+        rek['zastapione'] += zast
+        rek['dodane'] += dod
+    if not rek['platnosci']:
+        return f'{kto} nie ma planu wynagrodzenia za {_mies_pl(m)}. Wpisz w arkuszu kwotę planu (choćby 0), potem listę płac.'
+    st['polaczenia'][ref] = rek
+    _przelicz_realizacje(st, rek['komorki'])
+    return None
 
 
 def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str | None = None, dok=None):

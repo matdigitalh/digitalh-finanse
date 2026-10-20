@@ -47,6 +47,17 @@ def jest_umowa(podstawa: str) -> bool:
     return podstawa in UMOWY
 
 
+def skladowa_umowy(podstawa: str) -> tuple[str, str] | None:
+    """Wiersz jednej składowej umowy z Budget Studio („Umowa o pracę - PIT”, „Umowa o pracę - dla wykonawcy”): (umowa,
+    składowa osoba / us / zus). W kopii BS każda składowa umowy jest osobnym wierszem."""
+    for baza in UMOWY:
+        if (podstawa or '').startswith(baza + ' - '):
+            reszta = podstawa[len(baza) + 3:].strip().casefold()
+            s = 'us' if reszta == 'pit' else 'zus' if reszta == 'zus' else 'osoba' if reszta.startswith('dla ') else None
+            return (baza, s) if s else None
+    return None
+
+
 def ma_vat(podstawa: str) -> bool:
     return (podstawa or '').startswith('Faktura')
 

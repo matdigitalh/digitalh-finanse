@@ -685,21 +685,53 @@ def karta(con, ref: str, q: str = '') -> dict:
 # ---------- Lista płac (decyzja Mata 12) i ostrzeżenia ----------
 
 def _wiersze_wynagrodzen(con) -> list[dict]:
-    return [dict(r) for r in con.execute(
-        "SELECT w.*, a.nazwa AS arkusz_nazwa, a.folder FROM bud_wiersz w JOIN bud_arkusz a ON a.id = w.arkusz"
-        " WHERE w.podstawa IN ('Umowa o pracę', 'Umowa zlecenie', 'Umowa o dzieło') OR COALESCE(w.lista_plac, 0) = 1"
-        ' ORDER BY a.nazwa, w.kolejnosc, w.id')]
+    """Osoby na liście płac: wiersz umowy (składowe w jednym wierszu), wiersz oznaczony do listy płac albo grupa wierszy
+    składowych jednej umowy z kopii BS („Umowa o pracę - dla wykonawcy / - PIT / - ZUS” tej samej osoby w arkuszu):
+    grupa ma id wiersza wypłaty, podstawę umowy i mapę składowych {składowa: wiersz}."""
+    wynik, grupy = [], {}
+    for r in con.execute(
+            "SELECT w.*, a.nazwa AS arkusz_nazwa, a.folder FROM bud_wiersz w JOIN bud_arkusz a ON a.id = w.arkusz"
+            " WHERE w.podstawa IN ('Umowa o pracę', 'Umowa zlecenie', 'Umowa o dzieło') OR COALESCE(w.lista_plac, 0) = 1"
+            " OR w.podstawa LIKE 'Umowa o pracę - %' OR w.podstawa LIKE 'Umowa zlecenie - %' OR w.podstawa LIKE 'Umowa o dzieło - %'"
+            ' ORDER BY a.nazwa, w.kolejnosc, w.id'):
+        w = dict(r)
+        su = plan.skladowa_umowy(w['podstawa'])
+        if not su:
+            if not (w['podstawa'] or '').startswith('Umowa') or plan.jest_umowa(w['podstawa']) or w['lista_plac']:
+                wynik.append({**w, 'skladowe_wierszy': None})
+            continue
+        klucz = (w['arkusz'], (w['kontrahent'] or '').strip().casefold(), su[0])
+        g = grupy.get(klucz)
+        if not g:
+            g = grupy[klucz] = {**w, 'podstawa': su[0], 'skladowe_wierszy': {}}
+            wynik.append(g)
+        g['skladowe_wierszy'][su[1]] = min(g['skladowe_wierszy'].get(su[1]) or w['id'], w['id'])
+        if su[1] == 'osoba':
+            g.update(id=g['skladowe_wierszy']['osoba'], komentarz=w['komentarz'])
+    for g in grupy.values():   # jak serwer (budzet.rodzenstwo_umowy): wiersz wypłaty, a bez niego pierwszy wiersz składowej
+        g['id'] = g['skladowe_wierszy'].get('osoba') or sorted(g['skladowe_wierszy'].values())[0]
+    return wynik
 
 
-def _komorki_wynagrodzen(con, wids) -> dict:
-    """(wiersz, miesiąc) → {'plany': {składowa: płatność}, 'rzeczywiste': {składowa: płatność}}."""
+def _komorki_wynagrodzen(con, wiersze) -> dict:
+    """(osoba, miesiąc) → {'plany': {składowa: płatność}, 'rzeczywiste': {składowa: płatność}}; osoba = id z
+    _wiersze_wynagrodzen (przy wierszach składowych z kopii BS płatności wszystkich jej wierszy)."""
     wynik = defaultdict(lambda: {'plany': {}, 'rzeczywiste': {}})
-    if not wids:
+    mapa = {}
+    for w in wiersze:
+        if w.get('skladowe_wierszy'):
+            for s, wid in w['skladowe_wierszy'].items():
+                mapa[wid] = (w['id'], s)
+        else:
+            mapa[w['id']] = (w['id'], None)
+    if not mapa:
         return wynik
-    for r in con.execute(f"SELECT * FROM bud_platnosc WHERE wiersz IN ({','.join('?' * len(wids))}) AND aktualna = 1", list(wids)):
+    for r in con.execute(f"SELECT * FROM bud_platnosc WHERE wiersz IN ({','.join('?' * len(mapa))}) AND aktualna = 1", list(mapa)):
         p = dict(r)
         k = 'plany' if p['typ'] == 'plan' else 'rzeczywiste'
-        s = p['skladowa'] or 'osoba'
+        osoba, s0 = mapa[p['wiersz']]
+        p['wiersz'] = osoba
+        s = s0 or p['skladowa'] or 'osoba'
         if s in wynik[(p['wiersz'], p['miesiac'])][k]:   # wiersz bez umowy: kilka płatności w miesiącu sumujemy
             stary = wynik[(p['wiersz'], p['miesiac'])][k][s]
             p = {**stary, 'netto': stary['netto'] + p['netto'], 'brutto': stary['brutto'] + p['brutto']}
@@ -739,7 +771,7 @@ def lista_plac(con, miesiac: str | None = None) -> dict:
     if miesiac and not re.fullmatch(r'\d{4}-(0[1-9]|1[0-2])', miesiac):
         raise ValueError('miesiąc RRRR-MM')
     wiersze = _wiersze_wynagrodzen(con)
-    kom = _komorki_wynagrodzen(con, [w['id'] for w in wiersze])
+    kom = _komorki_wynagrodzen(con, wiersze)
     miesiace = sorted({m for (_, m) in kom}, reverse=True)
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0] or date.today().isoformat()
     if not miesiac:   # domyślnie najstarszy miesiąc z minioną wypłatą bez listy, inaczej bieżący
@@ -788,7 +820,7 @@ def ostrzezenia(con) -> list[dict]:
     od przelewów w banku o ponad 1 zł. Każde: rodzaj, poziom, tytuł, opis, wiersz, osoba, miesiąc, kwota."""
     dzien = (con.execute("SELECT wartosc FROM meta WHERE klucz='dzien_stanu'").fetchone() or [''])[0] or date.today().isoformat()
     wiersze = _wiersze_wynagrodzen(con)
-    kom = _komorki_wynagrodzen(con, [w['id'] for w in wiersze])
+    kom = _komorki_wynagrodzen(con, wiersze)
     przelewy = _przelewy_wynagrodzen(con)
     wynik = []
     po_wierszu = defaultdict(dict)
@@ -859,7 +891,15 @@ def ostrzezenia(con) -> list[dict]:
                               'wiersz': '', 'osoba': nazwa, 'miesiac': m, 'kwota': sumy[s] - bank, 'data': przel[0]['data']})
     for i, o in enumerate(wynik):
         o['id'] = f"{o['rodzaj']}|{o['wiersz']}|{o['miesiac']}|{i}"
+        # prosty kształt dla kafla pulpitu (pakiet 11): typ, opis, osoba, miesiąc, kwota w groszach, link do ekranu
+        o.update(typ=o['rodzaj'], kwota_gr=o['kwota'], link=f"#/budzet/lista-plac?miesiac={o['miesiac']}")
     return wynik
+
+
+def polaczone(con) -> dict:
+    """GET /api/laczenie/polaczone: płatność budżetu → dokument, z którym połączono ją w apce (dokument z Do połączenia,
+    zamiana planu, lista płac). Do masowego odłączenia z list i cash flow."""
+    return {r[0]: r[1] for r in con.execute("SELECT id, dokument FROM bud_platnosc WHERE COALESCE(dokument, '') != ''")}
 
 
 MIES_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień']

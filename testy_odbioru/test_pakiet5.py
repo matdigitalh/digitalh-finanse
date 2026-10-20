@@ -95,3 +95,20 @@ class OdbiorLaczenie(unittest.TestCase):
                                              (x['pod_wiersz'], x['pod_miesiac'])).fetchone())
         pew = Counter(x['pewnosc'] or 'brak' for x in lista['wiersze'])
         print(f"  do połączenia od 1.10: {lista['razem']} dokumentów, podpowiedzi: {dict(pew)}")
+
+    def test_lista_plac_widzi_skladowe_umow_z_kopii_bs(self):
+        """Kopia BS trzyma wypłatę, PIT i ZUS w osobnych wierszach („Umowa o pracę - PIT”): lista płac grupuje je w osobę,
+        a plan składowej nie zamienia się na rzeczywistą poza listą płac (decyzja 12)."""
+        from finanse import budzet
+        skl = self.con.execute("SELECT COUNT(*) FROM bud_wiersz WHERE podstawa LIKE 'Umowa % - %'").fetchone()[0]
+        if not skl:
+            self.skipTest('brak wierszy składowych umów')
+        dzis = self.con.execute("SELECT wartosc FROM meta WHERE klucz = 'dzien_stanu'").fetchone()[0]
+        f = laczenie.lista_plac(self.con, dzis[:7])
+        z_planem = [o for o in f['osoby'] if o['plan']]
+        print(f'  lista płac {dzis[:7]}: {len(f["osoby"])} osób, z planem {len(z_planem)}; wierszy składowych w BS: {skl}')
+        self.assertTrue(z_planem)
+        for o in z_planem:
+            self.assertTrue(o['umowa'] or o['podstawa'] not in ('Umowa o pracę', 'Umowa zlecenie', 'Umowa o dzieło'))
+        w = dict(self.con.execute("SELECT * FROM bud_wiersz WHERE podstawa LIKE 'Umowa % - PIT' LIMIT 1").fetchone())
+        self.assertTrue(budzet.wynagrodzenie(w))
