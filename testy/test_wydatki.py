@@ -21,7 +21,7 @@ def dane_testowe(dane):
         operacja('2026-10-15', '-100,00', '0', 'URZĄD SKARBOWY', '/OKR/26K03/CIT-8', ref='T4'),
         operacja('2026-09-25', '-1500,00', '0', 'URZĄD SKARBOWY', '/OKR/26M08/VAT-7', ref='T1'),
         operacja('2026-09-20', '-300,00', '0', 'URZĄD SKARBOWY', '/OKR/26M08/PIT-4', ref='T2'),
-        operacja('2026-09-15', '-800,00', '0', 'ZUS', 'DRA 08/2026', ref='Z3'),
+        operacja('2026-09-15', '-600,00', '0', 'ZUS', 'DRA 08/2026', ref='Z3'),
         operacja('2026-07-15', '-800,00', '0', 'ZUS', 'DRA 06/2026', ref='Z2'),
         operacja('2026-06-15', '-800,00', '0', 'ZUS', 'DRA 05/2026', ref='Z1'),
         operacja('2026-09-15', '-60,00', '0', 'PKO EMERYTURA SFIO', 'SKŁADKI PPK', ref='E1'),
@@ -39,6 +39,30 @@ def dane_testowe(dane):
         karta('2026-08-10', '-25,00', 'BOLT.EU/S/2610160930 Warsaw', 'B1'),
         karta('2026-08-11', '-30,00', 'BOLT.EU/S/9999999999 Warsaw', 'B2'),
         karta('2026-08-02', '-99,00', 'NIEZNANY SKLEP', 'X1'),
+        # poprawki po kontroli liczb: opłata roczna, wygasły, flagi, kilka kart w miesiącu, zwroty kosztów obok pensji
+        karta('2026-09-28', '-4678,90', 'Adobe DUBLIN D24', 'AD1'),
+        karta('2026-08-20', '-12,00', 'TRELLO.COM* ATLASSIAN', 'TR3'),
+        karta('2026-07-20', '-12,00', 'TRELLO.COM* ATLASSIAN', 'TR2'),
+        karta('2026-06-20', '-12,00', 'TRELLO.COM* ATLASSIAN', 'TR1'),
+        karta('2026-10-15', '-282,78', 'WISPR SAN FRANCISCO', 'WI5'),
+        karta('2026-09-20', '-30,00', 'WISPR SAN FRANCISCO', 'WI4'),
+        karta('2026-08-20', '-30,00', 'WISPR SAN FRANCISCO', 'WI3'),
+        karta('2026-07-20', '-30,00', 'WISPR SAN FRANCISCO', 'WI2'),
+        karta('2026-06-20', '-30,00', 'WISPR SAN FRANCISCO', 'WI1'),
+        karta('2026-10-02', '-92,99', 'Google Workspace_digit Warsaw', 'GW5'),
+        karta('2026-10-02', '-464,94', 'Google Workspace_digit Warsaw', 'GW6'),
+        karta('2026-10-02', '-46,49', 'Google Workspace_digit Warsaw', 'GW7'),
+        karta('2026-09-02', '-92,99', 'Google Workspace_digit Warsaw', 'GW3'),
+        karta('2026-09-02', '-464,94', 'Google Workspace_digit Warsaw', 'GW4'),
+        karta('2026-08-02', '-92,99', 'Google Workspace_digit Warsaw', 'GW2'),
+        karta('2026-07-02', '-92,99', 'Google Workspace_digit Warsaw', 'GW1'),
+        operacja('2026-09-03', '-9367,93', '0', 'HEROLD MATEUSZ UL. TESTOWA 1', 'WYNAGRODZENIE ZA 08.2026 ZARZĄD', ref='H4'),
+        operacja('2026-08-06', '-9367,93', '0', 'HEROLD MATEUSZ UL. TESTOWA 1', 'WYNAGRODZENIE ZA 07.2026 ZARZĄD', ref='H3'),
+        operacja('2026-07-07', '-9367,93', '0', 'HEROLD MATEUSZ UL. TESTOWA 1', 'WYNAGRODZENIE ZA 06.2026 ZARZĄD', ref='H2'),
+        operacja('2026-06-05', '-9367,93', '0', 'HEROLD MATEUSZ UL. TESTOWA 1', 'WYNAGRODZENIE ZA 05.2026 ZARZĄD', ref='H1'),
+        operacja('2026-09-01', '-2388,55', '0', 'Mateusz Herold', 'Zwrot za wyjazdy służbowe w sierpniu', ref='HZ3'),
+        operacja('2026-08-01', '-581,90', '0', 'Mateusz Herold', 'Zwrot za wyjazdy służbowe w lipcu', ref='HZ2'),
+        operacja('2026-07-13', '-410,55', '0', 'Mateusz Herold', 'Zwrot za wyjazdy służbowe w czerwcu', ref='HZ1'),
     ])
 
 
@@ -65,7 +89,14 @@ class TestRegulyWbudowane(unittest.TestCase):
         self.assertEqual(self.k(rodzaj='podatki', kontrahent='Urząd Skarbowy', tytul='CIT-8'), 'cit')
         self.assertEqual(self.k(rodzaj='praca', kontrahent='PKO EMERYTURA- SFIO'), 'ppk')
         self.assertEqual(self.k(rodzaj='praca', kontrahent='KOWALSKA ANNA', tytul='WYNAGRODZENIE ZA 08.2026'), 'pensje')
-        self.assertEqual(self.k(rodzaj='praca', kontrahent='Jan Nowak', tytul='Faktura 3/2026'), 'pensje')
+        self.assertEqual(self.k(rodzaj='praca', kontrahent='Jan Nowak', tytul='Faktura 3/2026'), 'wspolpracownicy')
+        self.assertEqual(self.k(rodzaj='praca', kontrahent='KRÓL ZUZANNA', tytul='Rach. umowa o dzieło'), 'wspolpracownicy')
+        self.assertEqual(self.k(rodzaj='praca', kontrahent='KRÓL ZUZANNA', tytul='Rach. umowa o dzieło', kk='krol zuzanna'),
+                         'wspolpracownicy')
+        self.assertEqual(kategoria_wbudowana({'rodzaj': 'praca', 'kontrahent': 'Jan Nowak', 'tytul': 'przelew', 'kk': 'jan nowak'},
+                                             {'jan nowak'})[0], 'pensje')   # osoba z listy płac
+        self.assertEqual(wydatki.NAZWY['pensje'], 'Pensje (etat, powołanie)')
+        self.assertIn('wspolpracownicy', wydatki.KOSZT_PRACY)
         self.assertEqual(self.k(rodzaj='praca', kontrahent='Mateusz Herold', tytul='Zwrot za wyjazdy służbowe w maju'), 'podroze')
         self.assertEqual(self.k(rodzaj='praca', kontrahent='MedicCentre Sp.z.o.o'), 'benefity')
         for n in ('Google Workspace_digit Warsaw', 'FIGMA SAN FRANCISCO', 'BUDGET STUDIO WARSZAWA', 'ANTHROPIC* CLAUDE SUB', 'OPENAI *CHATGPT',
@@ -183,45 +214,107 @@ class TestWydatki(unittest.TestCase):
         wydatki.sprawdz_odwolania(self.con, 'cel_wydatku', {'kontrahent': 'figma san', 'obszar': 'Szkolenia'})
         self.assertIn('Szkolenia', wydatki.obszary(self.con))
 
-    def test_koszty_stale(self):
+    def stale(self):
         s = wydatki.koszty_stale(self.con)
+        return s, {x['kontrahent'] + '|' + x['kategoria']: x for x in s['pozycje']}
+
+    def grupa(self, ref):
+        return wyd(self.con, ref)['kontrahent_grupa']
+
+    def test_koszty_stale_kwota_z_ostatniego_pelnego_miesiaca(self):
+        s, po = self.stale()
         self.assertEqual(s['okno'], ['2026-06', '2026-07', '2026-08', '2026-09'])
-        po = {x['klucz']: x for x in s['pozycje']}
-        figma = po[wyd(self.con, 'F1')['kontrahent_grupa']]
-        self.assertEqual(figma['miesiecznie'], (4100 + 4100 + 5000 + 1) // 3)   # średnia z lipca, sierpnia, września
-        self.assertEqual(figma['rocznie'], figma['miesiecznie'] * 12)
-        self.assertEqual((figma['ostatnia_data'], figma['ostatnia_kwota']), ('2026-09-29', 5000))
-        self.assertEqual(figma['zmiana_ceny']['poprzednia'], 4100)
-        self.assertIn('zus', po)   # 3 z 4 miesięcy
-        nazwa = po[wyd(self.con, 'N1')['kontrahent_grupa']]   # opłata roczna ±10% rok wcześniej
-        self.assertEqual((nazwa['sposob'], nazwa['rocznie'], nazwa['miesiecznie']), ('opłata roczna', 31000, 2583))
-        self.assertNotIn(wyd(self.con, 'X1')['kontrahent_grupa'], po)   # jednorazowy
-        self.assertFalse(any(x['kategoria'] == 'vat' for x in s['pozycje']))   # VAT nie jest kosztem stałym
+        self.assertEqual(po['zus|zus']['miesiecznie'], 60000)   # wrzesień, nie średnia 800, 800, 600
+        figma = po[self.grupa('F1') + '|narzedzia']
+        self.assertEqual((figma['miesiecznie'], figma['rocznie']), (5000, 60000))
+        self.assertEqual(figma['flagi'], [])   # +22%: zmiana ceny pokazana, bez flagi (próg 50%)
+        self.assertEqual(figma['zmiana_ceny']['proc'], 22.0)
+        self.assertNotIn(self.grupa('X1') + '|nieprzypisane', po)   # jednorazowy
+        self.assertFalse(any(x['kategoria'] in ('vat', 'klienci_media') for x in s['pozycje']))
         self.assertEqual(s['razem']['miesiecznie'], sum(x['miesiecznie'] for x in s['pozycje']))
-        # decyzja Mata: figma niestała, sklep stały
-        self.wpis('cel_wydatku', {'kontrahent': figma['klucz'], 'staly': False})
-        self.wpis('cel_wydatku', {'kontrahent': wyd(self.con, 'X1')['kontrahent_grupa'], 'staly': True, 'obszar': 'Rozwój', 'kto': 'Anna'})
+
+    def test_wygasle(self):
+        s, po = self.stale()
+        trello = self.grupa('TR1')
+        self.assertNotIn(trello + '|narzedzia', po)   # 3 z 4 miesięcy, ale nic we wrześniu ani w październiku
+        w = next(x for x in s['wygasle'] if x['kontrahent'] == trello)
+        self.assertEqual((w['ostatnia_data'], w['ostatnia_kwota']), ('2026-08-20', 1200))
+        self.assertNotIn(trello, [x['kontrahent'] for x in s['pozycje']])
+        self.assertEqual(wydatki.kontrahent(self.con, trello)['wygasly']['ostatnia_data'], '2026-08-20')
+
+    def test_oplata_roczna(self):
+        s, po = self.stale()
+        adobe = po[self.grupa('AD1') + '|narzedzia']
+        self.assertEqual((adobe['roczna'], adobe['rocznie'], adobe['miesiecznie']), (True, 467890, 38991))
+        nazwa = po[self.grupa('N1') + '|narzedzia']   # jedna płatność od 300 zł w 12 miesiącach
+        self.assertEqual((nazwa['roczna'], nazwa['miesiecznie']), (True, 2583))
+        # ręcznie: sklep jako opłata roczna, Adobe jako miesięczna (wtedy 1 z 4 miesięcy, więc nie jest stały)
+        self.wpis('cel_wydatku', {'kontrahent': self.grupa('X1'), 'roczna': True})
+        self.wpis('cel_wydatku', {'kontrahent': self.grupa('AD1'), 'roczna': False})
         self.przebuduj()
-        s = wydatki.koszty_stale(self.con)
-        po = {x['klucz']: x for x in s['pozycje']}
-        self.assertNotIn(figma['klucz'], po)
-        sklep = po[wyd(self.con, 'X1')['kontrahent_grupa']]
-        self.assertEqual((sklep['miesiecznie'], sklep['sposob']), (9900, 'decyzja Mata (wykrywanie: nie)'))
-        self.assertIn({'nazwa': 'Rozwój', 'miesiecznie': 9900, 'rocznie': 9900 * 12, 'ile': 1}, s['wg_obszaru'])
-        self.assertIn('Anna', [x['nazwa'] for x in s['wg_osoby']])
+        s, po = self.stale()
+        self.assertEqual(po[self.grupa('X1') + '|nieprzypisane']['miesiecznie'], 825)
+        self.assertIn('decyzja Mata', po[self.grupa('X1') + '|nieprzypisane']['sposob'])
+        self.assertNotIn(self.grupa('AD1') + '|narzedzia', po)
+
+    def test_flagi_zmiany_kwoty_i_poza_cyklem(self):
+        s, po = self.stale()
+        wispr = po[self.grupa('WI1') + '|narzedzia']
+        self.assertEqual(wispr['miesiecznie'], 3000)
+        self.assertEqual(set(wispr['flagi']), {'zmiana kwoty', 'poza cyklem'})
+        self.assertEqual((wispr['ostatnia_data'], wispr['ostatnia_kwota']), ('2026-10-15', 28278))
+
+    def test_ostatnia_platnosc_suma_miesiaca(self):
+        s, po = self.stale()
+        gw = po[self.grupa('GW1') + '|narzedzia']
+        self.assertEqual((gw['ostatnia_data'], gw['ostatnia_kwota'], gw['ostatnia_ile']), ('2026-10-02', 9299 + 46494 + 4649, 3))
+        self.assertEqual(gw['miesiecznie'], 9299 + 46494)   # wrzesień, wszystkie karty
+        self.assertNotIn('poza cyklem', gw['flagi'])
+
+    def test_zwroty_kosztow_poza_pensja(self):
+        g = self.grupa('H1')
+        self.assertEqual(g, self.grupa('HZ1'))   # ten sam kontrahent w banku
+        self.assertEqual((wyd(self.con, 'H1')['kategoria'], wyd(self.con, 'HZ1')['kategoria']), ('pensje', 'podroze'))
+        s, po = self.stale()
+        self.assertEqual(po[g + '|pensje']['miesiecznie'], 936793)
+        self.assertNotIn(g + '|podroze', po)   # zwroty za wyjazdy nie są kosztem stałym
+        self.assertEqual([x['kategoria'] for x in s['pozycje'] if x['kontrahent'] == g], ['pensje'])
+        a = wydatki.analiza(self.con, '2026-01-01', '2026-10-15')
+        pensje = next(x for x in a['kategorie'] if x['klucz'] == 'pensje')
+        self.assertEqual(pensje['suma'], 500000 + 4 * 936793)   # zwroty też poza pensjami w kategoriach
+
+    def test_decyzje_mata_staly(self):
+        s, po = self.stale()
+        figma = self.grupa('F1')
+        self.wpis('cel_wydatku', {'kontrahent': figma, 'staly': False})
+        self.wpis('cel_wydatku', {'kontrahent': self.grupa('X1'), 'staly': True, 'obszar': 'Rozwój', 'kto': 'Anna'})
+        self.wpis('cel_wydatku', {'kontrahent': self.grupa('WI1'), 'obszar': 'Zespół', 'kto': 'Anna'})
+        self.przebuduj()
+        s, po = self.stale()
+        self.assertNotIn(figma + '|narzedzia', po)
+        self.assertNotIn(self.grupa('X1') + '|nieprzypisane', po)   # sierpień: ani we wrześniu, ani w październiku, więc wygasły
+        self.assertIn(self.grupa('X1'), [x['kontrahent'] for x in s['wygasle']])
+        self.assertIn({'nazwa': 'Zespół', 'miesiecznie': 3000, 'rocznie': 36000, 'ile': 1}, s['wg_obszaru'])
+        self.assertEqual(next(x for x in s['wg_osoby'] if x['nazwa'] == 'Anna')['miesiecznie'], 3000)
 
     def test_kafle_bez_podwojnego_liczenia(self):
         a = wydatki.analiza(self.con, '2026-01-01', '2026-10-15')
         k = a['kafle']
-        self.assertEqual(k['koszt_pracy']['suma'], 500000 + 3 * 80000 + 30000 + 6000)   # pensje, ZUS, PIT-4, PPK
+        self.assertEqual(k['koszt_pracy']['suma'], 500000 + 4 * 936793 + 2 * 80000 + 60000 + 30000 + 6000)   # pensje, ZUS, PIT-4, PPK
         self.assertEqual(k['podatki']['suma'], 150000 + 10000)   # VAT i CIT, bez PIT-4 i ZUS
         self.assertEqual(a['razem'], sum(x['suma'] for x in a['kategorie']))
         self.assertEqual(a['razem'], -self.con.execute("SELECT SUM(o.kwota) FROM wydatki w JOIN operacje o ON o.id = w.operacja_id"
                                                         " WHERE o.data_ksiegowania >= '2026-01-01'").fetchone()[0])
         self.assertEqual(a['niepelne'], ['2026-10'])
-        narz = next(x for x in a['kategorie'] if x['klucz'] == 'narzedzia')
-        self.assertEqual(k['narzedzia']['srednia'], (sum(narz['miesiace'].get(m, 0) for m in a['pelne']) + 4) // 9)
         self.assertAlmostEqual(sum(x['udzial'] for x in a['kategorie']), 100, delta=0.5)
+
+    def test_kafel_narzedzi_pelne_miesiace_i_roczne(self):
+        n = wydatki.analiza(self.con, '2026-01-01', '2026-10-15')['kafle']['narzedzia']
+        self.assertEqual((n['miesiecy'], n['od_miesiaca'], n['do_miesiaca']), (9, '2026-01', '2026-09'))
+        biezace = 3 * 4100 + 5000 + 3 * 1200 + 4 * 3000 + 9299 * 3 + 46494   # styczeń do września, bez opłat rocznych
+        self.assertEqual(n['biezace_mies'], (biezace + 4) // 9)
+        self.assertEqual((n['roczne'], n['roczne_ile'], n['roczne_mies']), (467890 + 31000, 2, (467890 + 31000 + 6) // 12))
+        self.assertEqual(n['srednia'], n['biezace_mies'] + n['roczne_mies'])
 
     def test_ostrzezenie_kategoria_niezgodna_z_rodzajem(self):
         g = wyd(self.con, 'P1')['kontrahent_grupa']

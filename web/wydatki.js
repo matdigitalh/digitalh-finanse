@@ -6,7 +6,7 @@
 
 EKSPORT_EKRANU.wydatki = ['wydatki/analiza'];   // przyciski Excel i CSV w nagłówku (eksport.js): kategorie, kontrahenci, koszty stałe
 
-const WYD_PRACA = ['pensje', 'zus', 'pit4', 'ppk', 'benefity'];
+const WYD_PRACA = ['pensje', 'wspolpracownicy', 'zus', 'pit4', 'ppk', 'benefity'];
 const WYD_KLIENCI = ['klienci_media', 'klienci_druk', 'klienci_podwykonawcy'];
 // Grupy na wykresie miesięcznym: stały kolor dla grupy (kolor idzie za grupą, nie za miejscem w rankingu).
 const WYD_GRUPY = [
@@ -28,7 +28,7 @@ Object.assign(POMOC, {
     jak: 'Kategoria: Twoja decyzja dla płatności, potem Twoja reguła dla kontrahenta, potem reguły wbudowane (nazwa kontrahenta, tytuł, rodzaj), na końcu Inne albo Nieprzypisane. Średnia miesięczna liczy tylko pełne miesiące; miesiąc dnia stanu jest niepełny.',
     zrob: 'Kliknij kategorię, żeby zobaczyć kontrahentów, a kontrahenta, żeby wpisać kategorię, cel (obszar, kto, uzasadnienie) i ocenę.' },
   wyd_praca: { tytul: 'Pensje i koszt pracy', krotko: 'Pensje na rękę, ZUS, PIT-4, PPK i benefity w wybranym okresie.',
-    co: 'Wszystko, co kosztuje zespół: przelewy wynagrodzeń, składki ZUS, zaliczki PIT-4 od pensji, PPK i benefity (pakiet medyczny).',
+    co: 'Wszystko, co kosztuje zespół: pensje (przelewy „wynagrodzenie” z listy płac: etat i powołanie zarządu), współpracownicy (przelewy do osób bez listy płac: faktury B2B, umowy o dzieło), składki ZUS, zaliczki PIT-4 od pensji, PPK i benefity (pakiet medyczny).',
     skad: 'Przelewy z banku z kategoriami Pensje, ZUS, PIT-4, PPK i Benefity.',
     jak: 'Suma w okresie i średnia z pełnych miesięcy. ZUS i PIT-4 są tu, a nie w podatkach, więc nic nie liczy się dwa razy. Przelew wypłaty jest w miesiącu przelewu, nie miesiącu listy płac.',
     zrob: 'Porównaj z listą płac i kosztem pracodawcy w Budżet, Lista płac.' },
@@ -40,13 +40,13 @@ Object.assign(POMOC, {
   wyd_narzedzia: { tytul: 'Narzędzia i subskrypcje miesięcznie', krotko: 'Średni miesięczny koszt narzędzi i subskrypcji z pełnych miesięcy okresu.',
     co: 'Oprogramowanie, abonamenty, domeny i hosting, telefony.',
     skad: 'Płatności z kategorią Narzędzia i subskrypcje (głównie karta na rachunku online).',
-    jak: 'Suma pełnych miesięcy okresu podzielona przez ich liczbę. Płatności w walucie po kursie z wyciągu.',
+    jak: 'Płatności bieżące: suma z pełnych miesięcy wybranego okresu (miesiące wypisane pod kwotą; bieżący, niepełny miesiąc pomijamy) podzielona przez ich liczbę. Opłaty roczne zapłacone w okresie (np. Adobe) dodajemy jako 1/12 kwoty, tak jak w kosztach stałych. Płatności w walucie po kursie z wyciągu.',
     zrob: 'Lista kosztów stałych pokazuje, które narzędzia płacisz co miesiąc i czy cena się zmieniła.' },
   wyd_stale: { tytul: 'Koszty stałe', krotko: 'Kontrahenci, którym płacisz regularnie: miesięcznie i rocznie.',
-    co: 'Kontrahent z płatnością w co najmniej 3 z 4 ostatnich pełnych miesięcy, albo opłata roczna (ta sama kwota rok wcześniej, plus minus 10%). Bez VAT, podziału zysku, zwrotów i kosztów klientów.',
+    co: 'Kontrahent (osobno dla każdej kategorii, więc zwroty za wyjazdy nie mieszają się z pensją) z płatnością w co najmniej 3 z 4 ostatnich pełnych miesięcy, albo opłata roczna. Aktywny tylko, gdy zapłacono w ostatnim pełnym miesiącu albo w bieżącym; pozostali to wygasłe. Bez VAT, podziału zysku, zwrotów, kosztów klientów, podróży, reprezentacji i sprzętu.',
     skad: 'Wyciąg ING, wszystkie dostępne miesiące. Okno 4 miesięcy liczy się od dnia stanu, nie od wybranego okresu.',
-    jak: 'Koszt miesięczny = średnia z miesięcy z płatnością w ostatnich 3 pełnych miesiącach; roczny = 12 razy więcej (opłata roczna: kwota opłaty). Zmiana ceny: ostatnia płatność (albo miesiąc) kontra poprzednia, gdy różnica przekracza 10%.',
-    zrob: 'Wpisz przy każdym cel (obszar, kto, uzasadnienie) i ocenę. Kontrahenta wykrytego błędnie oznacz w karcie jako niestały, brakującego jako stały.' },
+    jak: 'Koszt miesięczny = suma płatności z ostatniego pełnego miesiąca (gdy wtedy nic, z bieżącego), roczny = 12 razy więcej. Opłata roczna (narzędzie z jedną płatnością od 300 zł w 12 miesiącach albo Twoje oznaczenie „roczna”) liczy się jako 1/12. Ostatnia płatność = data i suma jej miesiąca. Flagi: zmiana kwoty ponad 50% (miesiąc kontra poprzedni miesiąc z płatnością) i płatność ponad 3 dni od zwykłego dnia cyklu.',
+    zrob: 'Wpisz przy każdym cel (obszar, kto, uzasadnienie) i ocenę. Flagi sprawdź: zmiana planu, nowa licencja albo opłata poza cyklem. Błędnie wykrytego oznacz w karcie jako niestały, brakującego jako stały, opłatę roczną jako roczną.' },
   wyd_wykres: { tytul: 'Wydatki miesięcznie', krotko: 'Wydatki z banku miesiąc po miesiącu, w grupach kategorii.',
     co: 'Słupek to suma wydatków miesiąca, podzielona na koszt pracy, narzędzia, koszty klientów, podatki i pozostałe kategorie.',
     skad: 'Wyciąg ING, kwoty brutto.', jak: 'Przełącznik „bez kosztów klientów i VAT” zostawia koszty samej agencji. Szary miesiąc jest niepełny.',
@@ -106,7 +106,8 @@ Object.assign(WIDOKI, {
         <div class="dop">${linie(k.podatki.rozbicie)}<br>ZUS ${zl(k.podatki.w_koszcie_pracy[0].suma)} i PIT-4 ${zl(k.podatki.w_koszcie_pracy[1].suma)} są w koszcie pracy, nie tutaj.</div></div>
       <div class="kafel"><div class="tytul">Narzędzia i subskrypcje ${pytajnik('wyd_narzedzia')}</div>
         <div class="wartosc">${k.narzedzia.srednia != null ? zl(k.narzedzia.srednia) : 'brak pełnego miesiąca'}</div>
-        <div class="dop">miesięcznie, średnia z ${k.narzedzia.miesiecy} pełnych miesięcy; w okresie ${zl(k.narzedzia.suma)}</div></div>
+        <div class="dop">${k.narzedzia.miesiecy ? `miesięcznie: ${zl(k.narzedzia.biezace_mies)} średnio z ${k.narzedzia.miesiecy} pełnych miesięcy (${mies(k.narzedzia.od_miesiaca)} do ${mies(k.narzedzia.do_miesiaca)})
+          + ${zl(k.narzedzia.roczne_mies)} z ${k.narzedzia.roczne_ile} opłat rocznych (1/12)<br>` : ''}w okresie zapłacono ${zl(k.narzedzia.suma)}</div></div>
       <div class="kafel"><div class="tytul">Koszty stałe ${pytajnik('wyd_stale')}</div><div class="wartosc">${zl(k.stale.miesiecznie)}</div>
         <div class="dop">miesięcznie, ${k.stale.ile} kontrahentów; rocznie ${zl(k.stale.rocznie)}. <a href="#/wydatki?zakladka=stale">Lista</a></div></div>
     </div>`;
@@ -180,7 +181,7 @@ async function wydKarta(klucz, okres = {}) {
   const opcjeKat = (wybrana, pusta) => (pusta ? `<option value="">${pusta}</option>` : '') + d.lista_kategorii.map(x => `<option value="${x.klucz}"${x.klucz === wybrana ? ' selected' : ''}>${esc(x.nazwa)}</option>`).join('');
   const st = d.staly;
   const stalyOpis = st ? `koszt stały: ${zl(st.miesiecznie)} miesięcznie, ${zl(st.rocznie)} rocznie (${esc(st.sposob)})${st.zmiana_ceny ? `; zmiana ceny ${procent(st.zmiana_ceny.proc)}: ${zl(st.zmiana_ceny.poprzednia)} na ${zl(st.zmiana_ceny.ostatnia)}` : ''}`
-    : 'nie jest kosztem stałym';
+    : d.wygasly ? `koszt stały wygasł: ostatnia płatność ${dataPl(d.wygasly.ostatnia_data)}` : 'nie jest kosztem stałym';
   const wiersze = d.platnosci.map((x, i) => `<tr><td>${dataPl(x.data)}</td><td>${esc(x.rachunek)}</td>
     <td class="liczba-kol minus">${zl(-x.kwota)}${x.netto_dok != null ? `<br><small class="szary">netto z dokumentu ${zl(x.netto_dok)}</small>` : ''}${x.waluta_oryg && x.waluta_oryg !== 'PLN' ? `<br><small class="szary">${zl(-x.kwota_oryg, false)} ${esc(x.waluta_oryg)}</small>` : ''}</td>
     <td>${esc(x.tytul || x.opis)}</td>
@@ -196,6 +197,7 @@ async function wydKarta(klucz, okres = {}) {
       ${pole('', 'Obszar', `<select id="wk-obszar"><option value="">bez obszaru</option>${d.obszary.map(o => `<option${o === c.obszar ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`)}
       ${pole('', 'Kto (osoba)', `<input id="wk-kto" list="wk-osoby" value="${esc(c.kto || '')}"><datalist id="wk-osoby">${d.osoby.map(o => `<option value="${esc(o)}">`).join('')}</datalist>`)}
       ${pole('', 'Ocena', `<select id="wk-ocena"><option value="">brak oceny</option>${Object.entries(d.oceny).map(([v, n]) => `<option value="${v}"${v === c.ocena ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`)}
+      ${pole('', 'Opłata roczna (koszt 1/12 miesięcznie)', `<select id="wk-roczna"><option value="auto"${c.roczna == null ? ' selected' : ''}>wykrywaj automatycznie</option><option value="tak"${c.roczna === 1 ? ' selected' : ''}>tak, roczna</option><option value="nie"${c.roczna === 0 ? ' selected' : ''}>nie, miesięczna</option></select>`)}
       ${pole('', 'Koszt stały', `<select id="wk-staly"><option value="auto"${c.staly == null ? ' selected' : ''}>wykrywaj automatycznie</option><option value="tak"${c.staly === 1 ? ' selected' : ''}>tak, stały</option><option value="nie"${c.staly === 0 ? ' selected' : ''}>nie, niestały</option></select>`)}
     </div>
     ${pole('', 'Uzasadnienie (po co to płacimy)', `<textarea id="wk-uz" rows="3" maxlength="500">${esc(c.uzasadnienie || '')}</textarea>`)}
@@ -226,6 +228,8 @@ async function wydKarta(klucz, okres = {}) {
     for (const p of Object.keys(nowy)) if (nowy[p] !== stary[p]) cel[p] = nowy[p];
     const s = $('#wk-staly').value, sw = s === 'auto' ? null : s === 'tak';
     if (sw !== (c.staly == null ? null : !!c.staly)) cel.staly = sw;
+    const r = $('#wk-roczna').value, rw = r === 'auto' ? null : r === 'tak';
+    if (rw !== (c.roczna == null ? null : !!c.roczna)) cel.roczna = rw;
     if (Object.keys(cel).length) wpisy.push(['cel_wydatku', { kontrahent: d.klucz, ...cel }]);
     if (!wpisy.length) { k.hidden = true; return; }
     for (const [typ, dane] of wpisy.slice(0, -1)) if (!(await zmianaCicha(typ, dane))) return;
@@ -238,14 +242,14 @@ async function wydStale(p) {
   const d = await api('wydatki/stale');
   const poz = d.pozycje.filter(x => (!p.ocena || (p.ocena === 'brak' ? !x.ocena : x.ocena === p.ocena)) && (!p.obszar || (p.obszar === 'brak' ? !x.obszar : x.obszar === p.obszar)));
   const suma = poz.reduce((a, x) => a + x.miesiecznie, 0), sumaR = poz.reduce((a, x) => a + x.rocznie, 0);
-  const tab = tabela({ id: 'wyd-stale', dane: poz, sortLokalny: true, onWiersz: x => wydKarta(x.klucz),
+  const tab = tabela({ id: 'wyd-stale', dane: poz, sortLokalny: true, onWiersz: x => wydKarta(x.kontrahent),
     kolumny: [
       { naglowek: 'Kontrahent', html: x => `${esc(x.nazwa)}<br><small class="szary">${esc(x.sposob)}</small>`, sortKlucz: x => x.nazwa.toLowerCase() },
       { naglowek: 'Kategoria', wartosc: x => x.kategoria_nazwa },
       { id: 'mies', naglowek: 'Miesięcznie', liczba: true, html: x => zl(x.miesiecznie), sortKlucz: x => x.miesiecznie },
       { id: 'rok', naglowek: 'Rocznie', liczba: true, html: x => zl(x.rocznie), sortKlucz: x => x.rocznie },
-      { naglowek: 'Ostatnia płatność', html: x => `${dataPl(x.ostatnia_data)}<br><small class="szary">${zl(x.ostatnia_kwota)}</small>`, sortKlucz: x => x.ostatnia_data },
-      { naglowek: 'Zmiana ceny', liczba: true, html: x => x.zmiana_ceny ? `<span class="${x.zmiana_ceny.proc > 0 ? 'minus' : 'plus'}">${x.zmiana_ceny.proc > 0 ? '+' : ''}${procent(x.zmiana_ceny.proc)}</span><br><small class="szary">${zl(x.zmiana_ceny.poprzednia, false)} na ${zl(x.zmiana_ceny.ostatnia, false)}</small>` : '', sortKlucz: x => x.zmiana_ceny ? x.zmiana_ceny.proc : 0 },
+      { naglowek: 'Ostatnia płatność', html: x => `${dataPl(x.ostatnia_data)}<br><small class="szary">${zl(x.ostatnia_kwota)}${x.ostatnia_ile > 1 ? `, ${x.ostatnia_ile} płatności w miesiącu` : ''}</small>`, sortKlucz: x => x.ostatnia_data },
+      { naglowek: 'Zmiana ceny', liczba: true, html: x => `${x.flagi.map(f => `<span class="chip ostrzezenie">${esc(f)}</span>`).join(' ')}${x.zmiana_ceny ? `<br><span class="${x.zmiana_ceny.proc > 0 ? 'minus' : 'plus'}">${x.zmiana_ceny.proc > 0 ? '+' : ''}${procent(x.zmiana_ceny.proc)}</span><br><small class="szary">${mies(x.zmiana_ceny.poprzedni_miesiac)} ${zl(x.zmiana_ceny.poprzednia, false)}, ${mies(x.zmiana_ceny.miesiac)} ${zl(x.zmiana_ceny.ostatnia, false)}</small>` : ''}`, sortKlucz: x => x.flagi.length * 1000 + (x.zmiana_ceny ? Math.abs(x.zmiana_ceny.proc) : 0) },
       { naglowek: 'Obszar', wartosc: x => x.obszar },
       { naglowek: 'Kto', wartosc: x => x.kto },
       { naglowek: 'Ocena', html: x => `${chipOceny(x.ocena)}${x.data_oceny ? `<br><small class="szary">${dataPl(x.data_oceny)}</small>` : ''}`, sortKlucz: x => x.ocena || 'zz' },
@@ -272,7 +276,14 @@ async function wydStale(p) {
     </div>
     ${tab}
     <p class="notka">Kwoty brutto z banku. Kliknij wiersz, żeby wpisać obszar, osobę, uzasadnienie i ocenę albo oznaczyć kontrahenta jako niestały. Sumy niżej liczą całą listę, bez filtrów.</p>
-    <div class="wykresy-2">${sumy('Wg obszaru', d.wg_obszaru, 'bez obszaru')}${sumy('Wg osoby', d.wg_osoby, 'bez osoby')}</div>`;
+    <div class="wykresy-2">${sumy('Wg obszaru', d.wg_obszaru, 'bez obszaru')}${sumy('Wg osoby', d.wg_osoby, 'bez osoby')}</div>
+    <h2 class="sekcja">Wygasłe: ${d.wygasle.length} ${pytajnik('wyd_stale')}</h2>
+    ${tabela({ id: 'wyd-wygasle', dane: d.wygasle, sortLokalny: true, onWiersz: x => wydKarta(x.kontrahent),
+      kolumny: [{ naglowek: 'Kontrahent', wartosc: x => x.nazwa }, { naglowek: 'Kategoria', wartosc: x => x.kategoria_nazwa },
+        { naglowek: 'Ostatnia płatność', html: x => dataPl(x.ostatnia_data), sortKlucz: x => x.ostatnia_data },
+        { naglowek: 'Kwota w tamtym miesiącu', liczba: true, html: x => zl(x.ostatnia_kwota), sortKlucz: x => x.ostatnia_kwota },
+        { naglowek: 'Dlaczego', wartosc: x => x.powod }] })}
+    <p class="notka">Wygasłe: płacone regularnie, ale bez płatności w ostatnim pełnym miesiącu (${mies(d.ostatni_pelny)}) ani w bieżącym. Nie liczą się do sum. Gdy to nadal koszt (np. przesunięty termin), oznacz w karcie „tak, stały”.</p>`;
 }
 
 // ---------- do decyzji ----------
