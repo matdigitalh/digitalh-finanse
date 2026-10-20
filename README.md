@@ -397,10 +397,16 @@ Decyzja Mata 12 uzupełniona 2026-10-20 („żeby w aplikacji było dobrze”). 
   styczeń, wypłata 4.02: ZUS 15.03, PIT 20.03, PPK 15.03, zgodnie z przelewami w ING). Etap BS przechodzi z płatności
   zastąpionej (lista poprawia kwotę, nie fakt zapłaty); „Opłacona” nadal z banku.
 - **PPK:** jedna płatność (suma PPK pracownika i pracodawcy wszystkich osób) w zbiorczym wierszu PPK z BS (domyślnie wiersz
-  bez faktury z „PPK” w komentarzu), w komórce wskazanej we wpisie. Domyślnie komórka = miesiąc terminu, bo BS trzyma PPK
-  wg miesiąca przelewu (komórka marzec 594,78 = lista za styczeń). PPK z listy zastępuje to, co BS ma w tej komórce, więc
-  nic się nie dubluje; komórki BS bez listy (np. styczeń i luty 2026 = PPK z list za XI i XII 2025) zostają. Mapa „lista →
-  komórka, BS, z listy, różnica” jest na ekranie listy płac. Bez wskazanego wiersza PPK zostaje tylko w koszcie pracodawcy.
+  bez faktury z „PPK” w komentarzu). **Miesiąc budżetowy = miesiąc listy** (decyzja Mata 2026-10-20: PPK działa jak ZUS
+  i PIT tej listy), więc koszt, rentowność budżetu, wynik i koszt pracy liczą PPK w miesiącu, za który jest lista. Termin
+  i cash flow bez zmian: 15. dnia miesiąca po wypłacie (lista za styczeń, wypłata 4.02, PPK 15.03). BS trzyma PPK wg miesiąca
+  przelewu, więc lista zastępuje komórkę BS wskazaną we wpisie (`ppk.miesiac`, domyślnie miesiąc terminu: komórka marzec
+  594,78 = lista za styczeń); ta komórka BS nie wraca po nowym eksporcie ani kopii z BS, więc nic się nie dubluje. Komórki BS
+  bez listy (styczeń i luty 2026 = PPK z list za XI i XII 2025) zostają z kwotą BS w swoim miesiącu. Rozjazd z BS w PPK to
+  układ miesięcy, nie kwota: mapa PPK na ekranie listy płac pokazuje miesiąc w budżecie, listę, komórkę BS (przelew)
+  z przesunięciem w miesiącach, termin, kwotę BS, z listy i różnicę; tytuł płatności „PPK z listy płac za … (w BS w komórce
+  …: kwota)”. Bez wskazanego wiersza PPK zostaje tylko w koszcie pracodawcy. W bazie połączenie listy trzyma ID płatności BS,
+  które zastąpiło (`bs_zastapione`); odbiór „eksport 1:1 z plikiem BS” pomija je jawnie.
 - **Pakiet medyczny i potrącenia** są częścią kosztu pracodawcy osoby, ale bez osobnej płatności: opłaca je faktura za pakiet
   medyczny (Mediccentre 364 zł = pakiet 89 zł × 2 + potrącenia 80 i 106 zł), która już jest w budżecie. Osobna płatność
   liczyłaby ten koszt dwa razy.

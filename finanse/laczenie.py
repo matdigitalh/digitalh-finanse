@@ -834,8 +834,9 @@ def lista_plac(con, miesiac: str | None = None) -> dict:
 
 
 def _ppk_listy(con, miesiac, listy, pol, kandydaci, mies_wyplaty) -> dict:
-    """PPK listy za miesiąc: wpisany wiersz i komórka albo domyślne (wiersz z „PPK” z BS, komórka = miesiąc terminu, bo BS
-    trzyma PPK wg miesiąca przelewu: lista za styczeń, wypłata w lutym, PPK do 15 marca), kwota w komórce z BS i z listy."""
+    """PPK listy za miesiąc: wpisany wiersz i komórka BS albo domyślne (wiersz z „PPK” z BS, komórka BS = miesiąc terminu, bo BS
+    trzyma PPK wg miesiąca przelewu: lista za styczeń, wypłata w lutym, PPK do 15 marca), kwota w komórce BS i z listy.
+    Od 2026-10-20 PPK z listy stoi w budżecie w miesiącu listy (`miesiac_budzetu`), jak ZUS i PIT; komórka BS ustępuje."""
     from . import lista_plac as lp
     zapis = (listy.get(miesiac) or {}).get('ppk') or {}
     rek = pol.get(f'lista:{miesiac}:ppk')
@@ -845,14 +846,16 @@ def _ppk_listy(con, miesiac, listy, pol, kandydaci, mies_wyplaty) -> dict:
     w_komorce = [dict(r) for r in con.execute('SELECT * FROM bud_platnosc WHERE wiersz = ? AND miesiac = ?', (wiersz, kom))] if wiersz else []
     bs = (rek or {}).get('bs', {}).get('ppk') if rek else (sum(p['netto'] for p in w_komorce if _bs_platnosc(p)) if any(map(_bs_platnosc, w_komorce)) else None)
     lista = (rek or {}).get('kwoty', {}).get('ppk')
-    return {'wiersz': wiersz, 'miesiac': kom, 'termin': zapis.get('termin') or termin, 'wpisane': bool(rek), 'bs': bs, 'lista': lista,
+    return {'wiersz': wiersz, 'miesiac': kom, 'miesiac_budzetu': miesiac, 'termin': zapis.get('termin') or termin, 'wpisane': bool(rek),
+            'bs': bs, 'lista': lista,
             'plan': (rek or {}).get('plan', {}).get('ppk') if rek else sum(p['netto'] for p in w_komorce if p['typ'] == 'plan') or None,
             'roznica': (lista - bs) if lista is not None and bs is not None else None, 'osoby': (rek or {}).get('osoby') or {}}
 
 
 def _ppk_mapa(con, listy, pol) -> list[dict]:
-    """Mapa PPK, jawnie: lista płac za miesiąc → komórka zbiorczego wiersza PPK, kwota BS i z listy, różnica; komórki PPK
-    z BS bez listy (np. PPK za grudzień 2025 zapłacone w styczniu) zostają z kwotą BS."""
+    """Mapa PPK, jawnie: lista płac za miesiąc → miesiąc w budżecie (miesiąc listy) i komórka BS, którą zastępuje (miesiąc
+    przelewu), kwota BS i z listy, różnica; rozjazd z BS to układ miesięcy (`przesuniecie` w miesiącach), nie kwota. Komórki
+    PPK z BS bez listy (np. PPK za grudzień 2025 zapłacone w styczniu) zostają z kwotą BS w swoim miesiącu."""
     wynik, wiersze = [], set()
     for m, x in sorted(listy.items()):
         ppk = x.get('ppk') or {}
@@ -861,15 +864,24 @@ def _ppk_mapa(con, listy, pol) -> list[dict]:
             continue
         wiersze.add(ppk['wiersz'])
         bs, kw = rek.get('bs', {}).get('ppk'), rek['kwoty']['ppk']
-        wynik.append({'lista': m, 'wiersz': ppk['wiersz'], 'komorka': ppk.get('miesiac'), 'termin': ppk.get('termin'), 'bs': bs,
-                      'z_listy': kw, 'roznica': kw - bs if bs is not None else None})
+        kom = rek.get('komorka_bs') or ppk.get('miesiac')
+        wynik.append({'lista': m, 'wiersz': ppk['wiersz'], 'komorka': kom, 'budzet': m, 'termin': ppk.get('termin'), 'bs': bs,
+                      'z_listy': kw, 'roznica': kw - bs if bs is not None else None, 'przesuniecie': _miesiecy_miedzy(m, kom)})
     zajete = {(x['wiersz'], x['komorka']) for x in wynik}
     for wid in sorted(wiersze):
         for r in con.execute("SELECT miesiac, SUM(netto) FROM bud_platnosc WHERE wiersz = ? AND COALESCE(dokument, '') = ''"
                              " AND aktualna = 1 GROUP BY miesiac ORDER BY miesiac", (wid,)):
             if (wid, r[0]) not in zajete:
-                wynik.append({'lista': None, 'wiersz': wid, 'komorka': r[0], 'termin': None, 'bs': r[1], 'z_listy': None, 'roznica': None})
-    return sorted(wynik, key=lambda x: (x['komorka'] or '', x['lista'] or ''))
+                wynik.append({'lista': None, 'wiersz': wid, 'komorka': r[0], 'budzet': r[0], 'termin': None, 'bs': r[1], 'z_listy': None,
+                              'roznica': None, 'przesuniecie': 0})
+    return sorted(wynik, key=lambda x: (x['budzet'] or '', x['lista'] or ''))
+
+
+def _miesiecy_miedzy(a: str, b: str | None) -> int | None:
+    """Ile miesięcy komórka BS (b) jest za miesiącem budżetu (a): lista za styczeń, komórka BS marzec → 2."""
+    if not b:
+        return None
+    return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7])
 
 
 def _koszt_miesiecy(listy, pol) -> list[dict]:
