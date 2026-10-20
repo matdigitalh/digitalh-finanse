@@ -4,6 +4,7 @@ na czas nieokreślony, brak ich po końcu umowy na czas określony (plany zostaj
 odchodzą” z wypowiedzeniem na koniec miesiąca, zgodność sum z eksportem BS, cash flow arkusza bez PIT i ZUS, lista
 płatności wycinka, rejestr umów powiązany z folderem i arkuszami, zapisane widoki cash flow."""
 import csv
+from datetime import date, timedelta
 import unittest
 
 from finanse import baza, budzet, cashflow, konfig, odbudowa, podatki, umowy, zapytania_budzet, zapytania_listy, zmiany
@@ -257,6 +258,101 @@ class TestZgodnoscZBs(Baza):
             if not z['danina'] and z['arkusz'] == 'Obsługa stała Alfa':
                 nasze[z['data'][:7]] = nasze.get(z['data'][:7], 0) + z['kwota']
         self.assertEqual(nasze, oczek)
+
+
+class TestKryteriumOdbioru(Baza):
+    """Kryterium odbioru pakietu 9, reguła po regule."""
+    TRZY = ('plan:w-g:2026-10:1', 'bs:3', 'plan:w-d:2026-10:1')
+
+    def tyg(self, **kw):
+        return self.cf(granulacja='tydzien', od=DZIS, do='2027-01-31', **kw)
+
+    def test_przesuniecie_trzech_planow_o_tydzien_jedna_seria(self):
+        """Zmiana dnia realnego 3 planów o tydzień jedną serią (jeden wpis w dzienniku): każdy przesuwa się o 7 dni,
+        sumy okresów w tabeli i na wykresie (te same okresy) liczą się od nowa, termin zostaje."""
+        przed = self.tyg()
+        poz = {z['id']: z for z in przed['pozycje'] if z['id'] in self.TRZY}
+        self.assertEqual(len(poz), 3)
+        nowe = {pid: (date.fromisoformat(z['data']) + timedelta(days=7)).isoformat() for pid, z in poz.items()}
+        ile_wpisow = len(zmiany.wczytaj()[0])
+        self.bud({'op': 'seria', 'operacje': [{'op': 'platnosc', 'obiekt': {'id': pid, 'realny': d}} for pid, d in nowe.items()]})
+        self.assertEqual(len(zmiany.wczytaj()[0]), ile_wpisow + 1)
+        self.przelicz()
+        po = self.tyg()
+        pz = {z['id']: z for z in po['pozycje'] if z['id'] in self.TRZY}
+        for pid in self.TRZY:
+            self.assertEqual(pz[pid]['data'], nowe[pid])
+            self.assertEqual(pz[pid]['termin'], poz[pid]['termin'])
+            self.assertEqual(pz[pid]['przesuniecie'], 7)
+            self.assertEqual(pz[pid]['okres'], poz[pid]['okres'] + 1)
+        # tydzień 3-9 listopada traci oba plany z 7.11, tydzień 10-16 listopada je dostaje
+        o_przed = {o['etykieta']: o for o in przed['okresy']}
+        o_po = {o['etykieta']: o for o in po['okresy']}
+        self.assertEqual(o_przed['3 lis – 9 lis']['wplywy'] - o_po['3 lis – 9 lis']['wplywy'], 369000)
+        self.assertEqual(o_po['10 lis – 16 lis']['wplywy'] - o_przed['10 lis – 16 lis']['wplywy'], 369000)
+        self.assertEqual(o_po['27 paź – 2 lis']['wplywy'] - o_przed['27 paź – 2 lis']['wplywy'], 123000)
+        self.assertEqual(po['sum'], przed['sum'])   # te same pieniądze, inny dzień
+        # lista wycinka (pod wykresem) widzi nowy dzień
+        lst = zapytania_listy.lista(self.con, 'cashflow', {'granulacja': 'tydzien', 'od': DZIS, 'do': '2027-01-31',
+                                                            'w_od': '2026-11-10', 'w_do': '2026-11-16'})
+        self.assertTrue({'bs:3', 'plan:w-d:2026-10:1'} <= {z['id'] for z in lst['wiersze']})
+
+    def test_seria_wszystko_albo_nic(self):
+        """Seria z jednym błędnym dniem realnym nie zapisuje niczego."""
+        ile_wpisow = len(zmiany.wczytaj()[0])
+        with self.assertRaises(ValueError):
+            self.bud({'op': 'seria', 'operacje': [{'op': 'platnosc', 'obiekt': {'id': 'bs:3', 'realny': '2026-11-14'}},
+                                                  {'op': 'platnosc', 'obiekt': {'id': 'plan:w-g:2026-10:1', 'realny': '2026-02-30'}}]})
+        self.assertEqual(len(zmiany.wczytaj()[0]), ile_wpisow)
+
+    def test_min_i_max_jak_reczne_przeliczenie(self):
+        """MIN i MAX wskazują okres zgodny z ręcznym przeliczeniem: saldo startowe + narastająco sumy pozycji okresu.
+        Duży koszt w listopadzie robi dołek w środku zakresu."""
+        self.wiersz('w-k', 'a-gamma', -1, {'2026-11': 4800000}, kontrahent='Dostawca', stawka_vat=0, dni_na_platnosc=10)
+        self.przelicz()
+        for kw in ({}, {'granulacja': 'dzien'}, {'granulacja': 'miesiac'}, {'saldo_start': '0'}, {'rodzaj': '-1'}):
+            w = self.cf(**{'granulacja': 'tydzien', 'od': DZIS, 'do': '2027-01-31', **kw})
+            narast, salda = w['saldo_start'], []
+            for n in range(len(w['okresy'])):
+                narast += sum(z['kwota'] for z in w['pozycje'] if z['okres'] == n)
+                salda.append(narast)
+            self.assertEqual([o['narastajaco'] for o in w['okresy']], salda, kw)
+            self.assertEqual(w['min'], {'okres': salda.index(min(salda)), 'saldo': min(salda)}, kw)
+            self.assertEqual(w['max'], {'okres': salda.index(max(salda)), 'saldo': max(salda)}, kw)
+            self.assertEqual(w['sum'], salda[-1])
+        w = self.tyg()
+        self.assertEqual(w['okresy'][w['min']['okres']]['etykieta'], '17 lis – 23 lis')   # koszt 20.11 (10.11 + 10 dni)
+        self.assertLess(w['min']['saldo'], w['saldo_start'])
+
+    def test_miesieczny_rowny_tygodniowemu_w_granicach_miesiaca(self):
+        """Widok miesięczny daje te same sumy co tygodniowy (i dzienny) w granicach miesiąca: pozycje tygodni zsumowane
+        po miesiącu dnia realnego równają się kolumnom miesięcznym; saldo na koniec miesiąca jak w widoku dziennym."""
+        zakres = {'od': '2026-10-01', 'do': '2027-03-31'}
+        m = self.cf(granulacja='miesiac', **zakres)
+        for g in ('tydzien', 'dzien'):
+            w = self.cf(granulacja=g, **zakres)
+            for o in m['okresy']:
+                mies = o['od'][:7]
+                wpl = sum(z['kwota'] for z in w['pozycje'] if z['data'][:7] == mies and z['kwota'] > 0)
+                obc = sum(z['kwota'] for z in w['pozycje'] if z['data'][:7] == mies and z['kwota'] < 0)
+                self.assertEqual((o['wplywy'], o['obciazenia']), (wpl, obc), (g, mies))
+            if g == 'dzien':
+                koniec = {o['do']: o['narastajaco'] for o in w['okresy']}
+                for o in m['okresy']:
+                    self.assertEqual(o['narastajaco'], koniec[o['do']])
+            else:   # tydzień w całości w jednym miesiącu: jego suma to część kolumny tego miesiąca
+                for o in w['okresy']:
+                    if o['od'][:7] == o['do'][:7]:
+                        self.assertEqual(o['wplywy'], sum(z['kwota'] for z in w['pozycje'] if o['od'] <= z['data'] <= o['do'] and z['kwota'] > 0))
+            self.assertEqual(w['sum'], m['sum'])
+
+    def test_faktura_polaczona_z_planem_liczona_raz(self):
+        """FV2026/09/1 (nieopłacona, 1 230 zł) jest połączona z planem bs:2: przy włączonych należnościach spoza budżetu
+        i zaległościach za 7 dni kwota wchodzi raz, jako plan, a nie drugi raz jako należność z faktury."""
+        w = self.cf(pochodzenie='plan|rzeczywista|umowa|bank|faktura', scenariusz='pelny')
+        self.assertEqual([z['typ'] for z in w['pozycje'] if z['id'] == 'bs:2'], ['plan'])
+        self.assertFalse([z for z in w['pozycje'] if z['typ'] == 'faktura' and z['nr_dok'] == 'FV2026/09/1'])
+        self.assertEqual(sum(1 for z in w['pozycje'] if z['kwota'] == 123000 and z['data'] == '2026-10-20'), 1)
 
 
 class TestArkuszILista(Baza):

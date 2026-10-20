@@ -448,5 +448,14 @@ z budżetem). Ekran: `web/cashflow.js` (przeniesiony z `web/budzet.js`, ładowan
 - **Odbiór na eksporcie BS z 14.10.2026:** tryb domyślny od dnia stanu: 16 z 17 miesięcy co do grosza; październik
   różni się tylko etapem opłacenia (1 płatność opłacona w banku, w BS nieopłacona; 2 opłacone w BS po dniu stanu ING).
 
-Do dokończenia (stan pośredni): sprawdzenie ekranu w przeglądarce (panel, widoki, lista z akcjami, kafel scenariusza),
-formularz umowy z folderem i arkuszami w ekranie Umowy, opis końcowy w tej sekcji.
+- **Ekran Umowy:** formularz z folderem klienta i arkuszami przychodowymi (puste zaznaczenie = wszystkie arkusze folderu
+  z wpływami), nasz okres wypowiedzenia osobno, kolumna „Odejście przy wypowiedzeniu dziś”, lista klientów bez umowy
+  z przyciskiem „dodaj umowę”. Arkusz z planami wpływów po końcu umowy na czas określony ma ostrzeżenie nad tabelą
+  (decyzja 10), cash flow znacznik „!” w nagłówku okresu.
+- **Akcje masowe na liście wycinka:** zmiana dnia realnej płatności (jeden wpis `bud` z `op: seria`, wszystko albo nic,
+  wykres i tabela przeliczone od razu), opłacona poza bankiem z datą (wyjątki, decyzja 3), do weryfikacji, eksport CSV.
+  Odłączenie od budżetu zostaje w pakiecie 5 (łączenie).
+- **Cash flow arkusza:** zakładka „Cash flow” w arkuszu, tylko jego płatności, bez danin, PIT i ZUS z umów, saldo startowe 0.
+- **Testy:** `testy/test_pakiet9.py` (21, w tym klasa `TestKryteriumOdbioru`: przesunięcie 3 planów o tydzień jedną serią,
+  seria wszystko albo nic, MIN i MAX jak ręczne przeliczenie, miesiąc = suma tygodni i dni, faktura połączona z planem
+  liczona raz), `testy_odbioru/test_pakiet9.py` (3). Ekran sprawdzony w przeglądarce na kopii danych w katalogu tymczasowym.
