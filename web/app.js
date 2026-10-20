@@ -452,6 +452,7 @@ const WIDOKI = {
       document.querySelectorAll('.pasek-proporcji[data-w]').forEach(x => { x.style.width = `calc(74px + ${x.dataset.w} * (100% - 74px))`; });
       const b = $('#ustaw-cele'); if (b) b.onclick = e => { e.stopPropagation(); kartaCelow(c.cele); };
       const pm = $('#pulpit-pomoc'); if (pm) pm.onclick = () => otworzPomoc('kafle_bs');
+      if (typeof pulpitDodatki === 'function') pulpitDodatki();   // pakiet 11: alerty umów, rachunek VAT, lista płac (pulpit.js)
     });
     const zakladki = `<div class="zakladki" role="tablist"><button role="tab" aria-selected="true">${ik('siatka')}Pulpit</button>
       <button role="tab" aria-selected="false" id="ustaw-cele" data-karta>${ik('zebatka')}Cele</button>
@@ -484,7 +485,9 @@ const WIDOKI = {
         <a href="#/platnosci/do-polaczenia" class="${npo ? '' : 'zero'}">${ik('rozlacz')}Do połączenia <span class="licznik">${npo}</span></a>
         <a href="#/platnosci/do-weryfikacji" class="${ndo ? '' : 'zero'}">${ik('weryfikuj')}Do weryfikacji <span class="licznik">${ndo}</span></a>
         <a href="#/budzet/wydatki?rodzaj=nieprzypisany" class="${pz.nieprzypisane ? '' : 'zero'}">${ik('przekreslony')}Wydatki bez rodzaju <span class="licznik">${pz.nieprzypisane}</span></a>
+        <span id="pulpit-porzadek"></span>
         <span class="szary">stan na ${dataPl(c.dzien_stanu)}, ostatni dzień w eksporcie z ING</span></div>
+      <div id="pulpit-alerty"></div>
       <div class="kafle-bs">${KAFLE_PULPITU.map(kafel).join('')}</div>
       <div class="naglowek-sekcji">${ik('kalendarz')}6 mies. w przód ${pytajnik('cf_pulpit')}</div>
       <div class="wykres-pulpitu"><div id="pulpit-cf"></div></div>
@@ -660,50 +663,8 @@ function kartaWydatku(x, klienci) {
 
 const procent = x => x == null ? '' : `${String(x).replace('.', ',')}%`;
 
+// Lista klientów i karta klienta: web/klienci.js (pakiet 11).
 Object.assign(WIDOKI, {
-  async budzet(p) {
-    const d = await api('klienci', p);
-    const kol = [
-      { naglowek: 'Klient', wartosc: x => x.klient },
-      { naglowek: 'Faktur', liczba: true, wartosc: x => x.faktur },
-      { id: 'przychod', naglowek: 'Przychód netto', liczba: true, wartosc: x => zl(x.przychod, false), sortKlucz: x => x.przychod },
-      { naglowek: 'Wpłacono', liczba: true, wartosc: x => zl(x.wplaty, false), klasa: () => 'szary' },
-      { naglowek: 'Należność', liczba: true, wartosc: x => x.naleznosc ? zl(x.naleznosc, false) : '', klasa: x => x.po_terminie ? 'minus' : '' },
-      { id: 'koszty', naglowek: 'Koszty klienta', liczba: true, wartosc: x => x.koszty ? zl(-x.koszty, false) : '', klasa: () => 'minus' },
-      { id: 'marza', naglowek: 'Marża wstępna', liczba: true, wartosc: x => zl(x.marza, false), sortKlucz: x => x.marza },
-      { naglowek: '%', liczba: true, wartosc: x => procent(x.marza_proc), klasa: x => x.marza_proc != null && x.marza_proc < 30 ? 'minus' : '' },
-    ];
-    const s = k => d.klienci.reduce((a, x) => a + (x[k] || 0), 0);
-    return `<h1>Klienci</h1><div class="okruszki">Budżet / Foldery klientów</div>
-      <div class="filtry">${filtr('rok', 'Rok', [['', 'Wszystko'], ...d.lata.map(r => [r, r])], d.rok || '')}</div>
-      <p class="notka">Przychód z faktur (netto, wg daty sprzedaży). Koszty klienta to wydatki z banku przypisane do klienta: netto z dokumentu z rejestru biura, a bez dokumentu kwota z banku. Marża wstępna nie zawiera kosztów pracy zespołu, to etap 4. Czerwony procent: poniżej progu 30%.${d.przenoszone_bez_klienta.ile ? ` Koszty klientów bez wskazanego klienta: ${d.przenoszone_bez_klienta.ile} płatności, ${zl(d.przenoszone_bez_klienta.kwota)}.` : ''}</p>
-      ${tabela({ kolumny: kol, dane: d.klienci, poczatek: 1, sortLokalny: true, stopkaSum: { przychod: zl(s('przychod'), false), koszty: zl(-s('koszty'), false), marza: zl(s('marza'), false) },
-        onWiersz: x => { location.hash = `#/budzet/klient?nazwa=${encodeURIComponent(x.klient)}${d.rok ? '&rok=' + d.rok : ''}`; } })}`;
-  },
-
-  async 'budzet/klient'(p) {
-    const d = await api('klient', p);
-    const wykres = d.miesiace.length ? '<div id="klient-wyk"></div>' : '';
-    const tf = d.faktury.map(f => `<tr data-q="${esc(f.numer)}"><td>${esc(f.numer)}</td><td>${dataPl(f.data_sprzedazy || f.data_wystawienia)}</td><td class="szary">${esc(f.nabywca)}</td>
-      <td class="liczba-kol">${zl(f.netto, false)}</td><td>${chipBank({ stan_bank: f.stan, dni_po_terminie: f.dni_po_terminie })}</td></tr>`).join('');
-    const tk = d.koszty.map(x => `<tr data-op="${x.id}"><td>${dataPl(x.data_ksiegowania)}</td><td>${esc(x.kontrahent)}</td><td class="szary">${esc(x.tytul)}</td>
-      <td class="liczba-kol minus">${zl(-(x.koszt || 0), false)}</td><td>${chipDok(x.dokument)}</td></tr>`).join('');
-    setTimeout(() => {
-      if (d.miesiace.length) Wykresy.slupki($('#klient-wyk'), { kategorie: d.miesiace.map(m => mies(m.miesiac)), etykietyPelne: d.miesiace.map(m => miesPelny(m.miesiac)),
-        wysokosc: 220, opis: 'Przychód i koszty klienta', serie: [
-          { klucz: 'p', nazwa: 'Przychód netto', kolor: Wykresy.kolor('--s1'), wartosci: d.miesiace.map(m => m.przychod) },
-          { klucz: 'k', nazwa: 'Koszty klienta', kolor: Wykresy.kolor('--s2'), wartosci: d.miesiace.map(m => m.koszty) }] });
-      document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => { location.hash = `#/platnosci/faktury?q=${encodeURIComponent(tr.dataset.q)}`; });
-      document.querySelectorAll('tr[data-op]').forEach(tr => tr.onclick = () => { location.hash = `#/budzet/wydatki?klient=${encodeURIComponent(d.klient)}&rodzaj=przenoszony`; });
-    });
-    return `<h1>${esc(d.klient)}</h1><div class="okruszki"><a href="#/budzet">Budżet</a> / Klient${d.rok ? ' / ' + d.rok : ''}</div>
-      <div class="karta-wyk"><h3>Przychód i koszty miesięcznie</h3><div class="pod">koszty klienta: netto z dokumentu, bez dokumentu kwota z banku</div>${wykres || '<span class="szary">Brak danych.</span>'}</div>
-      <h2 class="sekcja">Faktury <span class="szary">${d.faktury.length}</span></h2>
-      <div class="tabela-ramka niska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>
-      <h2 class="sekcja">Koszty klienta <span class="szary">${d.koszty.length}</span></h2>
-      ${tk ? `<div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Tytuł</th><th class="liczba-kol">Koszt PLN</th><th>Dokument</th></tr></thead><tbody>${tk}</tbody></table></div>` : '<p class="szary">Brak przypisanych kosztów.</p>'}`;
-  },
-
   async 'budzet/reguly'() {
     const lista = await api('reguly');
     const nazwy = { klient_nip: 'Nabywca należy do klienta', klient_faktura: 'Faktura należy do klienta', konto_reklamowe: 'Konto reklamowe należy do klienta', koszt_regula: 'Kontrahent: rodzaj kosztu', koszt_operacja: 'Jedna płatność' };
@@ -805,7 +766,7 @@ Object.assign(WIDOKI, {
       wiersze: d.klienci.map(k => ({ nazwa: k.klient, wartosci: { obrot: k.obrot, koszty: k.koszty }, marza: k.marza_proc, udzial: k.udzial,
         naKlik: () => { location.hash = `#/budzet/klient?nazwa=${encodeURIComponent(k.klient)}&rok=${d.rok}`; } })),
       opisWiersza: w => `${tys(w.wartosci.obrot)} zł · marża ${procent(w.marza)}` }));
-    return `<h1>Obroty wg klientów</h1><div class="okruszki">Rentowność / ${d.rok}</div>${filtrRoku({ rok: d.rok, lata: [d.rok] })}
+    return `<h1>Obroty wg klientów</h1><div class="okruszki">Rentowność / ${d.rok}</div>${filtrRoku({ rok: d.rok, lata: d.lata || [d.rok] })}
       <div class="karta-wyk"><h3>Klienci wg obrotu</h3><div class="pod">kliknij klienta, żeby otworzyć jego folder</div><div id="klienci-wyk"></div></div>
       <div class="tabela-ramka niska"><table class="miesiace"><thead><tr><th>Klient</th>${th}<th class="liczba-kol">Obrót</th><th class="liczba-kol">Udział</th>
         <th class="liczba-kol">Koszty klienta</th><th class="liczba-kol">Po kosztach</th><th class="liczba-kol">Marża</th></tr></thead><tbody>${tr}</tbody></table></div>
@@ -835,14 +796,20 @@ Object.assign(WIDOKI, {
 
   async 'rentownosc/vat'(p) {
     const d = await api('vat', p);
-    const tr = d.miesiace.map(m => `<tr><td>${mies(m.miesiac)}</td><td class="liczba-kol">${zl(m.nalezny, false)}</td>
+    const tr = d.miesiace.map(m => m.tylko_prognoza ? `<tr class="szary"><td>${mies(m.miesiac)}</td><td colspan="5" class="szary">jeszcze bez faktur i przelewów</td>
+      <td class="liczba-kol sep">${m.prognoza != null ? zl(m.prognoza, false) : ''}</td><td class="liczba-kol">${m.od_biura != null ? zl(m.od_biura, false) : ''}</td><td></td></tr>`
+      : `<tr><td>${mies(m.miesiac)}</td><td class="liczba-kol">${zl(m.nalezny, false)}</td>
       <td class="liczba-kol">${m.rejestr ? zl(m.naliczony, false) : '<span class="szary">brak rejestru</span>'}</td>
       <td class="liczba-kol">${m.rejestr ? zl(m.do_zaplaty, false) : ''}</td><td class="liczba-kol">${zl(m.zaplacony, false)}</td>
-      <td class="liczba-kol${m.rejestr && Math.abs(m.zaplacony - m.do_zaplaty) > 10000 ? ' minus' : ' szary'}">${m.rejestr ? zl(m.zaplacony - m.do_zaplaty, false) : ''}</td></tr>`).join('');
-    return `<h1>Podatek VAT</h1><div class="okruszki">Rentowność / ${d.rok}</div>
+      <td class="liczba-kol${m.rejestr && Math.abs(m.zaplacony - m.do_zaplaty) > 10000 ? ' minus' : ' szary'}">${m.rejestr ? zl(m.zaplacony - m.do_zaplaty, false) : ''}</td>
+      <td class="liczba-kol sep">${m.prognoza != null ? zl(m.prognoza, false) : ''}</td><td class="liczba-kol">${m.od_biura != null ? zl(m.od_biura, false) : ''}</td>
+      <td class="liczba-kol${m.roznica_biuro && Math.abs(m.roznica_biuro) > 10000 ? ' minus' : ' szary'}">${m.roznica_biuro != null ? zl(m.roznica_biuro, false) : ''}</td></tr>`).join('');
+    return `<h1>Podatek VAT ${pytajnik('vat')}</h1><div class="okruszki">Rentowność / ${d.rok}</div>${filtrRoku(d)}
       <div class="tabela-ramka niska"><table><thead><tr><th>Okres</th><th class="liczba-kol">Należny (faktury)</th><th class="liczba-kol">Naliczony (rejestr biura)</th>
-        <th class="liczba-kol">Wychodzi do zapłaty</th><th class="liczba-kol">Zapłacono (bank)</th><th class="liczba-kol">Różnica</th></tr></thead><tbody>${tr}</tbody></table></div>
-      <p class="notka">Szacunek kontrolny, nie deklaracja: należny z faktur wg daty sprzedaży, naliczony z rejestru krajowego biura (bez importu usług), zapłata przypisana do okresu z tytułu przelewu („26M07”). Czerwona różnica ponad 100 zł to temat do pytania biura. Rejestr biura kończy się ${dataPl(d.koniec_rejestru)}.</p>`;
+        <th class="liczba-kol">Wychodzi do zapłaty</th><th class="liczba-kol">Zapłacono (bank)</th><th class="liczba-kol">Różnica</th>
+        <th class="liczba-kol sep">Prognoza z budżetu</th><th class="liczba-kol">Kwota od biura</th><th class="liczba-kol">Różnica prognozy</th></tr></thead><tbody>${tr}</tbody></table></div>
+      <p class="notka">Szacunek kontrolny, nie deklaracja: należny z faktur wg daty sprzedaży, naliczony z rejestru krajowego biura (bez importu usług), zapłata przypisana do okresu z tytułu przelewu („26M07”). Czerwona różnica ponad 100 zł to temat do pytania biura. Rejestr biura kończy się ${dataPl(d.koniec_rejestru)}.
+        Trzy ostatnie kolumny: prognoza VAT z budżetu (arkusz Opłaty urzędowe), kwota od biura i różnica między nimi (plus: prognoza wyższa niż biuro). Kwotę od biura wpiszesz w <a href="#/budzet/podatki">Podatki i ZUS</a>.</p>`;
   },
 });
 
@@ -907,10 +874,20 @@ const POMOC = {
     jak: 'Liczone na ostatni dzień eksportu z ING. Zielony do 15% należności, żółty do 30%.',
     zrob: 'Kliknij kafel: lista dłużników od największej kwoty. Zanim zadzwonisz, sprawdź Do weryfikacji, czy wpłata nie wisi niepołączona.' },
   porzadek: { tytul: 'Porządek w danych', krotko: 'Rzeczy, które aplikacja zostawiła do Twojej decyzji. Im mniej, tym dokładniejsze liczby.',
-    co: 'Wpłaty bez faktury, dopasowania do potwierdzenia i wydatki bez rodzaju.',
+    co: 'Wpłaty bez faktury, dopasowania do potwierdzenia, wydatki bez rodzaju, plany nieaktualne (minął ich dzień, a dokumentu brak) i wiersze budżetu z podejrzanymi ustawieniami.',
     skad: 'Wynik automatycznego łączenia wpłat z fakturami i wydatków z rodzajami kosztów.',
     jak: 'Każda Twoja decyzja zapisuje się w pliku zmian i obowiązuje także dla przyszłych danych (reguły dla kontrahenta).',
-    zrob: 'Raz w tygodniu przejrzyj trzy linki. Reguła dla kontrahenta załatwia od razu wszystkie jego płatności.' },
+    zrob: 'Raz w tygodniu przejrzyj linki w żółtym pasku. Reguła dla kontrahenta załatwia od razu wszystkie jego płatności.' },
+  laczenie: { tytul: 'Łączenie z budżetem', krotko: 'Faktura albo przelew trafia do budżetu dopiero, gdy połączysz go z planem.',
+    co: 'Dokument bez planu czeka na liście Do połączenia. Apka podpowiada najlepiej pasujący plan (arkusz, wiersz, miesiąc), a Ty klikasz Połącz. Nic nie łączy się samo.',
+    skad: 'Faktury z Fakturowni, dokumenty z rejestru biura i przelewy z ING kontra plany w arkuszach.',
+    jak: 'Podpowiedź bierze pod uwagę kontrahenta, kwotę i datę. Po połączeniu dokument zastępuje plan: komórka pokazuje kwotę z dokumentu, a różnicę widać od razu.',
+    zrob: 'Raz w tygodniu opróżnij listę Do połączenia. Gdy podpowiedź nie pasuje, wybierz plan ręcznie albo przenieś pozycję do Do weryfikacji.' },
+  vat: { tytul: 'Podatek VAT', krotko: 'Kontrola VAT miesiąc po miesiącu: z faktur, od biura i z banku.',
+    co: 'Należny VAT z faktur sprzedaży, naliczony z rejestru biura, ile wychodzi do zapłaty i ile poszło przelewem. W trzech ostatnich kolumnach prognoza z budżetu, kwota od biura i różnica między nimi.',
+    skad: 'Fakturownia, rejestr zakupów biura, wyciąg ING i prognoza VAT z budżetu (Podatki i ZUS).',
+    jak: 'Różnica prognozy: plus znaczy, że budżet przewidział więcej niż wyszło u biura. Miesiące bez faktur pokazują tylko prognozę.',
+    zrob: 'Czerwona różnica ponad 100 zł to temat do sprawdzenia: stawka VAT w wierszu, Księgowane, miesiąc księgowania.' },
   gotowka: { tytul: 'Gotówka na rachunkach', krotko: 'Saldo rachunku głównego i online na koniec każdego dnia.',
     co: 'Linia salda dzień po dniu. Pokazuje, jak gotówka faluje w miesiącu: wpływy od klientów kontra pensje, ZUS, VAT.',
     skad: 'Kolumna „saldo po transakcji” z eksportu ING; dni bez operacji przenoszą saldo z poprzedniego dnia.',
@@ -928,7 +905,7 @@ const POMOC = {
     skad: 'Domyślnie z pliku Finanse/Aplikacja/ustawienia.json, zmiany z przycisku Cele w pliku zmian.',
     jak: 'Cel zysku = obrót razy marża.', zrob: 'Zmień, gdy zmieni się plan roczny. Stare wartości zostają w historii pliku zmian.' },
   dane: { tytul: 'Skąd są dane', krotko: 'Pliki z folderu Finanse/Raporty/Dane, bez połączenia z internetem.',
-    co: 'Aplikacja czyta eksporty: ING (operacje), Fakturownia (faktury sprzedażowe), biuro (rejestr zakupów, RZiS) i Budget Studio (tylko podpowiedzi przypisań).',
+    co: 'Aplikacja czyta eksporty: ING (operacje), Fakturownia (faktury sprzedażowe), biuro (rejestr zakupów, RZiS) i Budget Studio (kopia planów i porównanie w okresie równoległym).',
     skad: 'Nowy plik w folderze Dane wystarczy: aplikacja zauważy go i zaproponuje odświeżenie.',
     jak: 'Baza budowana jest od zera przy każdym odświeżeniu, więc nic się nie dubluje. Twoje decyzje żyją w Finanse/Aplikacja/zmiany.',
     zrob: 'Raz w tygodniu wrzuć świeży eksport z ING i Fakturowni. Historia importów pokazuje, co zostało wczytane.' },
@@ -1011,10 +988,10 @@ Object.assign(WIDOKI, {
   },
 });
 
-function wBudowie(sekcja) {
+// Adres, którego apka nie zna (np. stary link): komunikat zamiast pustego ekranu.
+function nieznanyEkran(sekcja) {
   const nazwa = MENU.find(m => m.id === sekcja)?.nazwa || sekcja;
-  const etap = {}[sekcja];
-  return `<h1>${esc(nazwa)}</h1><div class="okruszki">W budowie</div><p class="notka">Ten ekran powstanie w etapie ${etap}. Układ będzie taki jak w Budget Studio.</p>`;
+  return `<h1>${esc(nazwa)}</h1><div class="okruszki">Nie ma takiego ekranu</div><p class="notka">Ten adres nie prowadzi do żadnego ekranu. Wybierz pozycję z menu po lewej.</p>`;
 }
 
 let ostatniKlucz = '';
@@ -1032,7 +1009,7 @@ async function pokaz() {
   document.body.classList.remove('filtry-otwarte');
   const widok = $('#widok');
   try {
-    widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : wBudowie(t.sekcja);
+    widok.innerHTML = WIDOKI[klucz] ? await WIDOKI[klucz](t.parametry) : nieznanyEkran(t.sekcja);
     if (typeof poWidoku === 'function') poWidoku(klucz);   // przyciski Excel i CSV nad listą (eksport.js)
     podepnijFiltry();
     const o = $('#odswiez');

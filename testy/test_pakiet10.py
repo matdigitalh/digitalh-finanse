@@ -242,7 +242,7 @@ class TestEksportList(Baza):
     def test_wszystkie_eksporty_dzialaja(self):
         aid = self.con.execute('SELECT id FROM bud_arkusz LIMIT 1').fetchone()[0]
         for rodzaj in eksport.EKSPORTY:
-            q = {'id': aid} if rodzaj in ('budzet/arkusz', 'arkusz') else {'nazwa': 'Alfa'} if rodzaj == 'klient' else {}
+            q = {'id': aid} if rodzaj in ('budzet/arkusz', 'arkusz') else {'nazwa': 'Alfa'} if rodzaj in ('klient', 'klienci/karta') else {}
             for fmt in eksport.FORMATY:
                 nazwa, tresc, typ = eksport.plik(self.con, rodzaj, {**q, 'format': fmt})
                 self.assertTrue(nazwa.startswith('Finanse ') and nazwa.endswith('.' + fmt), nazwa)

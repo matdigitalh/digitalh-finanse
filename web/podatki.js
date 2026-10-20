@@ -13,11 +13,11 @@
 })();
 
 Object.assign(POMOC, {
-  podatki: { tytul: 'Podatki i ZUS', krotko: 'VAT i zaliczki CIT liczone z budżetu, kwoty od biura, przelewy z banku i rachunek VAT.',
-    co: 'Arkusz systemowy Opłaty urzędowe: plan VAT za każdy miesiąc i zaliczki CIT, jak w Budget Studio. Plany trafiają do cash flow. Obok kalendarz PIT-4 i ZUS z umów oraz prognoza salda rachunku VAT.',
-    skad: 'Płatności budżetu z Księgowane = tak, wg miesiąca księgowania. VAT z faktur (należny minus naliczony), CIT od netto wpływów minus netto obciążeń. Kwoty od biura: wpis w apce albo opłacona danina z eksportu Budget Studio. Zapłacono: przelewy do urzędu skarbowego i ZUS z ING, okres z tytułu przelewu.',
-    jak: 'Nadpłata VAT przechodzi na kolejne miesiące, a na końcu budżetu staje się zwrotem. Zaliczka CIT = podatek od podstawy narastająco minus zaliczki wcześniej w roku. Kwota od biura zamraża okres: dalej nic się w nim nie przelicza. Stawka i okres CIT, terminy i przenoszenie nadpłaty są w Ustawieniach podatków (do potwierdzenia z biurem).',
-    zrob: 'Po deklaracji wpisz kwotę od biura (klik w okres). Gdy prognoza różni się od biura, najczęstsze przyczyny to: zła stawka VAT w wierszu, brak Księgowane, inny miesiąc księgowania niż u biura, przeterminowane plany kosztów, nadpłata sprzed startu budżetu, amortyzacja i różnice kursowe poza budżetem, prezes wpisany brutto jako Bez faktury (jego PIT nie jest składową umowy).' },
+  podatki: { tytul: 'Podatki i ZUS', krotko: 'Ile VAT i podatku dochodowego zapłacimy w kolejnych miesiącach i kiedy.',
+    co: 'Apka liczy VAT i zaliczki CIT z budżetu, tak jak Budget Studio, i wstawia je do cash flow. Obok widać, co przyszło od biura i co poszło z banku, a niżej terminy PIT-4 i ZUS z umów oraz stan rachunku VAT.',
+    skad: 'Faktury i koszty z budżetu z włączonym „Księgowane”. Kwoty od biura wpisujesz Ty. Przelewy do urzędu i ZUS z wyciągu ING.',
+    jak: 'VAT: VAT z faktur sprzedaży minus VAT z faktur kosztowych. Nadwyżka przechodzi na kolejny miesiąc. CIT: zysk od początku roku razy stawka, minus zaliczki już zapłacone w roku. Gdy wpiszesz kwotę od biura, miesiąc przestaje się przeliczać.',
+    zrob: 'Po deklaracji wpisz kwotę od biura (kliknij miesiąc). Gdy prognoza mocno różni się od biura, sprawdź najpierw: stawkę VAT w wierszu, przełącznik Księgowane, miesiąc księgowania i koszty, których nie ma w budżecie.' },
 });
 
 const zlPole = gr => gr == null ? '' : zl(gr, false);

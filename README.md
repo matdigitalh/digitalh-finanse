@@ -59,7 +59,7 @@ każdy Mac ma własną bazę i pisze tylko do własnego pliku zmian.
 | 3 | Mapa klientów, wydatki ↔ rejestr zakupów, ekran Budżet | gotowy 2026-10-14 |
 | 4 | Wynik zarządczy, ekran Rentowność | gotowy 2026-10-14 |
 | 5 | Prognoza gotówki 13 tyg., rejestr umów z alertami (`finanse/umowy.py`), ekran Cash flow | gotowy 2026-10-15 |
-| 6 | Pulpit jak w Budget Studio, eksport | |
+| 6 | Pulpit jak w Budget Studio, eksport | gotowy 2026-10-19 (pakiety UX, 10 i 11); planowanie w apce od 1.11.2026 |
 
 ## Dopasowanie wpłat (etap 2)
 
@@ -300,6 +300,8 @@ Reguły w `finanse/biblioteka.py`, ekran Budżet, Biblioteka (`web/biblioteka.js
   (ekran Arkusze budżetu) pokazuje wszystkie, z pinezką do przypięcia lub odpięcia, znacznikiem „nieprzypięty” i wyszukiwarką
   w miejscu; to samo w Bibliotece, zakładka Arkusze budżetu (kolumna Przypięty). Pinezka w tytule arkusza i pozycja w Zarządzaj.
   Historia zmian opisuje to jako „przypięty do drzewa” albo „odpięty z drzewa”. Kolumna `bud_arkusz.przypiety`.
+  To jedyny mechanizm przypinania: osobny wpis `przypiecie` z pakietu 11 usunięty przy scaleniu (w dzienniku zmian nie było
+  takich wpisów), pinezka i `GET /api/budzet/przypiete` czytają to pole. Jak każda zmiana budżetu wymaga włączonego planowania.
 - **Zarządzaj (A-OPS-01 do 07):** Dodaj nowy arkusz (nazwa do 80 znaków, nieunikalna; podpowiedzi kategorii z wybranego folderu,
   także pustego z Biblioteki; zakres domyślnie 12 miesięcy od bieżącego, co najmniej 1 miesiąc, najwyżej 20 lat; po zapisie
   apka otwiera nowy arkusz), zmień nazwę, folder i kategorię, zakres z kłódką i znakiem planu, przesuń start, duplikuj z i bez
@@ -320,7 +322,6 @@ Reguły w `finanse/biblioteka.py`, ekran Budżet, Biblioteka (`web/biblioteka.js
 Do dokończenia:
 - Automatyczne dodawanie kontrahentów z importów (B-LIS-12, Fakturownia i ING jako nowe wpisy): jest tylko podpowiedź pełnej
   nazwy i NIP-u z Fakturowni; apka nie tworzy płatności rzeczywistych z dokumentów w budżecie, więc nie ma momentu „zatwierdzenia”.
-- Widoki arkusza: pakiet 11.
 - Wpisy Biblioteki sprzed przyjęcia kopii z BS przestają obowiązywać razem z innymi zmianami budżetu sprzed kopii (jak w pakiecie 6).
 
 ## Pakiet 5: rzeczywiste vs planowane i łączenie (2026-10-19, dokończony 2026-10-20)
@@ -399,6 +400,53 @@ Moduł `finanse/kopia_bs.py`, ekran Budżet, „Zgodność z BS i kopia” (`web
   po przyjęciu kopii salda arkuszy, etapy, rozjazdy z bankiem, cash flow 13 tygodni i rentowność arkuszy identyczne jak przy imporcie.
   Testy: `testy/test_pakiet6.py`, `testy_odbioru/test_pakiet6.py` (opcjonalnie klucz `kopia_bs` w `odbior.json`).
 
+## Pakiet 7: listy płatności, filtry i UX tabel (2026-10-19)
+
+Wszystkie listy menu Płatności (połączone z budżetem, Do połączenia, Do weryfikacji, bank, faktury, należności, rejestr
+zakupów) i wydatki z banku działają na jednym silniku (`web/listy.js`), z jedną drogą danych `GET /api/lista/<ekran>`
+(`finanse/zapytania_listy.py`, zapytania list w `finanse/zapytania.py`). Stan listy (filtry, sortowanie, kolumny) żyje w adresie.
+
+- **Sortowanie po stronie serwera** po każdej kolumnie: biała lista per lista (`KOL_*`: klucz z interfejsu → wyrażenie SQL),
+  tekst po polsku (porządek `PL` rejestrowany na połączeniu, `filtry.klucz_pl`), puste na końcu, stały dalszy porządek.
+- **Filtry podręczne** nad listą (płatności: rodzaj, podstawa z nazwami składowych umów, status aktualności, etap; wielokrotny
+  wybór rozdzielony `|`) i **panel „Wygląd i filtry”** (`web/panel.js`, wspólny z cash flow): widoczne kolumny i ich kolejność,
+  sortowanie, zakres listy, typ (plan, rzeczywista), kontrahent, folder, kategoria, arkusz, sekcja, przedmiot, metoda,
+  Księgowane, W cash flow i daty. Kolumny pamięta przeglądarka per lista (wygoda); zapisany widok ma własne kolumny.
+- **Filtr daty jak w BS** (`finanse/filtry.py`, A-FIL-01 do 07): dzień wystawienia, płatności, realnej płatności, miesiąc
+  księgowania i budżetowy; tryby wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy
+  (jednostka, długość N, przesunięcie K, kotwica dnia tygodnia) i szybki wybór (najbliższe 2 tyg., ten miesiąc, poprzedni
+  miesiąc…). Zapis w adresie, np. `d_realny=ruchomy:dzien:14:0`; „dziś” to dzień stanu, więc daty względne liczą się od nowa
+  przy każdym otwarciu. Podgląd „dziś, jutro, za miesiąc” liczy serwer (`GET /api/zakres`), tą samą funkcją co filtr.
+- **Zapisane widoki** (B-LIS-03): zdarzenie `widok` w pliku zmian (`finanse/widoki.py` → tabela `widoki`): zapisz jako, zapisz
+  zmiany, zmień nazwę, usuń (domyślnego nie), „Przywróć” wraca do filtrów widoku. Startowe (`WIDOKI_STARTOWE`): dawne listy menu
+  (wszystkie, nieopłacone, niewystawione, po terminie, do wystawienia i do zapłacenia w 2 tyg., zapłacone) oraz do wystawienia do
+  końca miesiąca i największe koszty miesiąca; też dla banku, faktur, należności, rejestru i wydatków. Stare linki
+  (`?lista=…&rodzaj=…`, `?od=&do=`) działają.
+- **Menu z licznikami**: widoki każdej listy z liczbą pozycji (`GET /api/listy/menu`, liczone przy każdym otwarciu menu).
+- **Zaznaczanie** (APK-BRAK-08): numer wiersza zamienia się w pole wyboru, Shift + klik zaznacza zakres, w nagłówku „zaznacz
+  wszystkie na stronie”, w pasku „Zaznacz wszystkie wyniki” (do 5000). **Pasek podsumowania zaznaczenia**: liczba, netto, VAT,
+  brutto osobno dla wpływów i obciążeń i razem (podsumowanie wszystkich wyników liczy też serwer: `podsumowanie` w odpowiedzi).
+- **Akcje grupowe**, każda jako jeden wpis w pliku zmian (wszystko albo nic, cofnięcie całości): płatności budżetu: zmień dzień
+  realnej płatności i opłacona poza bankiem z datą (seria `bud`, przy włączonym planowaniu); faktury i należności: opłacona poza
+  bankiem z datą (`poza_bankiem` z polem `data`, data zapłaty trafia do stanu faktury), przypisz klienta; wpłaty: nie dotyczy
+  faktury; wydatki: rodzaj i klient (tylko te płatności albo reguła dla kontrahentów); Do weryfikacji: potwierdź, odrzuć,
+  sprawdzone; wszędzie: przenieś do Do weryfikacji i eksport zaznaczonych do CSV (UTF-8 z BOM, średnik, przecinek dziesiętny,
+  daty ISO, kolumny jak na liście; plik powstaje w przeglądarce). Akcja niepasująca do zaznaczenia jest nieaktywna z powodem.
+- **Seria z listy**: nowy typ wpisu `seria` (`zmiany.TYPY_W_SERII`, do 1000 wpisów); serwer sprawdza odwołania każdego wpisu,
+  zanim cokolwiek zapisze; `zmiany.wczytaj()` rozwija serię w zwykłe wpisy, więc moduły liczące nie wymagały zmian.
+- **Do weryfikacji**: nowy typ `do_weryfikacji` (operacja, faktura, dokument z rejestru, płatność budżetu; `usun` = sprawdzone),
+  pozycje w grupie „Przeniesione do sprawdzenia”; lista ma strony, sortowanie, wyszukiwarkę i filtr daty.
+- **Widoczny typ płatności**: kolumny Podstawa płatności i Typ (plan, rzeczywista), piguła rodzaju, chip etapu, kropka
+  aktualności, tło planu i po terminie.
+
+Po scaleniu z pakietem 10: przyciski „Pobierz: Excel, CSV” nad listą eksportują `lista/<ekran>` z tymi samymi parametrami
+(widok, filtry dat i cech, sortowanie), wszystkie strony; suma = stopka listy (`eksport.lista_wszystkie`, testy w `test_pakiet10.py`).
+Z pakietem 8: daniny z arkusza systemowego Opłaty urzędowe są na liście płatności, ale akcje grupowe budżetu (dzień realny,
+opłacona poza bankiem) są dla nich nieaktywne z podpowiedzią (kwota od biura i dzień realny w Budżet, Podatki).
+
+Poza zakresem: typy dat „data dodania” i „data ostatniej edycji” (A-FIL-01; dane z importu ich nie mają), usuwanie i łączenie
+rzeczywistych z listy (pakiet 5), skrót Ctrl/Cmd+F (pakiet 11).
+
 ## Pakiet 8: VAT, podatki, wynagrodzenia (2026-10-19)
 
 Reguły w `finanse/podatki.py` (rdzeń bez bazy, testowalny wprost), ekran w `web/podatki.js` (Budżet, Podatki: „Podatki i ZUS”
@@ -429,6 +477,41 @@ i „Ustawienia podatków”), API `GET /api/podatki`.
   inaczej udział MPP klienta z historii wpłat połączonych z fakturami), wypływy = VAT z kosztów ze Split payment i daniny płacone
   najpierw z rachunku VAT (jak w wyciągach ING), resztę dokłada rachunek główny. Gotówka w cash flow dalej bez rachunku VAT.
 - `GET /api/vat` (ekran Podatek VAT) ma dodatkowo `prognoza`, `od_biura`, `roznica_biuro` z arkusza systemowego.
+
+## Pakiet 9: cash flow jak w BS, umowy w cash flow (2026-10-19)
+
+Serwer: `finanse/cashflow.py` (okresy, pozycje, lista wycinka, prognoza 13 tygodni), `finanse/umowy.py` (powiązanie umowy
+z budżetem). Ekran: `web/cashflow.js` (przeniesiony z `web/budzet.js`, ładowany po `listy.js`).
+
+- **Tryb domyślny jak w BS (decyzja 8):** po dniu stanu wyłącznie płatności budżetu z „W cash flow = tak”: plany
+  i rzeczywiste nieopłacone, na dniu realnej płatności, brutto; przed dniem stanu historia z banku. Szacunek kosztów
+  i należności z faktur spoza budżetu to opcje („Pochodzenie” w „Wygląd i filtry”), domyślnie wyłączone, wyróżnione.
+- **Etap i aktualność jak w BS:** filtr etapu (domyślnie bez opłaconych), statusu aktualności, podstawy, rodzaju i dat
+  (wystawienia, płatności, realnej, miesiąc księgowania; tryby z pakietu 7). Zaległość (nieopłacona, minął dzień realny)
+  zostaje na swoim dniu, scenariusz pełny liczy ją za 7 dni. Rzeczywista „Niewymagana” w BS (np. przyszły ZUS) jest
+  w cash flow (uwaga z pakietu 8, naprawiona u źródła w `laczenie.py` przez pakiet 5; `_etap_cf` bierze etap stamtąd). Historia „z budżetu” pokazuje przeszłość jak BS.
+- **Umowy (decyzje 9 do 11):** umowa ma folder klienta i arkusze przychodowe (domyślnie wszystkie arkusze folderu
+  z wpływami; stary wpis z samym klientem dopasowany po nazwie przy odczycie). Pozycje „z umowy” po ostatnim planie
+  wpływu klienta (netto z umowy + VAT wg wiersza, termin koniec miesiąca + dni z wiersza, domyślnie 23% i 7 dni),
+  bez nich po końcu umowy na czas określony (plany zostają z ostrzeżeniem). Scenariusz „klienci odchodzą”.
+  API: `/api/umowy` (folder, arkusze, stan, ostatni dzień wypowiedzenia obu stron, odejście przy wypowiedzeniu dziś,
+  plany po końcu, klienci bez umowy), `/api/umowy?arkusz=`, pole `umowa` w `/api/budzet/arkusz`.
+- **Lista wycinka:** `GET /api/lista/cashflow` (silnik list z pakietu 7), zapisane widoki: zdarzenie `widok`, ekran `cashflow`.
+- **Odbiór na eksporcie BS z 14.10.2026:** tryb domyślny od dnia stanu: 16 z 17 miesięcy co do grosza; październik
+  różni się tylko etapem opłacenia (1 płatność opłacona w banku, w BS nieopłacona; 2 opłacone w BS po dniu stanu ING).
+
+- **Ekran Umowy:** formularz z folderem klienta i arkuszami przychodowymi (puste zaznaczenie = wszystkie arkusze folderu
+  z wpływami), nasz okres wypowiedzenia osobno, kolumna „Odejście przy wypowiedzeniu dziś”, lista klientów bez umowy
+  z przyciskiem „dodaj umowę”. Arkusz z planami wpływów po końcu umowy na czas określony ma ostrzeżenie nad tabelą
+  (decyzja 10), cash flow znacznik „!” w nagłówku okresu.
+- **Akcje masowe na liście wycinka:** zmiana dnia realnej płatności (jeden wpis `bud` z `op: seria`, wszystko albo nic,
+  wykres i tabela przeliczone od razu), opłacona poza bankiem z datą (wyjątki, decyzja 3), do weryfikacji, eksport CSV.
+  „Odłącz od budżetu” (pakiet 5, `web/laczenie.js`) nad listą wycinka: bierze cały wycinek z serwera, plany i rzeczywiste
+  połączone w apce.
+- **Cash flow arkusza:** zakładka „Cash flow” w arkuszu, tylko jego płatności, bez danin, PIT i ZUS z umów, saldo startowe 0.
+- **Testy:** `testy/test_pakiet9.py` (21, w tym klasa `TestKryteriumOdbioru`: przesunięcie 3 planów o tydzień jedną serią,
+  seria wszystko albo nic, MIN i MAX jak ręczne przeliczenie, miesiąc = suma tygodni i dni, faktura połączona z planem
+  liczona raz), `testy_odbioru/test_pakiet9.py` (3). Ekran sprawdzony w przeglądarce na kopii danych w katalogu tymczasowym.
 
 ## Pakiet 10: eksport i import (2026-10-19)
 
@@ -486,83 +569,59 @@ Testy: `testy/test_pakiet10.py` (układ i zapis kwot jak w BS, sumy jak w stopce
 rozpoznanie źródła, liczniki importu, przeciągnięcie, serwer), `testy_odbioru/test_pakiet10.py` (prawdziwe pliki: eksport
 1:1 z plikiem BS, rozpoznanie każdego pliku z `Dane/`, ponowny import pliku ING = same „Bez zmian”, bez zapisu).
 
-## Pakiet 7: listy płatności, filtry i UX tabel (2026-10-19)
+## Pakiet 11: karta klienta z umową, rentowność budżetu, widoki arkusza, wygoda (2026-10-19)
 
-Wszystkie listy menu Płatności (połączone z budżetem, Do połączenia, Do weryfikacji, bank, faktury, należności, rejestr
-zakupów) i wydatki z banku działają na jednym silniku (`web/listy.js`), z jedną drogą danych `GET /api/lista/<ekran>`
-(`finanse/zapytania_listy.py`, zapytania list w `finanse/zapytania.py`). Stan listy (filtry, sortowanie, kolumny) żyje w adresie.
+Moduły serwera: `finanse/karta_klienta.py` (lista i karta klienta, alerty umów), `finanse/przestawna.py` (rentowność budżetu),
+`finanse/ostrzezenia_wierszy.py` (ustawienia wierszy psujące prognozę), `finanse/ekrany.py` (odczyty nowych ekranów w jednym miejscu,
+serwer woła `ekrany.ODCZYTY`). Interfejs w nowych plikach: `web/klienci.js`, `web/pulpit.js`, `web/przestawna.js`,
+`web/arkusz_widoki.js`, `web/skroty.js`, `web/dodatki.css`.
 
-- **Sortowanie po stronie serwera** po każdej kolumnie: biała lista per lista (`KOL_*`: klucz z interfejsu → wyrażenie SQL),
-  tekst po polsku (porządek `PL` rejestrowany na połączeniu, `filtry.klucz_pl`), puste na końcu, stały dalszy porządek.
-- **Filtry podręczne** nad listą (płatności: rodzaj, podstawa z nazwami składowych umów, status aktualności, etap; wielokrotny
-  wybór rozdzielony `|`) i **panel „Wygląd i filtry”** (`web/panel.js`, wspólny z cash flow): widoczne kolumny i ich kolejność,
-  sortowanie, zakres listy, typ (plan, rzeczywista), kontrahent, folder, kategoria, arkusz, sekcja, przedmiot, metoda,
-  Księgowane, W cash flow i daty. Kolumny pamięta przeglądarka per lista (wygoda); zapisany widok ma własne kolumny.
-- **Filtr daty jak w BS** (`finanse/filtry.py`, A-FIL-01 do 07): dzień wystawienia, płatności, realnej płatności, miesiąc
-  księgowania i budżetowy; tryby wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy
-  (jednostka, długość N, przesunięcie K, kotwica dnia tygodnia) i szybki wybór (najbliższe 2 tyg., ten miesiąc, poprzedni
-  miesiąc…). Zapis w adresie, np. `d_realny=ruchomy:dzien:14:0`; „dziś” to dzień stanu, więc daty względne liczą się od nowa
-  przy każdym otwarciu. Podgląd „dziś, jutro, za miesiąc” liczy serwer (`GET /api/zakres`), tą samą funkcją co filtr.
-- **Zapisane widoki** (B-LIS-03): zdarzenie `widok` w pliku zmian (`finanse/widoki.py` → tabela `widoki`): zapisz jako, zapisz
-  zmiany, zmień nazwę, usuń (domyślnego nie), „Przywróć” wraca do filtrów widoku. Startowe (`WIDOKI_STARTOWE`): dawne listy menu
-  (wszystkie, nieopłacone, niewystawione, po terminie, do wystawienia i do zapłacenia w 2 tyg., zapłacone) oraz do wystawienia do
-  końca miesiąca i największe koszty miesiąca; też dla banku, faktur, należności, rejestru i wydatków. Stare linki
-  (`?lista=…&rodzaj=…`, `?od=&do=`) działają.
-- **Menu z licznikami**: widoki każdej listy z liczbą pozycji (`GET /api/listy/menu`, liczone przy każdym otwarciu menu).
-- **Zaznaczanie** (APK-BRAK-08): numer wiersza zamienia się w pole wyboru, Shift + klik zaznacza zakres, w nagłówku „zaznacz
-  wszystkie na stronie”, w pasku „Zaznacz wszystkie wyniki” (do 5000). **Pasek podsumowania zaznaczenia**: liczba, netto, VAT,
-  brutto osobno dla wpływów i obciążeń i razem (podsumowanie wszystkich wyników liczy też serwer: `podsumowanie` w odpowiedzi).
-- **Akcje grupowe**, każda jako jeden wpis w pliku zmian (wszystko albo nic, cofnięcie całości): płatności budżetu: zmień dzień
-  realnej płatności i opłacona poza bankiem z datą (seria `bud`, przy włączonym planowaniu); faktury i należności: opłacona poza
-  bankiem z datą (`poza_bankiem` z polem `data`, data zapłaty trafia do stanu faktury), przypisz klienta; wpłaty: nie dotyczy
-  faktury; wydatki: rodzaj i klient (tylko te płatności albo reguła dla kontrahentów); Do weryfikacji: potwierdź, odrzuć,
-  sprawdzone; wszędzie: przenieś do Do weryfikacji i eksport zaznaczonych do CSV (UTF-8 z BOM, średnik, przecinek dziesiętny,
-  daty ISO, kolumny jak na liście; plik powstaje w przeglądarce). Akcja niepasująca do zaznaczenia jest nieaktywna z powodem.
-- **Seria z listy**: nowy typ wpisu `seria` (`zmiany.TYPY_W_SERII`, do 1000 wpisów); serwer sprawdza odwołania każdego wpisu,
-  zanim cokolwiek zapisze; `zmiany.wczytaj()` rozwija serię w zwykłe wpisy, więc moduły liczące nie wymagały zmian.
-- **Do weryfikacji**: nowy typ `do_weryfikacji` (operacja, faktura, dokument z rejestru, płatność budżetu; `usun` = sprawdzone),
-  pozycje w grupie „Przeniesione do sprawdzenia”; lista ma strony, sortowanie, wyszukiwarkę i filtr daty.
-- **Widoczny typ płatności**: kolumny Podstawa płatności i Typ (plan, rzeczywista), piguła rodzaju, chip etapu, kropka
-  aktualności, tło planu i po terminie.
+- **Karta klienta (BL-02, część formalna)**, `#/budzet/klient?nazwa=` (`GET /api/klienci/karta?nazwa=&rok=`): dane klienta (NIP i nabywcy
+  z faktur, folder budżetu, arkusze, ostatni plan wpływu), umowa edytowana na miejscu (data podpisania, czas określony albo nieokreślony,
+  koniec, przedłużanie, okres wypowiedzenia, na koniec miesiąca, wartość netto miesięcznie, alert w dniach, uwagi; zapis istniejącym
+  wpisem `umowa`), stan umowy (ok, alert, minął, brak umowy), ostatni dzień na wypowiedzenie z naszej i ich strony, termin odejścia przy
+  wypowiedzeniu dziś, obroty i należności, rentowność (wynik zarządczy klienta obok wyniku budżetu jego folderu), plany w budżecie na
+  12 miesięcy obok wartości z umowy, faktury i koszty. Ostrzeżenia: brak umowy przy planach wpływów, plany wpływów po końcu umowy
+  na czas określony (decyzja Mata 10: plany zostają w cash flow, apka ostrzega na karcie, w arkuszu i na pulpicie).
+- **Lista klientów** (`#/budzet`): kolumny umowy (stan, typ, wypowiedzenie, termin, wartość) i plany wpływów 12 miesięcy obok obrotów;
+  filtry rok, stan umowy (także „do decyzji”), typ umowy, szukaj; sortowanie po każdej kolumnie (lokalnie, lista ma kilkadziesiąt
+  pozycji). Dane: `GET /api/klienci` (z niego eksport do Excela) + `GET /api/klienci/umowy`.
+- **Pulpit:** w żółtym pasku „Plany nieaktualne” (licznik i link do listy planów z filtrem, rytuał tygodniowy B-INNE-03) i „Ustawienia
+  wierszy do sprawdzenia”; baner alertów umów (`GET /api/pulpit/alerty`), kafel umów, kafel rachunku VAT (`/api/podatki` →
+  `rachunek_vat.vat_najblizszy`: kwota, termin, ile dołożyć z rachunku głównego), kafel „Lista płac do wpisania” (patrz niżej).
+- **Ekran Podatek VAT:** kolumny prognoza z budżetu, kwota od biura, różnica (`wynik.vat`), filtr roku; miesiące z samą prognozą też
+  na liście. Te same kolumny w eksporcie VAT.
+- **Rentowność budżetu** (`#/rentownosc/przestawna`, `GET /api/rentownosc/przestawna?rok=&poziomy=&os=&folder=`): tabela przestawna
+  płatności budżetu z Księgowane = tak (plany i rzeczywiste, netto, aktualne jak w komórkach arkusza, bez arkusza systemowego), wiersze
+  wg do czterech poziomów (folder, kategoria, arkusz, sekcja, przedmiot, kontrahent) z rozwijaniem, kolumny miesięcy, wartości wynik,
+  wpływy, obciążenia albo marża; oś miesiąc budżetu albo księgowania. Pod tabelą wynik zarządczy z banku i faktur i różnica.
+  Wynik folderu = suma jego arkuszy (test).
+- **Arkusz:** widoki arkusza (A-ARK-02, wpis `widok` z ekranem `arkusz` i parametrem `arkusz`; menu w pigułce pod tytułem: zapisz jako,
+  zapisz zmiany, zmień nazwę, usuń, przywróć), przypinanie (model z pakietu 4: pole `przypiety` arkusza, `GET /api/budzet/przypiete`),
+  wybór serii wykresu (A-ARK-07, parametr `serie`), ostrzeżenia ustawień wierszy (A-CF-17: worek przy stałej opłacie, faktura kosztowa
+  poza cash flow, 23% u kontrahenta z zagranicy, dzień wystawienia inny niż na fakturach; znak „!” przy wierszu, lista nad tabelą,
+  ekran `#/budzet/ostrzezenia`), daniny brązowym tekstem (A-INN-07) na listach i w arkuszu systemowym.
+- **Skróty (A-INN-06):** „?” lista skrótów, Cmd+K pomoc z wyszukiwarką (pole wyszukiwania w panelu pomocy zawsze), Cmd+F wyszukiwarka
+  listy, Cmd+Enter karta zaznaczonego albo wskazanego wiersza listy.
+- **Pomoc:** nowe i krótsze teksty: podatki, kopia z BS, łączenie z budżetem, Podatek VAT, karta i lista klientów, rentowność budżetu,
+  alerty umów, rachunek VAT, lista płac, plany nieaktualne, widoki arkusza, ustawienia wierszy, skróty.
+- Drobne: filtr roku w Obrotach wg klientów i Rentowności klientów (APK-BRAK-14), martwy `wBudowie()` usunięty (APK-BUG-09).
 
-Po scaleniu z pakietem 10: przyciski „Pobierz: Excel, CSV” nad listą eksportują `lista/<ekran>` z tymi samymi parametrami
-(widok, filtry dat i cech, sortowanie), wszystkie strony; suma = stopka listy (`eksport.lista_wszystkie`, testy w `test_pakiet10.py`).
-Z pakietem 8: daniny z arkusza systemowego Opłaty urzędowe są na liście płatności, ale akcje grupowe budżetu (dzień realny,
-opłacona poza bankiem) są dla nich nieaktywne z podpowiedzią (kwota od biura i dzień realny w Budżet, Podatki).
+**Dane z pakietów 9 i 5 (po scaleniu 2026-10-20):** karta klienta bierze z `umowy.lista()` (pakiet 9) folder, arkusze wskazane
+w umowie, ostatni dzień na wypowiedzenie obu stron (`{klient, my}` jako `{ich, nasza}`), odejście przy wypowiedzeniu dziś (strona
+klienta, jak scenariusz „klienci odchodzą” w cash flow) i plany po końcu umowy (`umowy.plany_po_koncu`); sama już tego nie liczy.
+Bez umowy: folder o nazwie klienta. Formularz karty odsyła surowy wpis umowy (folder i arkusze tak, jak zapisane), więc zapis
+z karty nie utrwala wartości wyliczonych. Kafel „Lista płac do wpisania” na pulpicie czyta `GET /api/ostrzezenia` (pakiet 5):
+`lista_niewpisana` = czerwony, `estymacja_nizsza` i `lista_vs_przelew` = żółty, link do listy płac za miesiąc; pasek nad pulpitem
+z pakietu 5 pokazuje wtedy tylko Do połączenia.
 
-Poza zakresem: typy dat „data dodania” i „data ostatniej edycji” (A-FIL-01; dane z importu ich nie mają), usuwanie i łączenie
-rzeczywistych z listy (pakiet 5), skrót Ctrl/Cmd+F (pakiet 11).
+**Testy:** `testy/test_pakiet11.py` (zmyślone dane: wynik folderu = suma arkuszy, tylko Księgowane, ostrzeżenie dla worka z jedną
+płatnością miesięcznie i pozostałe reguły ostrzeżeń, terminy umowy, alerty, przypięcia i widoki z cofnięciem, licznik planów
+nieaktualnych, kolumny VAT, nowe adresy serwera), `testy_odbioru/test_pakiet11.py` (prawdziwe pliki, te same reguły).
 
-## Pakiet 9: cash flow jak w BS, umowy w cash flow (2026-10-19)
+**Nie w tym pakiecie:** waluty (APK-BRAK-15, brak planów w walucie), estymata czasu per osoba (APK-BRAK-05, czeka na decyzję Mata).
 
-Serwer: `finanse/cashflow.py` (okresy, pozycje, lista wycinka, prognoza 13 tygodni), `finanse/umowy.py` (powiązanie umowy
-z budżetem). Ekran: `web/cashflow.js` (przeniesiony z `web/budzet.js`, ładowany po `listy.js`).
+### Stan etapów i planowania (APK-BRAK-04)
 
-- **Tryb domyślny jak w BS (decyzja 8):** po dniu stanu wyłącznie płatności budżetu z „W cash flow = tak”: plany
-  i rzeczywiste nieopłacone, na dniu realnej płatności, brutto; przed dniem stanu historia z banku. Szacunek kosztów
-  i należności z faktur spoza budżetu to opcje („Pochodzenie” w „Wygląd i filtry”), domyślnie wyłączone, wyróżnione.
-- **Etap i aktualność jak w BS:** filtr etapu (domyślnie bez opłaconych), statusu aktualności, podstawy, rodzaju i dat
-  (wystawienia, płatności, realnej, miesiąc księgowania; tryby z pakietu 7). Zaległość (nieopłacona, minął dzień realny)
-  zostaje na swoim dniu, scenariusz pełny liczy ją za 7 dni. Rzeczywista „Niewymagana” w BS (np. przyszły ZUS) jest
-  w cash flow (uwaga z pakietu 8, bez zmian w `laczenie.py`). Historia „z budżetu” pokazuje przeszłość jak BS.
-- **Umowy (decyzje 9 do 11):** umowa ma folder klienta i arkusze przychodowe (domyślnie wszystkie arkusze folderu
-  z wpływami; stary wpis z samym klientem dopasowany po nazwie przy odczycie). Pozycje „z umowy” po ostatnim planie
-  wpływu klienta (netto z umowy + VAT wg wiersza, termin koniec miesiąca + dni z wiersza, domyślnie 23% i 7 dni),
-  bez nich po końcu umowy na czas określony (plany zostają z ostrzeżeniem). Scenariusz „klienci odchodzą”.
-  API: `/api/umowy` (folder, arkusze, stan, ostatni dzień wypowiedzenia obu stron, odejście przy wypowiedzeniu dziś,
-  plany po końcu, klienci bez umowy), `/api/umowy?arkusz=`, pole `umowa` w `/api/budzet/arkusz`.
-- **Lista wycinka:** `GET /api/lista/cashflow` (silnik list z pakietu 7), zapisane widoki: zdarzenie `widok`, ekran `cashflow`.
-- **Odbiór na eksporcie BS z 14.10.2026:** tryb domyślny od dnia stanu: 16 z 17 miesięcy co do grosza; październik
-  różni się tylko etapem opłacenia (1 płatność opłacona w banku, w BS nieopłacona; 2 opłacone w BS po dniu stanu ING).
-
-- **Ekran Umowy:** formularz z folderem klienta i arkuszami przychodowymi (puste zaznaczenie = wszystkie arkusze folderu
-  z wpływami), nasz okres wypowiedzenia osobno, kolumna „Odejście przy wypowiedzeniu dziś”, lista klientów bez umowy
-  z przyciskiem „dodaj umowę”. Arkusz z planami wpływów po końcu umowy na czas określony ma ostrzeżenie nad tabelą
-  (decyzja 10), cash flow znacznik „!” w nagłówku okresu.
-- **Akcje masowe na liście wycinka:** zmiana dnia realnej płatności (jeden wpis `bud` z `op: seria`, wszystko albo nic,
-  wykres i tabela przeliczone od razu), opłacona poza bankiem z datą (wyjątki, decyzja 3), do weryfikacji, eksport CSV.
-  Odłączenie od budżetu zostaje w pakiecie 5 (łączenie).
-- **Cash flow arkusza:** zakładka „Cash flow” w arkuszu, tylko jego płatności, bez danin, PIT i ZUS z umów, saldo startowe 0.
-- **Testy:** `testy/test_pakiet9.py` (21, w tym klasa `TestKryteriumOdbioru`: przesunięcie 3 planów o tydzień jedną serią,
-  seria wszystko albo nic, MIN i MAX jak ręczne przeliczenie, miesiąc = suma tygodni i dni, faktura połączona z planem
-  liczona raz), `testy_odbioru/test_pakiet9.py` (3). Ekran sprawdzony w przeglądarce na kopii danych w katalogu tymczasowym.
+Etap 6 (pulpit jak w Budget Studio, eksport) jest gotowy: pakiet UX (pulpit, kafle), pakiet 10 (eksport) i pakiet 11 (alerty, kafle VAT
+i umów). Planowanie w apce jest wyłączone do 1.11.2026; włącza je Mat w Budżet, Ustawienia budżetu (decyzja Mata 5).

@@ -600,7 +600,8 @@ const htmlOstrzezen = (lista, ile) => {
   const stary = WIDOKI.pulpit;
   WIDOKI.pulpit = async function (p) {
     const [html, o] = await Promise.all([stary.call(this, p), api('ostrzezenia').catch(() => null)]);
-    const pas = o ? htmlOstrzezen(o.ostrzezenia, o.do_polaczenia) : '';
+    // ostrzeżenia listy płac pokazuje na pulpicie kafel „Lista płac do wpisania” (pakiet 11, pulpit.js); tu zostaje Do połączenia
+    const pas = o ? htmlOstrzezen(typeof pulpitDodatki === 'function' ? [] : o.ostrzezenia, o.do_polaczenia) : '';
     return pas ? html.replace(/(<\/h1>)/, `$1${pas}`) : html;
   };
   const ark = WIDOKI['budzet/arkusz'];

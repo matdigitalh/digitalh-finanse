@@ -164,7 +164,8 @@ def obroty_klientow(con, rok=None) -> dict:
                       'pna': v['obrot'] - v['koszty'], 'udzial': round(100 * v['obrot'] / razem, 1),
                       'marza_proc': round(100 * (v['obrot'] - v['koszty']) / v['obrot'], 1) if v['obrot'] > 0 else None})
     lista.sort(key=lambda x: -x['obrot'])
-    return {'rok': rok, 'miesiace': miesiace, 'klienci': lista}
+    lata = sorted({x['miesiac'][:4] for x in o if x['miesiac']} | {rok}, reverse=True)   # filtr roku (APK-BRAK-14)
+    return {'rok': rok, 'lata': lata, 'miesiace': miesiace, 'klienci': lista}
 
 
 def koszty_kategorii(con, rok=None, rodzaj=None) -> dict:
@@ -206,10 +207,16 @@ def vat(con, rok=None) -> dict:
     # pakiet 8 (B-VAT-09): prognoza z budżetu i kwota od biura z arkusza systemowego, różnica = prognoza − kwota od biura
     r = con.execute("SELECT wartosc FROM meta WHERE klucz='podatki'").fetchone()
     okresy = {x['okres']: x for x in (json.loads(r[0]).get('vat', []) if r and r[0] else [])}
+    # pakiet 11: miesiące roku, które mają tylko prognozę z budżetu (jeszcze bez faktur i przelewów), też na liście
+    znane = {x['miesiac'] for x in lista}
+    lista += [{'miesiac': m, 'nalezny': 0, 'naliczony': 0, 'zaplacony': 0, 'do_zaplaty': 0, 'rejestr': False, 'tylko_prognoza': True}
+              for m in sorted(okresy) if m.startswith(rok) and m not in znane]
+    lista.sort(key=lambda x: x['miesiac'])
     for x in lista:
         o = okresy.get(x['miesiac'])
         b = (o or {}).get('od_biura')
         x['prognoza'] = o['prognoza'] if o else None
         x['od_biura'] = ({'zaplata': 1, 'zwrot': -1, 'przeniesienie': 0}[b['kierunek']] * b['kwota']) if b else None
         x['roznica_biuro'] = x['prognoza'] - x['od_biura'] if o and b else None
-    return {'rok': rok, 'miesiace': lista, 'koniec_rejestru': koniec}
+    lata = sorted({x['miesiac'][:4] for x in obroty(con) if x['miesiac']} | {rok}, reverse=True)   # filtr roku (pakiet 11)
+    return {'rok': rok, 'lata': lata, 'miesiace': lista, 'koniec_rejestru': koniec}
