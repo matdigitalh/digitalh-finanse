@@ -125,12 +125,13 @@ z banku; złożenie w `klienci.wczytaj_reczne` (meta `rezerwa`). Testy: `testy/t
 `testy/test_wydatki.py`. Pytanie Mata: na co ile wydajemy, jakie mamy koszty stałe i czy każdy koszt ma sens.
 
 - **Kategoria = drugi poziom pod rodzajem.** Rodzaj (`klienci.py`) zostaje bez zmian, bo od niego zależą wynik zarządczy, rezerwa
-  i cash flow. Kategoria (lista stała `wydatki.KATEGORIE`: Pensje, ZUS, PIT-4, PPK, Benefity, Podatki VAT, CIT i opłaty, Księgowość
+  i cash flow. Kategoria (lista stała `wydatki.KATEGORIE`: Pensje (etat, powołanie), Współpracownicy (B2B, dzieło), ZUS, PIT-4, PPK, Benefity, Podatki VAT, CIT i opłaty, Księgowość
   i prawne, Narzędzia i subskrypcje, Reklama własna, Sprzęt, Podróże, Reprezentacja, Rekrutacja, Koszty klientów: media, druk
   i produkcja, podwykonawcy, Podział zysku, Zwroty, Inne, Nieprzypisane) liczy się przy każdej odbudowie, po budżecie (krok
   „Kategorie wydatków” w `odbudowa.py`), z polem źródła: decyzja Mata dla płatności, reguła Mata dla kontrahenta, reguła wbudowana
   (`kategoria_wbudowana`: rodzaj, ZUS, urząd skarbowy wg rodzaju, PPK, konta reklamowe, koszt klienta wg druku, tytuł „wyjazd”,
-  wzorce nazw `REGULY_NAZW`, przelew do osoby przy kosztach pracy), na końcu Inne albo Nieprzypisane. Kolumny w `wydatki`:
+  wzorce nazw `REGULY_NAZW`; przy kosztach pracy przelew „wynagrodzenie” albo do osoby z wierszy umów w budżecie = Pensje, inny
+  przelew do osoby = Współpracownicy), na końcu Inne albo Nieprzypisane. Kolumny w `wydatki`:
   `kategoria`, `kategoria_zrodlo`, `kategoria_wpis`, `kontrahent_grupa`.
 - **Kontrahent w analizie** (`kontrahent_grupa`) to klucz kontrahenta z `klienci.py`, poza płatnościami kartą z losowym kodem
   w nazwie (FACEBK, IPR, Microsoft, Bolt, Uber, OpenAI, Anthropic) i dwoma zapisami ZUS, które łączymy (`GRUPY_KART`).
@@ -138,16 +139,21 @@ z banku; złożenie w `klienci.wczytaj_reczne` (meta `rezerwa`). Testy: `testy/t
 - **Zgodność z rodzajem** (`ZGODNE`): kategoria niepasująca do rodzaju (np. Narzędzia przy kosztach pracy) albo kategoria przy rodzaju
   nieprzypisanym trafia do „Do decyzji”; apka niczego sama nie poprawia. Stamtąd jednym kliknięciem reguła rodzaju (`koszt_regula`).
 - **Wpisy w pliku zmian:** `kategoria_regula` (`{kontrahent, kategoria}`), `kategoria_operacja` (`{operacja, kategoria}`), `cel_wydatku`
-  (`{kontrahent, obszar?, kto?, uzasadnienie?, ocena?, staly?}`: tylko zmieniane pola, kolejne wpisy nakładają się po czasie, `cofnij`
+  (`{kontrahent, obszar?, kto?, uzasadnienie?, ocena?, staly?, roczna?}`: tylko zmieniane pola, kolejne wpisy nakładają się po czasie, `cofnij`
   przywraca stan sprzed wpisu, data oceny = dzień wpisu z oceną; `staly` true, false albo null = wykrywanie), `ustawienie` z kluczem
   `obszary_wydatkow` (lista dodatkowych obszarów). Obszary domyślne: Działalność spółki, New Business, Realizacja dla klientów,
   Zespół, Rozwój; dodatkowe też z klucza `obszary_wydatkow` w `ustawienia.json`. Walidacja `wydatki.sprawdz_*`, odczyt
   w `klienci.wczytaj_reczne` (klucz `wydatki`), serwer sprawdza, że kontrahent jest w wydatkach, a obszar na liście.
-- **Koszty stałe** (`koszty_stale`): płatność w co najmniej 3 z 4 ostatnich pełnych miesięcy przed dniem stanu albo opłata roczna
-  (płatność w ostatnich 3 miesiącach i ta sama kwota ±10% 11 do 13 miesięcy wcześniej), bez rodzajów VAT, podział zysku, zwrot,
-  zakup zwrócony i koszt klienta. Koszt miesięczny = średnia z miesięcy z płatnością w ostatnich 3 pełnych, roczny = × 12 (opłata
-  roczna: jej kwota, miesięcznie /12). Zmiana ceny ponad 10%: ostatnia płatność kontra poprzednia, a gdy w miesiącu bywa kilka
-  płatności, suma miesiąca kontra poprzednia. Decyzja Mata (stały tak/nie) wygrywa z wykrywaniem. Sumy wg obszaru i osoby.
+- **Koszty stałe** (`koszty_stale`, poprawione po kontroli liczb 2026-10-20): kontrahent × kategoria (zwroty za wyjazdy nie mieszają
+  się z pensją) z płatnością w co najmniej 3 z 4 ostatnich pełnych miesięcy przed dniem stanu, bez rodzajów VAT, podział zysku, zwrot,
+  zakup zwrócony, koszt klienta i bez kategorii nieregularnych (`POZA_STALYMI_KAT`: podróże, reprezentacja, sprzęt, koszty klientów).
+  Aktywny tylko z płatnością w ostatnim pełnym miesiącu albo w bieżącym; pozostali to „wygasłe” (osobna lista z datą ostatniej płatności).
+  Koszt miesięczny = suma z ostatniego pełnego miesiąca (gdy wtedy nic, z bieżącego), roczny = × 12. Opłata roczna (`_roczne`): narzędzie
+  z jedną płatnością od 300 zł w 12 miesiącach (np. Adobe), ta sama kwota ±10% rok wcześniej albo pole `roczna` we wpisie
+  `cel_wydatku`; liczona 1/12, także w kaflu narzędzi. Ostatnia płatność = data i suma jej miesiąca (wszystkie karty). Flagi: zmiana
+  kwoty ponad 50% (miesiąc kontra poprzedni) i płatność ponad 3 dni od zwykłego dnia cyklu; zmiana ceny ponad 10% jako informacja.
+  Decyzja Mata (stały tak/nie, roczna tak/nie) wygrywa z wykrywaniem. Sumy wg obszaru i osoby.
+- **Kafel narzędzi:** płatności bieżące z pełnych miesięcy okresu (wypisane pod kwotą) / ich liczba + opłaty roczne z okresu / 12.
 - **Ekran:** okres (domyślnie od 1 stycznia do dnia stanu ING; miesiąc niepełny oznaczony), kafle (koszt pracy z rozbiciem, podatki
   VAT i CIT bez ZUS i PIT-4, narzędzia miesięcznie ze średniej pełnych miesięcy, koszty stałe miesięcznie), wykres słupkowy po
   miesiącach w grupach kategorii (koszt pracy, narzędzia, koszty klientów, podatki, pozostałe; stały kolor grupy) z przełącznikiem

@@ -625,9 +625,13 @@ KONTRAHENCI_WYD = [('Kategoria', 'kategoria', 'tekst'), ('Kontrahent', 'nazwa', 
                    ('Suma (brutto z banku)', 'suma', 'kwota'), ('Płatności', 'ile', 'liczba'), ('Ostatnia płatność', 'ostatnia', 'data')]
 STALE_WYD = [('Kontrahent', 'nazwa', 'tekst'), ('Kategoria', 'kategoria_nazwa', 'tekst'), ('Miesięcznie', 'miesiecznie', 'kwota'),
              ('Rocznie', 'rocznie', 'kwota'), ('Ostatnia płatność', 'ostatnia_data', 'data'), ('Kwota ostatniej', 'ostatnia_kwota', 'kwota'),
-             ('Zmiana ceny %', lambda x: (x.get('zmiana_ceny') or {}).get('proc'), 'proc'), ('Skąd stały', 'sposob', 'tekst'),
+             ('Płatności w ostatnim miesiącu', 'ostatnia_ile', 'liczba'),
+             ('Zmiana ceny %', lambda x: (x.get('zmiana_ceny') or {}).get('proc'), 'proc'), ('Flagi', lambda x: ', '.join(x.get('flagi') or []), 'tekst'),
+             ('Skąd stały', 'sposob', 'tekst'),
              ('Obszar', 'obszar', 'tekst'), ('Kto', 'kto', 'tekst'), ('Ocena', lambda x: x.get('ocena', '').replace('_', ' '), 'tekst'),
              ('Data oceny', 'data_oceny', 'data'), ('Uzasadnienie', 'uzasadnienie', 'tekst')]
+WYGASLE_WYD = [('Kontrahent', 'nazwa', 'tekst'), ('Kategoria', 'kategoria_nazwa', 'tekst'), ('Ostatnia płatność', 'ostatnia_data', 'data'),
+               ('Kwota w tamtym miesiącu', 'ostatnia_kwota', 'kwota'), ('Dlaczego', 'powod', 'tekst')]
 SUMY_STALYCH = [('Grupa', 'nazwa', 'tekst'), ('Pozycji', 'ile', 'liczba'), ('Miesięcznie', 'miesiecznie', 'kwota'), ('Rocznie', 'rocznie', 'kwota')]
 
 
@@ -645,7 +649,7 @@ def _wydatki_analiza(con, q):
                           ('Koszty stałe miesięcznie', '', s['razem']['miesiecznie'])])
     return (_nazwa('wydatki wg kategorii', d['od'], 'do', d['do']),
             [_tab('Kategorie', KATEGORIE_WYD, d['kategorie']), _tab('Kontrahenci', KONTRAHENCI_WYD, kontr),
-             _tab('Koszty stałe', STALE_WYD, s['pozycje']), pods], False)
+             _tab('Koszty stałe', STALE_WYD, s['pozycje']), _tab('Wygasłe', WYGASLE_WYD, s['wygasle']), pods], False)
 
 
 def _wydatki_stale(con, q):
@@ -653,7 +657,7 @@ def _wydatki_stale(con, q):
     s = wydatki.koszty_stale(con)
     poz = [x for x in s['pozycje'] if (not q.get('ocena') or x['ocena'] == q['ocena']) and (not q.get('obszar') or x['obszar'] == q['obszar'])]
     return (_nazwa('koszty stałe', s['dzien_stanu']),
-            [_tab('Koszty stałe', STALE_WYD, poz), _tab('Wg obszaru', SUMY_STALYCH, s['wg_obszaru']),
+            [_tab('Koszty stałe', STALE_WYD, poz), _tab('Wygasłe', WYGASLE_WYD, s['wygasle']), _tab('Wg obszaru', SUMY_STALYCH, s['wg_obszaru']),
              _tab('Wg osoby', SUMY_STALYCH, s['wg_osoby'])], False)
 
 

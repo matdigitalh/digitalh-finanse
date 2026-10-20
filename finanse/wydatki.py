@@ -19,7 +19,8 @@ from datetime import date
 from .format import norm
 
 KATEGORIE = (
-    ('pensje', 'Pensje (na rękę)'),
+    ('pensje', 'Pensje (etat, powołanie)'),
+    ('wspolpracownicy', 'Współpracownicy (B2B, dzieło)'),
     ('zus', 'ZUS'),
     ('pit4', 'PIT-4 od pensji'),
     ('ppk', 'PPK'),
@@ -42,12 +43,12 @@ KATEGORIE = (
     ('nieprzypisane', 'Nieprzypisane'),
 )
 NAZWY = dict(KATEGORIE)
-KOSZT_PRACY = ('pensje', 'zus', 'pit4', 'ppk', 'benefity')
+KOSZT_PRACY = ('pensje', 'wspolpracownicy', 'zus', 'pit4', 'ppk', 'benefity')
 PODATKI = ('vat', 'cit')
 KLIENCI = ('klienci_media', 'klienci_druk', 'klienci_podwykonawcy')
 # Rodzaje, z którymi kategoria jest zgodna. Brak klucza = zgodna z każdym rodzajem (Inne, Nieprzypisane).
 ZGODNE = {
-    'pensje': {'praca'}, 'zus': {'praca'}, 'pit4': {'praca'}, 'ppk': {'praca'}, 'benefity': {'praca', 'staly'},
+    'pensje': {'praca'}, 'wspolpracownicy': {'praca'}, 'zus': {'praca'}, 'pit4': {'praca'}, 'ppk': {'praca'}, 'benefity': {'praca', 'staly'},
     'vat': {'vat'}, 'cit': {'podatki'},
     'ksiegowosc': {'staly'}, 'narzedzia': {'staly'}, 'reklama': {'staly'}, 'sprzet': {'staly'},
     'podroze': {'staly', 'praca'}, 'reprezentacja': {'staly', 'praca'}, 'rekrutacja': {'staly', 'praca'},
@@ -56,8 +57,13 @@ ZGODNE = {
 }
 OBSZARY_DOMYSLNE = ('Działalność spółki', 'New Business', 'Realizacja dla klientów', 'Zespół', 'Rozwój')
 OCENY = {'zasadny': 'zasadny', 'do_sprawdzenia': 'do sprawdzenia', 'do_wypowiedzenia': 'do wypowiedzenia'}
-POLA_CELU = ('obszar', 'kto', 'uzasadnienie', 'ocena', 'staly')
+POLA_CELU = ('obszar', 'kto', 'uzasadnienie', 'ocena', 'staly', 'roczna')
 POZA_STALYMI = {'vat', 'dywidenda', 'zwrot', 'zwrocony', 'przenoszony'}   # rodzaje, które nie są kosztem stałym
+# Kategorie nieregularne z natury: nie wykrywamy ich jako kosztu stałego (zwroty za wyjazdy, przejazdy, kolacje, zakupy sprzętu).
+# Mat może oznaczyć kontrahenta jako stałego ręcznie.
+POZA_STALYMI_KAT = {'podroze', 'reprezentacja', 'sprzet', 'zwroty', 'podzial_zysku', 'vat', 'klienci_media', 'klienci_druk',
+                    'klienci_podwykonawcy'}
+PROG_ROCZNEJ = 30000   # grosze: pojedyncza płatność narzędzia od 300 zł bez płatności w innych miesiącach = opłata roczna
 
 # ---------- reguły wbudowane (jedno miejsce; wzorce na nazwie po norm(): małe litery, bez polskich znaków i interpunkcji) ----------
 
@@ -145,9 +151,11 @@ def kategoria_wbudowana(o: dict, osoby: set = frozenset()) -> tuple[str, str]:
     for kat, wz in _REGULY:
         if wz.search(nazwa):
             return kat, f'nazwa kontrahenta ({NAZWY[kat].lower()})'
-    if rodzaj == 'praca' and not o.get('karta') and (
-            'wynagrodz' in tytul or (o.get('kk') and o['kk'] in osoby) or _osoba(nazwa)):
-        return 'pensje', 'przelew do osoby, koszty pracy'
+    if rodzaj == 'praca' and not o.get('karta'):
+        if 'wynagrodz' in tytul or (o.get('kk') and o['kk'] in osoby):
+            return 'pensje', 'wynagrodzenie z listy płac'
+        if _osoba(nazwa):
+            return 'wspolpracownicy', 'przelew do osoby bez listy płac (faktura, umowa o dzieło)'
     if rodzaj == 'podatki':
         return 'cit', 'rodzaj podatki'
     if rodzaj == 'nieprzypisany':
@@ -201,6 +209,10 @@ def sprawdz_cel(d: dict) -> dict:
         if d['staly'] not in (True, False, None):
             raise ValueError('cel wydatku: koszt stały tak, nie albo automatycznie')
         wynik['staly'] = d['staly']
+    if 'roczna' in d:
+        if d['roczna'] not in (True, False, None):
+            raise ValueError('cel wydatku: opłata roczna tak, nie albo automatycznie')
+        wynik['roczna'] = d['roczna']
     if len(wynik) == 1:
         raise ValueError('cel wydatku: brak zmian')
     return wynik
@@ -286,9 +298,11 @@ def przypisz(con, reczne: dict):
         zmiany.append((kat, zrodlo, wpis, grupa, o['id']))
     con.executemany('UPDATE wydatki SET kategoria = ?, kategoria_zrodlo = ?, kategoria_wpis = ?, kontrahent_grupa = ? WHERE operacja_id = ?',
                     zmiany)
-    con.executemany('INSERT INTO wydatki_cel (kontrahent, obszar, kto, uzasadnienie, ocena, data_oceny, staly, wpis) VALUES (?,?,?,?,?,?,?,?)',
+    con.executemany('INSERT INTO wydatki_cel (kontrahent, obszar, kto, uzasadnienie, ocena, data_oceny, staly, roczna, wpis)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?)',
                     [(k, c.get('obszar', ''), c.get('kto', ''), c.get('uzasadnienie', ''), c.get('ocena', ''), c.get('data_oceny', ''),
-                      None if c.get('staly') is None else int(c['staly']), c.get('wpis', '')) for k, c in w['cel'].items()])
+                      None if c.get('staly') is None else int(c['staly']), None if c.get('roczna') is None else int(c['roczna']),
+                      c.get('wpis', '')) for k, c in w['cel'].items()])
     if w['obszary'] is not None:
         con.execute("INSERT OR REPLACE INTO meta VALUES ('obszary_wydatkow', ?)", (json.dumps(w['obszary'], ensure_ascii=False),))
 
@@ -388,14 +402,13 @@ def analiza(con, od=None, do=None) -> dict:
                           'udzial': round(100 * x['suma'] / razem, 1) if razem else None, 'kontrahenci': kontrahenci})
     po_kat = {x['klucz']: x for x in kategorie}
     suma = lambda klucze: sum(po_kat[k]['suma'] for k in klucze if k in po_kat)
-    sr = lambda k: po_kat[k]['srednia'] if k in po_kat else (0 if ok['pelne'] else None)
     stale = koszty_stale(con)
     kafle = {
         'koszt_pracy': {'suma': suma(KOSZT_PRACY), 'srednia': _srednia(_sumuj_mies(kategorie, KOSZT_PRACY), ok['pelne']),
                         'rozbicie': [{'klucz': k, 'nazwa': NAZWY[k], 'suma': suma([k])} for k in KOSZT_PRACY]},
         'podatki': {'suma': suma(PODATKI), 'rozbicie': [{'klucz': k, 'nazwa': NAZWY[k], 'suma': suma([k])} for k in PODATKI],
                     'w_koszcie_pracy': [{'klucz': k, 'nazwa': NAZWY[k], 'suma': suma([k])} for k in ('zus', 'pit4')]},
-        'narzedzia': {'srednia': sr('narzedzia'), 'suma': suma(['narzedzia']), 'miesiecy': len(ok['pelne'])},
+        'narzedzia': _narzedzia_mies(con, pl, ok),
         'stale': {'miesiecznie': stale['razem']['miesiecznie'], 'rocznie': stale['razem']['rocznie'], 'ile': len(stale['pozycje'])},
     }
     dd = do_decyzji(con, ok['od'], ok['do'])
@@ -403,6 +416,21 @@ def analiza(con, od=None, do=None) -> dict:
             'bez_klientow_vat': razem - suma(KLIENCI + ('vat',)),
             'do_decyzji': len(dd['nieprzypisane']) + len(dd['niezgodne']),
             'lista_kategorii': [{'klucz': k, 'nazwa': n} for k, n in KATEGORIE]}
+
+
+def _narzedzia_mies(con, pl, ok) -> dict:
+    """Narzędzia miesięcznie: płatności bieżące = suma z pełnych miesięcy okresu podzielona przez ich liczbę; opłaty roczne
+    (wydatki._roczne) zapłacone w okresie liczone jako 1/12 kwoty, niezależnie od miesiąca zapłaty. Ten sam podział co w kosztach stałych."""
+    roczne = _roczne(con, _dzien_stanu(con))
+    biezace = sum(p['kwota'] for p in pl if p['kategoria'] == 'narzedzia' and p['grupa'] not in roczne and p['data'][:7] in ok['pelne'])
+    rocz = [p for p in pl if p['kategoria'] == 'narzedzia' and p['grupa'] in roczne]
+    suma_roczne = sum(p['kwota'] for p in rocz)
+    n = len(ok['pelne'])
+    sr_biez = (biezace + n // 2) // n if n else None
+    return {'srednia': None if sr_biez is None else sr_biez + (suma_roczne + 6) // 12, 'biezace_mies': sr_biez,
+            'roczne': suma_roczne, 'roczne_mies': (suma_roczne + 6) // 12, 'roczne_ile': len(rocz),
+            'suma': sum(p['kwota'] for p in pl if p['kategoria'] == 'narzedzia'), 'miesiecy': n,
+            'od_miesiaca': ok['pelne'][0] if n else None, 'do_miesiaca': ok['pelne'][-1] if n else None}
 
 
 def _sumuj_mies(kategorie, klucze) -> dict:
@@ -421,72 +449,118 @@ def okno_stalych(dzien: str) -> list:
     return [_przesun(ost, -i) for i in (3, 2, 1, 0)]
 
 
-def koszty_stale(con) -> dict:
-    """Kontrahenci z płatnością w co najmniej 3 z 4 ostatnich pełnych miesięcy (albo opłata roczna: ta sama kwota ±10% rok
-    wcześniej), bez VAT, podziału zysku, zwrotów i kosztów klientów. Decyzja Mata (stały tak/nie) wygrywa."""
-    dzien = _dzien_stanu(con)
-    okno = okno_stalych(dzien)
-    okno3 = okno[1:]
-    cele = _cele(con)
+def _roczne(con, dzien: str, cele: dict | None = None) -> dict:
+    """Opłaty roczne: grupa -> płatność. Ręcznie (cel „roczna” tak/nie) albo automatycznie: narzędzie z jedną płatnością
+    w ostatnich 12 miesiącach, co najmniej PROG_ROCZNEJ, a w pozostałych miesiącach nic; albo ta sama kwota (±10%) rok wcześniej."""
+    cele = _cele(con) if cele is None else cele
+    od12 = _przesun(dzien[:7], -11)
     grupy = defaultdict(list)
     for p in _platnosci(con, do=dzien):
         if p['rodzaj'] not in POZA_STALYMI:
             grupy[p['grupa']].append(p)
-    pozycje = []
+    wynik = {}
     for g, ps in grupy.items():
+        recznie = cele.get(g, {}).get('roczna')
+        ostatnie = [p for p in ps if p['data'][:7] >= od12]
+        if recznie is not None:
+            if recznie and ostatnie:
+                wynik[g] = max(ostatnie, key=lambda p: p['kwota'])
+            continue
+        if not ostatnie:
+            continue
+        p = ostatnie[-1]
+        jedna = len({x['data'][:7] for x in ostatnie}) == 1 and len(ostatnie) == 1
+        if jedna and p['kategoria'] == 'narzedzia' and p['kwota'] >= PROG_ROCZNEJ:
+            wynik[g] = p
+            continue
+        if jedna:   # ta sama kwota ±10% 11 do 13 miesięcy wcześniej
+            for q in ps:
+                if _przesun(p['data'][:7], -13) <= q['data'][:7] <= _przesun(p['data'][:7], -11) and abs(q['kwota'] - p['kwota']) * 10 <= p['kwota']:
+                    wynik[g] = p
+    return wynik
+
+
+def _dzien_cyklu(ps) -> int | None:
+    dni = sorted(int(p['data'][8:10]) for p in ps)
+    return dni[len(dni) // 2] if dni else None
+
+
+def koszty_stale(con) -> dict:
+    """Koszty stałe (cykliczne), decyzja Mata 2026-10-20 po kontroli liczb:
+    - wykrycie: kontrahent × kategoria z płatnością w co najmniej 3 z 4 ostatnich pełnych miesięcy, bez VAT, podziału zysku,
+      zwrotów i kosztów klientów oraz bez kategorii nieregularnych z natury (podróże, reprezentacja, sprzęt);
+    - aktywny tylko z płatnością w ostatnim pełnym miesiącu albo w bieżącym; pozostali to „wygasłe” (data ostatniej płatności);
+    - koszt miesięczny = suma z ostatniego pełnego miesiąca (gdy wtedy nic, z bieżącego), roczny = × 12;
+    - opłata roczna (_roczne): miesięcznie 1/12 kwoty;
+    - ostatnia płatność = data ostatniej i suma jej miesiąca (wszystkie karty i zapisy kontrahenta w tej kategorii);
+    - flagi: zmiana kwoty ponad 50% (miesiąc z płatnością kontra poprzedni) i płatność poza zwykłym dniem cyklu (ponad 3 dni).
+    Decyzja Mata (stały tak/nie, roczna tak/nie) wygrywa z wykrywaniem."""
+    dzien = _dzien_stanu(con)
+    okno = okno_stalych(dzien)
+    ost_pelny, biezacy = okno[-1], dzien[:7]
+    cele = _cele(con)
+    roczne = _roczne(con, dzien, cele)
+    grupy = defaultdict(list)
+    for p in _platnosci(con, do=dzien):
+        if p['rodzaj'] not in POZA_STALYMI and p['kategoria'] not in POZA_STALYMI_KAT:
+            grupy[(p['grupa'], p['kategoria'])].append(p)
+    pozycje, wygasle = [], []
+    ile_kat = Counter(g for g, _ in grupy)
+    for (g, kat), ps in grupy.items():
         cel = cele.get(g, {})
+        staly = cel.get('staly')
         mies = defaultdict(int)
+        ile_mies = Counter()
         for p in ps:
             mies[p['data'][:7]] += p['kwota']
+            ile_mies[p['data'][:7]] += 1
         w_oknie = [m for m in okno if mies.get(m)]
-        ost = ps[-1]
-        roczny = None
-        if len(w_oknie) < 3:   # opłata roczna: płatność w ostatnich 3 miesiącach i ta sama kwota (±10%) 11 do 13 miesięcy wcześniej
-            for p in ps:
-                if p['data'][:7] < okno3[0]:
-                    continue
-                for q in ps:
-                    od_q = _przesun(p['data'][:7], -13)
-                    if od_q <= q['data'][:7] <= _przesun(p['data'][:7], -11) and abs(q['kwota'] - p['kwota']) * 10 <= p['kwota']:
-                        roczny = p
-        auto = len(w_oknie) >= 3 or roczny is not None
-        staly = cel.get('staly')
+        roczna = roczne.get(g)
+        if roczna is not None and roczna['kategoria'] != kat:
+            roczna = None
+        auto = len(w_oknie) >= 3 or roczna is not None
         if not (auto if staly is None else bool(staly)):
             continue
-        if roczny is not None and len(w_oknie) < 3:
-            rocznie, miesiecznie, sposob = roczny['kwota'], (roczny['kwota'] + 6) // 12, 'opłata roczna'
-        else:
-            mm = [m for m in okno3 if mies.get(m)] or [m for m in okno if mies.get(m)]
-            if mm:
-                miesiecznie = (sum(mies[m] for m in mm) + len(mm) // 2) // len(mm)
-            else:
-                miesiecznie = ost['kwota']
-            rocznie, sposob = miesiecznie * 12, f'{len(w_oknie)} z 4 mies.'
+        ost = ps[-1]
+        m_ost = ost['data'][:7]
+        wspolne = {'klucz': g if ile_kat[g] == 1 else f'{g}|{kat}', 'kontrahent': g,
+                   'nazwa': _nazwa_grupy(ps), 'kategoria': kat, 'kategoria_nazwa': NAZWY.get(kat, kat),
+                   'ostatnia_data': ost['data'], 'ostatnia_kwota': mies[m_ost], 'ostatnia_ile': ile_mies[m_ost],
+                   'obszar': cel.get('obszar') or '', 'kto': cel.get('kto') or '', 'uzasadnienie': cel.get('uzasadnienie') or '',
+                   'ocena': cel.get('ocena') or '', 'data_oceny': cel.get('data_oceny') or '',
+                   'staly_decyzja': None if staly is None else bool(staly), 'roczna_decyzja': cel.get('roczna')}
+        if roczna is not None:
+            pozycje.append({**wspolne, 'miesiecznie': (roczna['kwota'] + 6) // 12, 'rocznie': roczna['kwota'], 'roczna': True,
+                            'sposob': 'opłata roczna, 1/12' + (' (decyzja Mata)' if cel.get('roczna') else ''),
+                            'zmiana_ceny': None, 'flagi': [], 'miesiace_w_oknie': len(w_oknie)})
+            continue
+        if not (mies.get(ost_pelny) or mies.get(biezacy)):
+            wygasle.append({**wspolne, 'ostatni_koszt_mies': mies[m_ost],
+                            'powod': f'brak płatności w {ost_pelny} i {biezacy}' if ost_pelny != biezacy else f'brak płatności w {ost_pelny}'})
+            continue
+        miesiecznie = mies[ost_pelny] if mies.get(ost_pelny) else mies[biezacy]
+        sposob = f"{len(w_oknie)} z 4 mies., kwota z {ost_pelny if mies.get(ost_pelny) else biezacy}"
         if staly is not None:
-            sposob = 'decyzja Mata' + ('' if auto else ' (wykrywanie: nie)')
-        # Zmiana ceny: ostatnia płatność kontra poprzednia; gdy w miesiącu bywa kilka płatności, suma ostatniego miesiąca
-        # z płatnością kontra poprzedni (pojedyncze płatności w miesiącu porównane między sobą nic by nie mówiły).
-        ile_w_mies = Counter(p['data'][:7] for p in ps)
-        if max((ile_w_mies[m] for m in w_oknie), default=1) <= 1:
-            poprzednia, ostatnia, por = (ps[-2]['kwota'] if len(ps) > 1 else None), ost['kwota'], 'płatność'
-        else:
-            mm = sorted(m for m in mies if m <= okno[-1])
-            poprzednia, ostatnia, por = (mies[mm[-2]] if len(mm) > 1 else None), (mies[mm[-1]] if mm else 0), 'miesiąc'
-        zmiana = None
-        if poprzednia and abs(ostatnia - poprzednia) * 10 > poprzednia:
-            zmiana = {'poprzednia': poprzednia, 'ostatnia': ostatnia, 'proc': round(100 * (ostatnia - poprzednia) / poprzednia, 1),
-                      'porownanie': por}
-        kat = Counter()
-        for p in ps:
-            kat[p['kategoria']] += p['kwota']
-        k = kat.most_common(1)[0][0]
-        pozycje.append({'klucz': g, 'nazwa': _nazwa_grupy(ps), 'kategoria': k, 'kategoria_nazwa': NAZWY.get(k, k),
-                        'miesiecznie': miesiecznie, 'rocznie': rocznie, 'ostatnia_data': ost['data'], 'ostatnia_kwota': ost['kwota'],
-                        'zmiana_ceny': zmiana, 'sposob': sposob, 'miesiace_w_oknie': len(w_oknie),
-                        'obszar': cel.get('obszar') or '', 'kto': cel.get('kto') or '', 'uzasadnienie': cel.get('uzasadnienie') or '',
-                        'ocena': cel.get('ocena') or '', 'data_oceny': cel.get('data_oceny') or '',
-                        'staly_decyzja': None if staly is None else bool(staly)})
+            sposob = 'decyzja Mata' + ('' if auto else ' (wykrywanie: nie)') + f", kwota z {ost_pelny if mies.get(ost_pelny) else biezacy}"
+        # zmiana kwoty: ostatni miesiąc z płatnością kontra poprzedni (sumy miesięcy, więc kilka kart naraz się nie myli)
+        mm = sorted(m for m in mies if m <= biezacy)
+        poprzednia = mies[mm[-2]] if len(mm) > 1 else None
+        zmiana, flagi = None, []
+        if poprzednia:
+            proc = round(100 * (mies[mm[-1]] - poprzednia) / poprzednia, 1)
+            if abs(mies[mm[-1]] - poprzednia) * 10 > poprzednia:
+                zmiana = {'poprzednia': poprzednia, 'ostatnia': mies[mm[-1]], 'proc': proc, 'miesiac': mm[-1], 'poprzedni_miesiac': mm[-2]}
+            if abs(mies[mm[-1]] - poprzednia) * 2 > poprzednia:
+                flagi.append('zmiana kwoty')
+        typowo = sorted(ile_mies[m] for m in w_oknie)
+        if typowo and typowo[len(typowo) // 2] <= 1 and len(ps) > 1:   # cykl liczymy tylko przy jednej płatności w miesiącu
+            dzien_c = _dzien_cyklu(ps[:-1][-6:])
+            if dzien_c is not None and abs(int(ost['data'][8:10]) - dzien_c) > 3:
+                flagi.append('poza cyklem')
+        pozycje.append({**wspolne, 'miesiecznie': miesiecznie, 'rocznie': miesiecznie * 12, 'roczna': False, 'sposob': sposob,
+                        'zmiana_ceny': zmiana, 'flagi': flagi, 'miesiace_w_oknie': len(w_oknie)})
     pozycje.sort(key=lambda x: -x['miesiecznie'])
+    wygasle.sort(key=lambda x: x['ostatnia_data'], reverse=True)
 
     def wg(pole):
         s = defaultdict(lambda: [0, 0, 0])
@@ -494,7 +568,8 @@ def koszty_stale(con) -> dict:
             k = x[pole] or ''
             s[k][0] += x['miesiecznie']; s[k][1] += x['rocznie']; s[k][2] += 1
         return sorted(({'nazwa': k, 'miesiecznie': a, 'rocznie': b, 'ile': c} for k, (a, b, c) in s.items()), key=lambda y: -y['miesiecznie'])
-    return {'dzien_stanu': dzien, 'okno': okno, 'pozycje': pozycje, 'wg_obszaru': wg('obszar'), 'wg_osoby': wg('kto'),
+    return {'dzien_stanu': dzien, 'okno': okno, 'ostatni_pelny': ost_pelny, 'pozycje': pozycje, 'wygasle': wygasle,
+            'wg_obszaru': wg('obszar'), 'wg_osoby': wg('kto'),
             'razem': {'miesiecznie': sum(x['miesiecznie'] for x in pozycje), 'rocznie': sum(x['rocznie'] for x in pozycje)},
             'obszary': obszary(con), 'oceny': OCENY}
 
@@ -541,7 +616,9 @@ def kontrahent(con, klucz: str, od=None, do=None) -> dict:
         raise ValueError('nie ma takiego kontrahenta w wydatkach')
     from .klienci import RODZAJE
     cel = _cele(con).get(klucz, {})
-    stale = {x['klucz']: x for x in koszty_stale(con)['pozycje']}
+    ks = koszty_stale(con)
+    stale = sorted((x for x in ks['pozycje'] if x['kontrahent'] == klucz), key=lambda x: -x['miesiecznie'])
+    wygasly = next((x for x in ks['wygasle'] if x['kontrahent'] == klucz), None)
     kat = Counter(p['kategoria'] for p in wszystkie).most_common(1)[0][0]
     regula = con.execute('SELECT 1 FROM wydatki WHERE kontrahent_grupa = ? AND kategoria_zrodlo LIKE ?', (klucz, 'reguła Mata%')).fetchone()
     return {**ok, 'klucz': klucz, 'nazwa': _nazwa_grupy(wszystkie), 'kategoria': kat,
@@ -553,8 +630,8 @@ def kontrahent(con, klucz: str, od=None, do=None) -> dict:
                                                  'plik', 'wiersz', 'kontrahent')},
                            'rodzaj_nazwa': RODZAJE.get(p['rodzaj'], p['rodzaj']), 'kategoria_nazwa': NAZWY.get(p['kategoria'], p['kategoria']),
                            'zgodna': zgodna(p['kategoria'], p['rodzaj'])} for p in reversed(pl)],
-            'cel': {k: cel.get(k) for k in ('obszar', 'kto', 'uzasadnienie', 'ocena', 'data_oceny', 'staly', 'wpis')},
-            'staly': stale.get(klucz), 'obszary': obszary(con), 'oceny': OCENY, 'osoby': osoby(con),
+            'cel': {k: cel.get(k) for k in ('obszar', 'kto', 'uzasadnienie', 'ocena', 'data_oceny', 'staly', 'roczna', 'wpis')},
+            'staly': stale[0] if stale else None, 'wygasly': wygasly, 'obszary': obszary(con), 'oceny': OCENY, 'osoby': osoby(con),
             'lista_kategorii': [{'klucz': k, 'nazwa': n} for k, n in KATEGORIE]}
 
 
