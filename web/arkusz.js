@@ -21,7 +21,7 @@ const NOWY = { rodzaj: -1, podstawa: 'Faktura (jedna)', stawka_vat: 23, dzien_wy
 // Kolumny opisu i ustawień wiersza: wygląd, sortowanie, tekst do schowka i rodzaj edycji (A-ARK-14).
 const KOL = {
   podstawa: { naglowek: 'Podstawa płatności', typ: 'lista', pole: 'podstawa', html: w => esc(w.podstawa), sort: w => w.podstawa, tekst: w => w.podstawa },
-  vat: { naglowek: 'VAT', typ: 'lista', pole: 'stawka_vat', klasa: 'liczba-kol', html: w => jestFaktura(w) ? stawka(w.stawka_vat) : '-',
+  vat: { naglowek: 'VAT', podpowiedz: 'Stawka VAT (23%, 8%, zw., np.). Kwotę VAT apka liczy sama z netto.', typ: 'lista', pole: 'stawka_vat', klasa: 'liczba-kol', html: w => jestFaktura(w) ? stawka(w.stawka_vat) : '-',
     sort: w => stawkaStd(w.stawka_vat) ?? -1, tekst: w => jestFaktura(w) ? String(stawkaStd(w.stawka_vat) ?? '') : '' },
   dzien: { naglowek: 'Dzień wystaw.', typ: 'dzien', pole: 'dzien_wystawienia', html: w => esc(w.dzien_opis), sort: w => w.dzien_opis,
     tekst: w => WOREK.includes(w.podstawa) ? '' : (w.dzien_wystawienia || '') },
@@ -210,18 +210,19 @@ function arkuszTabela(d, p) {
     <tr class="ark-suma pierwszy"><th class="etyk" colspan="${nOpis}">=</th>${d.podsumowanie.map(s => `<th>${zl(s.saldo, false)}</th>`).join('')}<th class="sep">${zl(sumaCala, false)}</th></tr>
     <tr class="ark-suma"><th class="etyk" colspan="${nOpis}"><span class="plus">↗</span><br><span class="minus">↘</span></th>${d.podsumowanie.map(s => `<th><span class="plus">${zl(s.wplywy, false)}</span><br><span class="minus">${zl(s.obciazenia, false)}</span></th>`).join('')}
       <th class="sep"><span class="plus">${zl(wp, false)}</span><br><span class="minus">${zl(ob, false)}</span></th></tr>
-    <tr class="ark-kol"><th class="lp">${d.planowanie && d.wiersze.length ? '<input type="checkbox" id="ark-wszystkie" aria-label="Zaznacz wszystkie wiersze">' : ''}</th>${kolumny.map(k => `<th class="sort${KOL[k].klasa === 'liczba-kol' ? ' liczba-kol' : ''}${KOL[k].klasa === 'sep' ? ' sep' : ''}" data-sort="${k}"${p.sortuj === k ? ` data-kierunek="${p.kolejnosc === 'malejaco' ? 'malejaco' : 'rosnaco'}"` : ''}>${KOL[k].naglowek}</th>`).join('')}
+    <tr class="ark-kol"><th class="lp">${d.planowanie && d.wiersze.length ? '<input type="checkbox" id="ark-wszystkie" aria-label="Zaznacz wszystkie wiersze">' : ''}</th>${kolumny.map(k => `<th class="sort${KOL[k].klasa === 'liczba-kol' ? ' liczba-kol' : ''}${KOL[k].klasa === 'sep' ? ' sep' : ''}" data-sort="${k}"${KOL[k].podpowiedz ? ` title="${esc(KOL[k].podpowiedz)}"` : ''}${p.sortuj === k ? ` data-kierunek="${p.kolejnosc === 'malejaco' ? 'malejaco' : 'rosnaco'}"` : ''}>${KOL[k].naglowek}</th>`).join('')}
       ${m.map(() => '<th></th>').join('')}<th class="sep"></th></tr>`;
   setTimeout(podepnijArkusz);
   return `<div class="ark-pasek">
       <label class="pole-grupuj">Grupuj wiersze wg<select id="ark-grupuj">${Object.entries(GRUPY_ARK).map(([v, t]) => `<option value="${v}"${v === grupuj ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-      <label class="przelacznik"><input type="checkbox" id="ark-sekcje"${sekcje ? ' checked' : ''}><span class="suwak"></span>Sekcje</label>
-      <label class="przelacznik"><input type="checkbox" id="ark-ustawienia"${ust ? ' checked' : ''}><span class="suwak"></span>Ustawienia planowanych płatności</label>
+      <label class="przelacznik"><input type="checkbox" id="ark-sekcje"${sekcje ? ' checked' : ''}><span class="suwak"></span>Sekcje</label>${pytajnik('ark_sekcje')}
+      <label class="przelacznik"><input type="checkbox" id="ark-ustawienia"${ust ? ' checked' : ''}><span class="suwak"></span>Ustawienia planowanych płatności</label>${pytajnik('ark_ustawienia')}
       <span class="prawo"></span>
       ${d.planowanie ? `<button class="przycisk" id="dodaj-wiersz" title="Pełny formularz wiersza (także umowy z kwotami od księgowej)">Dodaj wiersz ${ik('plus')}</button>` : ''}
       <button class="przycisk" id="ark-karta" disabled data-karta title="Cmd+Enter albo Cmd+dwuklik na komórce">Otwórz kartę płatności</button></div>
     ${d.planowanie ? '<p class="notka ark-podpowiedz">Klik zaznacza komórkę, strzałki i Tab przesuwają zaznaczenie. Wpisz kwotę albo naciśnij Enter, żeby edytować; Cmd+Enter otwiera kartę płatności, Cmd+C i Cmd+V kopiują i wklejają (także blok z Excela), Cmd+Z cofa ostatnią zmianę.</p>'
       : d.systemowy ? '' : `<p class="notka">${TEKST_PODGLADU} Do tego czasu plany pochodzą z Budget Studio, tylko do odczytu.</p>`}
+    ${!d.planowanie && !d.systemowy && ust ? '<p class="notka ark-notka-ustawien">Kolumny ustawień są na razie tylko do podglądu: pokazują, jak każdy wiersz jest ustawiony w Budget Studio. Edytować je możesz po włączeniu planowania w apce (od 1.11): Budżet, Ustawienia budżetu, przycisk „Włącz planowanie w apce”.</p>' : ''}
     <div class="legenda-stany"><span><i class="plany"></i>tylko plany</span><span><i class="rzecz"></i>rzeczywiste</span><span><i class="mieszana"></i>plany i rzeczywiste</span><span><i class="po"></i>rzeczywiste po terminie</span>
       <span><i class="wg-bs"></i>opłacone tylko wg BS</span><span><span class="kropka czerwona"></span>nieaktualna, wymaga uwagi</span><span><span class="kropka zielona"></span>jest opłacona</span></div>
     <div class="tabela-ramka arkusz" id="ark-tabela"><table class="ark"><thead>${thead}</thead><tbody>${tbody || `<tr><td colspan="${nOpis + m.length + 1}" class="pusto">Arkusz nie ma wierszy.</td></tr>`}</tbody></table></div>

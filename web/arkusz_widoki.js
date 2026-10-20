@@ -19,6 +19,16 @@ async function odczyt(sciezka, parametry = {}) {
 }
 
 Object.assign(POMOC, {
+  ark_sekcje: { tytul: 'Sekcje w arkuszu', krotko: 'Grupuje wiersze arkusza po polu Sekcja i pokazuje sumę każdej grupy.',
+    co: 'Sekcja to Twój podział wierszy w arkuszu, np. „Zespół” i „Narzędzia”. Po włączeniu przełącznika wiersze z tą samą sekcją stoją razem, a nad każdą grupą jest jej suma w miesiącach.',
+    skad: 'Pole Sekcja każdego wiersza (kolumna Sekcja w arkuszu), z Budget Studio albo ustawione w apce.',
+    jak: 'Wiersz bez sekcji ma w kolumnie „-”. Gdy żaden wiersz nie ma sekcji, po włączeniu widać jedną grupę „bez sekcji”, więc tabela wygląda prawie tak samo.',
+    zrob: 'Żeby podzielić arkusz, ustaw sekcję w kolumnie Sekcja przy wierszach (kliknij komórkę i wybierz albo wpisz nazwę). Przełącznik tylko pokazuje podział, niczego nie zmienia.' },
+  ark_ustawienia: { tytul: 'Ustawienia planowanych płatności', krotko: 'Pokazuje kolumny, z których apka tworzy plany płatności dla każdego wiersza.',
+    co: 'Kolumny: podstawa płatności (faktura, bez faktury, worek), stawka VAT, dzień wystawienia, dni na płatność, metoda płatności, split payment, Księgowane (czy wchodzi do rentowności) i W cash flow (czy wchodzi do prognozy gotówki).',
+    skad: 'Ustawienia wierszy z Budget Studio; po włączeniu planowania w apce zmieniasz je tutaj.',
+    jak: 'Z kwoty w komórce i tych ustawień apka liczy datę i kwotę płatności: dzień wystawienia plus dni na płatność daje termin, stawka VAT daje kwotę brutto. Przełącznik tylko pokazuje albo chowa kolumny.',
+    zrob: 'Gdy planowanie w apce jest wyłączone (do 1.11), kolumny są tylko do podglądu. Włączysz je w Budżet, Ustawienia budżetu.' },
   widoki_arkusza: { tytul: 'Widoki i przypięte arkusze', krotko: 'Zapisz ustawienia arkusza pod nazwą i zostaw w drzewie Budżetu tylko ważne arkusze.',
     co: 'Widok pamięta grupowanie, sortowanie, sekcje, kolumny ustawień i serie wykresu. Każdy arkusz ma własne widoki; Widok główny to arkusz bez zmian. Pinezka przy nazwie przypina albo odpina arkusz w drzewie w menu Budżet (bez decyzji arkusz jest przypięty).',
     skad: 'Twoje zapisy w pliku zmian tego Maca (widok, zmiana arkusza), więc drugi Mac widzi to samo.',
