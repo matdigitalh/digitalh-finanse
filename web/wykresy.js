@@ -387,6 +387,7 @@ const Wykresy = (() => {
       const kres = (id, c) => { const pt = el('pattern', { id, width: 4, height: 4, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
         el('rect', { width: 4, height: 4, fill: c, 'fill-opacity': .18 }, pt); el('line', { x1: 0, y1: 0, x2: 0, y2: 4, stroke: c, 'stroke-width': 2.2 }, pt); };
       kres(`bs-k-plus-${nr}`, k('--wyk-plus')); kres(`bs-k-minus-${nr}`, k('--wyk-minus'));
+      kres(`bs-k-umowa-${nr}`, k('--wyk-umowa')); kres(`bs-k-szacunek-${nr}`, k('--szary-seria'));   // pakiet 9: z umowy, szacunek
       const grad = (id, c, gora) => { const g = el('linearGradient', { id, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
         el('stop', { offset: '0%', 'stop-color': c, 'stop-opacity': gora ? .22 : .02 }, g); el('stop', { offset: '100%', 'stop-color': c, 'stop-opacity': gora ? .02 : .22 }, g); };
       grad(`bs-g-plus-${nr}`, k('--wyk-plus'), true); grad(`bs-g-minus-${nr}`, k('--wyk-minus'), false);
@@ -416,13 +417,16 @@ const Wykresy = (() => {
         const c = cx(i);
         if (serie.saldo && x.saldo) slupek(c - bw - 1, 0, x.saldo, `url(#bs-k-${x.saldo > 0 ? 'plus' : 'minus'}-${nr})`);
         const xs = serie.saldo ? c + 1 : c - bw / 2;
+        // od osi: rzeczywiste (pełne), plany (jaśniejsze), z umowy i szacunek (kreskowane, własny kolor; pakiet 9)
         if (serie.wplywy && x.wplywy) {
-          const rz = x.wplywy - (x.wplywy_plan || 0);
-          slupek(xs, 0, rz, `url(#bs-s-plus-${nr})`); slupek(xs, rz, x.wplywy, k('--wyk-plus'), .45);
+          const um = x.wplywy_umowa || 0, rz = x.wplywy - (x.wplywy_plan || 0) - um;
+          slupek(xs, 0, rz, `url(#bs-s-plus-${nr})`); slupek(xs, rz, rz + (x.wplywy_plan || 0), k('--wyk-plus'), .45);
+          slupek(xs, x.wplywy - um, x.wplywy, `url(#bs-k-umowa-${nr})`);
         }
         if (serie.obciazenia && x.obciazenia) {
-          const rz = x.obciazenia - (x.obciazenia_plan || 0);
-          slupek(xs, 0, rz, `url(#bs-s-minus-${nr})`); slupek(xs, rz, x.obciazenia, k('--wyk-minus'), .45);
+          const sz = x.obciazenia_szacunek || 0, rz = x.obciazenia - (x.obciazenia_plan || 0) - sz;
+          slupek(xs, 0, rz, `url(#bs-s-minus-${nr})`); slupek(xs, rz, rz + (x.obciazenia_plan || 0), k('--wyk-minus'), .45);
+          slupek(xs, x.obciazenia - sz, x.obciazenia, `url(#bs-k-szacunek-${nr})`);
         }
       });
       // linia salda narastającego z polem
@@ -452,7 +456,9 @@ const Wykresy = (() => {
             { nazwa: 'Saldo okresu', wartosc: pelna(x.saldo) },
             { nazwa: 'Wpływy', wartosc: pelna(x.wplywy), kolor: k('--wyk-plus'), suma: true },
             { nazwa: 'Obciążenia', wartosc: pelna(x.obciazenia), kolor: k('--wyk-minus') },
-            ...(x.wplywy_plan || x.obciazenia_plan ? [{ nazwa: 'w tym plany', wartosc: pelna((x.wplywy_plan || 0) + (x.obciazenia_plan || 0)) }] : [])], cx(i), m.t + 30);
+            ...(x.wplywy_plan || x.obciazenia_plan ? [{ nazwa: 'w tym plany', wartosc: pelna((x.wplywy_plan || 0) + (x.obciazenia_plan || 0)) }] : []),
+            ...(x.wplywy_umowa ? [{ nazwa: 'w tym z umowy', wartosc: pelna(x.wplywy_umowa), kolor: k('--wyk-umowa') }] : []),
+            ...(x.obciazenia_szacunek ? [{ nazwa: 'w tym szacunek', wartosc: pelna(x.obciazenia_szacunek), kolor: k('--szary-seria') }] : [])], cx(i), m.t + 30);
         });
         r.addEventListener('pointerleave', () => { r.classList.remove('aktywna'); pp.ukryj(); });
         if (opcje.naKlik) r.addEventListener('click', () => opcje.naKlik(i));

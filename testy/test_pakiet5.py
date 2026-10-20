@@ -309,7 +309,8 @@ class TestOplaconaINiewymagana(Baza5):
             "SELECT p.bs_id, s.etap FROM bud_platnosc p JOIN bud_stan s ON s.platnosc = p.id WHERE p.bs_id IN ('8', '9', '10', '11')")}
         self.assertEqual(etapy, {'8': 'Planowana', '9': 'Planowana', '10': 'Opłacona wg BS', '11': 'Planowana'})
         ids = {r[0] for r in self.con.execute("SELECT id FROM bud_platnosc WHERE bs_id IN ('8', '9', '11')")}
-        zd, _ = cashflow._zdarzenia(self.con, cashflow._d(DZIS), cashflow._d('2027-03-31'))
+        # pakiet 9: pozycje cash flow po dniu stanu (scenariusz pełny: zaległości też na liście)
+        zd = cashflow.pozycje(self.con, cashflow._d(DZIS), None, cashflow._d('2027-03-31'), cashflow.parametry(scenariusz='pelny'))['pozycje']
         self.assertLessEqual(ids, {z['zrodlo'] for z in zd})
 
 
@@ -396,7 +397,8 @@ class TestListaPlac(Baza5):
     def test_przyszle_pit_i_zus_w_cashflow_do_wpisu_listy_plac(self):
         """Test regresji: plany wynagrodzeń (w tym PIT i ZUS) zostają w cash flow, dopóki nie ma listy płac; przelew z banku
         nie zamyka planu (tylko podpowiada); żaden import BS go nie zamyka."""
-        zd, _ = cashflow._zdarzenia(self.con, cashflow._d(DZIS), cashflow._d('2027-03-31'))
+        # pakiet 9: pozycje cash flow po dniu stanu (scenariusz pełny: zaległości też na liście)
+        zd = cashflow.pozycje(self.con, cashflow._d(DZIS), None, cashflow._d('2027-03-31'), cashflow.parametry(scenariusz='pelny'))['pozycje']
         w_cf = {z['zrodlo'] for z in zd}
         for m in ('2026-10', '2026-11'):
             for s in ('osoba', 'us', 'zus'):

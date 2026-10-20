@@ -105,7 +105,8 @@ class TestCashflowOkresy(unittest.TestCase):
         for o in w['okresy']:
             self.assertLessEqual(o['wplywy_plan'], o['wplywy'])
             self.assertGreaterEqual(o['obciazenia_plan'], o['obciazenia'])
-        self.assertIn('faktura', {z['typ'] for z in w['pozycje']})
+        # pakiet 9 (decyzja 8): domyślnie jak w BS tylko płatności budżetu; należności spoza budżetu to opcja
+        self.assertEqual({z['typ'] for z in w['pozycje']}, {'plan'})
 
     def test_arkusz_tylko_jego_pozycje(self):
         aid = self.con.execute("SELECT id FROM bud_arkusz WHERE nazwa = 'Obsługa stała Alfa'").fetchone()[0]

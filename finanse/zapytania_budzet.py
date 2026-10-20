@@ -130,7 +130,13 @@ def arkusz(con, aid: str) -> dict:
     return {'arkusz': a, 'miesiace': miesiace, 'wiersze': wiersze, 'podsumowanie': podsumowanie,
             'planowanie': planowanie(con) and not systemowy, 'systemowy': systemowy,
             'arkusze': inne, 'podstawy': reguly.PODSTAWY_WIERSZA, 'slowniki': slowniki(con), 'wzorce': wzorce_kontrahentow(con, aid),
-            'poza_zakresem': poza_zakresem, 'limit_wierszy': 1000}
+            'poza_zakresem': poza_zakresem, 'limit_wierszy': 1000,
+            'umowa': _umowa_arkusza(con, aid)}   # pakiet 9: umowa klienta, brak umowy, plany po końcu umowy
+
+
+def _umowa_arkusza(con, aid: str) -> dict:
+    from .umowy import dla_arkusza
+    return dla_arkusza(con, aid)
 
 
 def _stawka(s):

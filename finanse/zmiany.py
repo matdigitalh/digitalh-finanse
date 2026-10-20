@@ -649,9 +649,27 @@ def _sprawdz_umowe(d: dict) -> dict:
         raise ValueError('okres wypowiedzenia, alert i wartość muszą być liczbami')
     if not (0 <= okres <= 24 and 0 <= alert <= 365 and 0 <= wartosc < 10 ** 10):
         raise ValueError('wartości poza zakresem')
-    return {'id': d['id'], 'klient': klient, 'zawarta': data('zawarta'), 'rodzaj': rodzaj, 'do': data('do'),
-            'wypowiedzenie_mies': okres, 'koniec_miesiaca': bool(d.get('koniec_miesiaca', True)), 'przedluzenie': bool(d.get('przedluzenie')),
-            'wartosc_mies': wartosc, 'alert_dni': alert, 'uwagi': str(d.get('uwagi') or '')[:300]}
+    wynik = {'id': d['id'], 'klient': klient, 'zawarta': data('zawarta'), 'rodzaj': rodzaj, 'do': data('do'),
+             'wypowiedzenie_mies': okres, 'koniec_miesiaca': bool(d.get('koniec_miesiaca', True)), 'przedluzenie': bool(d.get('przedluzenie')),
+             'wartosc_mies': wartosc, 'alert_dni': alert, 'uwagi': str(d.get('uwagi') or '')[:300]}
+    # pakiet 9: powiązanie z budżetem (folder klienta, arkusze przychodowe; brak listy = wszystkie arkusze folderu z wpływami)
+    # i okres wypowiedzenia z naszej strony, gdy inny niż klienta. Stare wpisy bez tych pól działają jak dotąd.
+    if d.get('folder') not in (None, ''):
+        wynik['folder'] = _niepusty(80)(d['folder'], 'folder')
+    if d.get('arkusze') not in (None, ''):
+        ark = d['arkusze']
+        if not isinstance(ark, list) or len(ark) > 100 or not all(isinstance(x, str) and 0 < len(x) <= 80 for x in ark):
+            raise ValueError('arkusze umowy: lista identyfikatorów arkuszy')
+        wynik['arkusze'] = list(dict.fromkeys(ark))
+    if d.get('wypowiedzenie_mies_my') not in (None, ''):
+        try:
+            my = int(d['wypowiedzenie_mies_my'])
+        except (TypeError, ValueError):
+            raise ValueError('okres wypowiedzenia z naszej strony musi być liczbą')
+        if not 0 <= my <= 24:
+            raise ValueError('okres wypowiedzenia z naszej strony: od 0 do 24 miesięcy')
+        wynik['wypowiedzenie_mies_my'] = my
+    return wynik
 
 
 def _sprawdz_widok(d: dict) -> dict:

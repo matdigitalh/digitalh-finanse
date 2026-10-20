@@ -6,7 +6,8 @@
 // Sekcja: {grupa: 'Wygląd'} albo {klucz, etykieta, typ, wartosc, zmieniona, ...}:
 //   radio   opcje: {wartość: tekst}
 //   select  opcje: [[wartość, tekst]]
-//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę
+//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę;
+//           opis pod listą; puste i wszystkie: opis w nagłówku, gdy nic albo wszystko zaznaczone (domyślnie „Wszystko”)
 //   tekst   placeholder, opis
 //   zakres  wartosc: {od, do} (dwa pola dat)
 //   data    filtr daty BS (tryby: wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy);
@@ -65,7 +66,7 @@ function opisDaty(spec, miesieczny = false) {
 function opisSekcji(s, w) {
   if (s.typ === 'radio') return s.opcje[w] ?? s.opcje[''] ?? '';
   if (s.typ === 'select') return (s.opcje.find(([v]) => String(v) === String(w)) || ['', ''])[1];
-  if (s.typ === 'multi') return !w.length || w.length === s.opcje.length ? 'Wszystko'
+  if (s.typ === 'multi') return !w.length ? (s.puste ?? 'Wszystko') : w.length === s.opcje.length ? (s.wszystkie ?? 'Wszystko')
     : w.length <= 2 ? w.map(v => (s.opcje.find(([x]) => x === v) || [v, v])[1]).join(', ') : `${w.length} z ${s.opcje.length}`;
   if (s.typ === 'tekst') return w || s.puste || '';
   if (s.typ === 'zakres') return `${dataPl(w.od)} - ${dataPl(w.do)}`;
@@ -81,7 +82,7 @@ function htmlSekcji(s) {
   if (s.typ === 'select') return `<select name="${n}">${s.opcje.map(([v, t]) => `<option value="${esc(v)}"${String(s.wartosc) === String(v) ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
   if (s.typ === 'multi') return `${s.szukaj ? `<input type="text" class="pf-szukaj" placeholder="Wyszukaj" aria-label="Zawęź listę: ${esc(s.etykieta)}">` : ''}
     <div class="pf-akcje"><button type="button" data-pf="wszystkie">Zaznacz wszystkie</button><button type="button" data-pf="wyczysc">Wyczyść</button></div>
-    <div class="pf-lista">${s.opcje.map(([v, t]) => `<label data-t="${esc(String(t).toLowerCase())}"><input type="checkbox" name="${n}" value="${esc(v)}"${s.wartosc.includes(v) ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>`;
+    <div class="pf-lista">${s.opcje.map(([v, t]) => `<label data-t="${esc(String(t).toLowerCase())}"><input type="checkbox" name="${n}" value="${esc(v)}"${s.wartosc.includes(v) ? ' checked' : ''}>${esc(t)}</label>`).join('')}</div>${s.opis ? `<span class="szary">${esc(s.opis)}</span>` : ''}`;
   if (s.typ === 'tekst') return `<input type="text" name="${n}" inputmode="${s.inputmode || 'text'}" placeholder="${esc(s.placeholder || '')}" value="${esc(s.wartosc || '')}">${s.opis ? `<span class="szary">${esc(s.opis)}</span>` : ''}`;
   if (s.typ === 'zakres') return `<label>od <input type="date" name="${n}-od" value="${esc(s.wartosc.od || '')}"></label><label>do <input type="date" name="${n}-do" value="${esc(s.wartosc.do || '')}"></label>`;
   if (s.typ === 'kolumny') {

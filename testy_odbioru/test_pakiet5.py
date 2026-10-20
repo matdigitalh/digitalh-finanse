@@ -62,7 +62,8 @@ class OdbiorLaczenie(unittest.TestCase):
         self.assertFalse([x for x in niewym if x['etap'] in ('Opłacona wg BS',)], 'Niewymagana nie może być opłacona wg BS')
         przyszle = [x for x in niewym if (x['realny'] or x['termin'] or '') > dzis and x['w_cashflow'] and x['aktualna']
                     and x['etap'] not in ('Opłacona', 'Wystawiona', 'Częściowo opłacona')]
-        zd, _ = cashflow._zdarzenia(self.con, cashflow._d(dzis), cashflow._d(dzis) + cashflow.timedelta(days=400))
+        # pakiet 9: pozycje cash flow po dniu stanu (scenariusz pełny: zaległości też na liście)
+        zd = cashflow.pozycje(self.con, cashflow._d(dzis), None, cashflow._d(dzis) + cashflow.timedelta(days=400), cashflow.parametry(scenariusz='pelny'))['pozycje']
         w_cf = {z['zrodlo'] for z in zd}
         self.assertLessEqual({x['id'] for x in przyszle}, w_cf)
         wyn = [x for x in przyszle if x['podstawa'].startswith('Umowa')]

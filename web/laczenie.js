@@ -626,10 +626,16 @@ function podepnijCfLaczenie(poz) {
   if (!nag || nag.querySelector('#cf-odlacz')) return;
   nag.insertAdjacentHTML('beforeend', `<button class="przycisk miekki" id="cf-odlacz" data-karta>${ik('rozlacz')}Odłącz od budżetu</button>`);
   $('#cf-odlacz').onclick = async () => {
-    let mapa;
-    try { mapa = await api('laczenie/polaczone'); } catch (e) { return komunikat(e.message, true); }
+    let mapa, poz;
+    try {
+      mapa = await api('laczenie/polaczone');
+      poz = typeof CF_POZ === 'function' ? await CF_POZ() : CF_POZ;   // pakiet 9: cały wycinek z serwera
+    } catch (e) { return komunikat(e.message, true); }
     const dok = {};
-    for (const x of CF_POZ) if (x.typ === 'plan' && mapa[x.zrodlo]) (dok[mapa[x.zrodlo]] ||= []).push(x);
+    for (const x of poz) {   // płatności budżetu: plan albo rzeczywista (podział z pakietu 9)
+      const id = x.zrodlo || x.id;
+      if ((x.typ === 'plan' || x.typ === 'rzeczywista') && mapa[id]) (dok[mapa[id]] ||= []).push(x);
+    }
     const refs = Object.keys(dok);
     if (!refs.length) return komunikat('W tym wycinku nie ma płatności połączonych w apce (z Do połączenia, zamiany planu albo listy płac).');
     formularzAkcji('Odłącz od budżetu', `Płatności połączone w apce w tym wycinku: ${refs.length}. Zaznaczone wrócą do Do połączenia (lista płac i zamiana planu: wraca plan), w komórkach znów pojawią się plany. Jedna seria, cofasz całość.`,

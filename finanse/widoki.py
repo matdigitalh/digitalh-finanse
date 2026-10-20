@@ -7,7 +7,8 @@ Cofnięcie wpisu (także całej serii) przywraca stan sprzed niego."""
 import json
 
 # Listy z zapisanymi widokami (klucz ekranu w zdarzeniu „widok”)
-EKRANY = ('platnosci', 'bank', 'faktury', 'naleznosci', 'zakupy', 'wplaty', 'do_weryfikacji', 'wydatki', 'do_polaczenia')
+EKRANY = ('platnosci', 'bank', 'faktury', 'naleznosci', 'zakupy', 'wplaty', 'do_weryfikacji', 'wydatki', 'do_polaczenia',
+          'cashflow')   # pakiet 9: zapisane widoki cash flow (zakres, granulacja, filtry, kolumny listy, serie wykresu)
 # Co można przenieść do Do weryfikacji: rodzaj obiektu → czym jest ref
 OBIEKTY = {'operacja': 'klucz operacji z banku', 'faktura': 'numer faktury', 'zakup': 'numer ewidencyjny dokumentu z rejestru',
            'platnosc': 'identyfikator płatności budżetu', 'reczna': 'płatność dodana ręcznie (pakiet 5)'}

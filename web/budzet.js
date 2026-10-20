@@ -47,11 +47,6 @@ Object.assign(POMOC, {
     skad: 'Import z eksportu BS kontra wpłaty, wydatki i faktury w apce.',
     jak: 'Koszty pracy, VAT i podatek dochodowy porównujemy sumą w miesiącu płatności, bo BS trzyma koszt pracodawcy w jednej kwocie.',
     zrob: 'Przejrzyj największe kwoty. Dopóki Budget Studio jest źródłem planów, poprawki robisz w BS.' },
-  cashflow: { tytul: 'Cash flow', krotko: 'Saldo gotówki w okresach (dzień, tydzień, miesiąc): co wpłynie, co wypłynie i ile zostanie.',
-    co: 'Tabela okresów: saldo narastająco, saldo okresu, wpływy, obciążenia; zielona ramka to najwyższe saldo, czerwona najniższe. Pod nią miniatura całego zakresu z ramką do wyboru wycinka, wykres i lista płatności wycinka.',
-    skad: 'Przed dniem stanu: przepływy z banku ING (rachunek główny i online). Po nim prognoza: należności z Fakturowni w terminie przesuniętym o średnie spóźnienie nabywcy, plany przychodów i kosztów z budżetu, a gdy w miesiącu brak planu kosztów, szacunek kosztów pracy i stałych ze średniej 6 miesięcy.',
-    jak: 'Scenariusz ostrożny pomija należności i plany już po terminie; pełny liczy je za 7 dni. Saldo startowe: gotówka z banku na koniec dnia przed zakresem, chyba że wpiszesz własne. Tydzień od wtorku do poniedziałku, jak w Budget Studio.',
-    zrob: 'Patrz na MIN w lewym kafelku: to poziom bezpieczeństwa. Plany po terminie rozstrzygnij, żeby nie wisiały. Przeciągnij ramkę na miniaturze, żeby obejrzeć inny wycinek.' },
 });
 
 // ---------- Drzewo arkuszy ----------
@@ -145,7 +140,7 @@ Object.assign(WIDOKI, {
         <button role="tab" data-zakl="platnosci" aria-selected="${zakl === 'platnosci'}">${ik('fale')}Płatności</button>
         <button role="tab" data-zakl="cashflow" aria-selected="${zakl === 'cashflow'}">${ik('fale')}Cash flow</button>
         <button role="tab" data-zakl="zarzadzaj" aria-selected="false" data-karta>${ik('zebatka')}Zarządzaj</button></div>
-      ${banerOsieroconych(0)}${d.systemowy ? `<p class="notka">Arkusz systemowy: VAT i podatek dochodowy liczy apka z budżetu, więc tu nic się nie edytuje.
+      ${banerOsieroconych(0)}${umowaArkuszaHtml(d.umowa)}${d.systemowy ? `<p class="notka">Arkusz systemowy: VAT i podatek dochodowy liczy apka z budżetu, więc tu nic się nie edytuje.
         Kwotę od biura i dzień realnej płatności wpiszesz w <a href="#/budzet/podatki">Budżet, Podatki i ZUS</a>.</p>` : ''}`;
     const tresc = zakl === 'cashflow' ? await widokCashflow(p, { arkusz: a.id, ark: a })
       : zakl === 'platnosci' ? await listaPlatnosci(p, { arkusz: a.id })   // lista z pakietu 7 (listy.js)
@@ -565,316 +560,107 @@ async function kartaArkusza(a, drzewo) {
 }
 
 // ---------- Rejestr umów z klientami ----------
+// Pakiet 9: umowa wskazuje folder klienta w budżecie i jego arkusze przychodowe (cash flow: pozycje „z umowy”, scenariusz
+// „klienci odchodzą”, ostrzeżenie o planach po końcu umowy). Kartę klienta z umową robi pakiet 11.
 Object.assign(POMOC, {
-  umowy: { tytul: 'Rejestr umów', krotko: 'Umowy z klientami i terminy wypowiedzenia, z alertem przed czasem.',
-    co: 'Każda umowa: klient, data zawarcia, czas określony albo nieokreślony, okres wypowiedzenia, wartość miesięczna.',
-    skad: 'Wpisujesz Ty; zapis w pliku zmian (oba Maki widzą to samo).',
-    jak: 'Określony z przedłużeniem: ostatni dzień na wypowiedzenie = koniec minus okres. Bez przedłużenia: data wygaśnięcia. Nieokreślony: najwcześniejszy koniec przy wypowiedzeniu dziś.',
-    zrob: 'Czerwone i żółte wiersze wymagają decyzji: przedłużyć, renegocjować albo wypowiedzieć.' },
+  umowy: { tytul: 'Rejestr umów', krotko: 'Umowy z klientami i terminy wypowiedzenia, z alertem przed czasem; powiązane z folderem klienta w budżecie.',
+    co: 'Każda umowa: klient i jego folder w budżecie, arkusze przychodowe, data zawarcia, czas określony albo nieokreślony, okres wypowiedzenia (osobno nasz, gdy inny), wartość miesięczna netto.',
+    skad: 'Wpisujesz Ty; zapis w pliku zmian (oba Maki widzą to samo). Stara umowa bez folderu jest dopasowana do folderu po nazwie klienta.',
+    jak: 'Określony z przedłużeniem: ostatni dzień na wypowiedzenie = koniec minus okres. Bez przedłużenia: data wygaśnięcia. Nieokreślony: najwcześniejszy koniec przy wypowiedzeniu dziś. Cash flow: gdy plany wpływów klienta się kończą, dolicza wartość z umowy (czas nieokreślony albo z przedłużeniem); po końcu umowy na czas określony nie dolicza, a plany po końcu oznacza ostrzeżeniem.',
+    zrob: 'Czerwone i żółte wiersze wymagają decyzji: przedłużyć, renegocjować albo wypowiedzieć. Klienci bez umowy są liczeni w cash flow tylko z planów.' },
 });
 const STAN_UMOWY = { 'minął': 'minus', alert: 'ostrzezenie', ok: 'plus', 'bez terminu': 'neutral' };
 
 Object.assign(WIDOKI, {
   async 'budzet/umowy'() {
     const d = await api('umowy');
+    const obie = (o, pole) => o[pole].klient === o[pole].my ? dataPl(o[pole].klient) : `klient ${dataPl(o[pole].klient)}, my ${dataPl(o[pole].my)}`;
     const wiersze = d.umowy.map((u, i) => `<tr data-i="${i}"><td><span class="chip ${STAN_UMOWY[u.stan]}">${esc(u.stan)}</span></td><td>${esc(u.klient)}</td>
+      <td>${u.folder ? esc(u.folder) : '<span class="chip ostrzezenie">brak folderu</span>'}${u.folder_zrodlo && u.folder_zrodlo !== 'wpis' ? `<div class="szary">${esc(u.folder_zrodlo)}</div>` : ''}
+        <div class="szary">${u.arkusze.length ? esc(u.arkusze.map(a => a.nazwa).join(', ')) : 'bez arkuszy przychodowych'}</div></td>
       <td>${u.rodzaj === 'okreslony' ? `do ${dataPl(u.do)}${u.przedluzenie ? ', przedłuża się' : ''}` : 'nieokreślony'}</td>
-      <td>${u.wypowiedzenie_mies} mies.${u.koniec_miesiaca ? ', na koniec miesiąca' : ''}</td>
+      <td>${u.wypowiedzenie_mies} mies.${u.wypowiedzenie_mies_my != null && u.wypowiedzenie_mies_my !== u.wypowiedzenie_mies ? ` (nasz ${u.wypowiedzenie_mies_my} mies.)` : ''}${u.koniec_miesiaca ? ', na koniec miesiąca' : ''}
+        ${u.ostatni_dzien_wypowiedzenia.klient ? `<div class="szary">ostatni dzień: ${esc(obie(u, 'ostatni_dzien_wypowiedzenia'))}</div>` : ''}</td>
       <td><b>${dataPl(u.data)}</b><div class="szary">${esc(u.co)}${u.dni >= 0 ? ` · za ${u.dni} dni` : ''}</div></td>
-      <td class="liczba-kol">${zl(u.wartosc_mies, false)}</td><td class="szary">${esc(u.uwagi || '')}</td></tr>`).join('');
+      <td>${esc(obie(u, 'odejscie_przy_wypowiedzeniu_dzis'))}</td>
+      <td class="liczba-kol">${zl(u.wartosc_mies, false)}</td>
+      <td class="szary">${u.plany_po_koncu.ile ? `<span class="chip ostrzezenie" title="Plany zostają w cash flow jak w BS">${u.plany_po_koncu.ile} plan. po końcu umowy</span> ` : ''}${esc(u.uwagi || '')}</td></tr>`).join('');
+    const bez = d.klienci.filter(x => x.brak_umowy);
     setTimeout(() => {
-      $('#dodaj-umowe').onclick = e => { e.stopPropagation(); kartaUmowy(null); };
-      document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaUmowy(d.umowy[tr.dataset.i]); });
+      $('#dodaj-umowe').onclick = e => { e.stopPropagation(); kartaUmowy(null, d); };
+      document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaUmowy(d.umowy[tr.dataset.i], d); });
+      document.querySelectorAll('[data-nowa-umowa]').forEach(b => b.onclick = e => { e.stopPropagation(); kartaUmowy({ klient: b.dataset.nowaUmowa, folder: b.dataset.nowaUmowa, nowa: true }, d); });
     });
     return `<div class="naglowek-strony"><div><h1>Umowy z klientami ${pytajnik('umowy')}</h1>
-        <div class="okruszki">Budżet / rejestr umów · ${d.umowy.length} umów, ${zl(d.wartosc_mies)} miesięcznie${d.alerty ? ` · <b class="minus">${d.alerty} do decyzji</b>` : ''}</div></div>
+        <div class="okruszki">Budżet / rejestr umów · ${d.umowy.length} ${liczebnik(d.umowy.length, ['umowa', 'umowy', 'umów'])}, ${zl(d.wartosc_mies)} miesięcznie${d.alerty ? ` · <b class="minus">${d.alerty} do decyzji</b>` : ''}${d.plany_po_koncu ? ` · <b class="minus">${d.plany_po_koncu} ${liczebnik(d.plany_po_koncu, ['plan', 'plany', 'planów'])} po końcu umowy</b>` : ''}</div></div>
         <button class="przycisk" id="dodaj-umowe">Dodaj umowę</button></div>
-      ${d.umowy.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Stan</th><th>Klient</th><th>Czas trwania</th><th>Wypowiedzenie</th><th>Termin</th>
-        <th class="liczba-kol">Wartość / mies.</th><th>Uwagi</th></tr></thead><tbody>${wiersze}</tbody></table></div>`
-        : '<div class="pusto">Brak umów. Dodaj pierwszą przyciskiem w prawym górnym rogu.</div>'}`;
+      ${d.umowy.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Stan</th><th>Klient</th><th>Folder i arkusze w budżecie</th><th>Czas trwania</th><th>Wypowiedzenie</th><th>Termin</th>
+        <th>Odejście przy wypowiedzeniu dziś</th><th class="liczba-kol">Wartość / mies.</th><th>Uwagi</th></tr></thead><tbody>${wiersze}</tbody></table></div>`
+        : '<div class="pusto">Brak umów. Dodaj pierwszą przyciskiem w prawym górnym rogu.</div>'}
+      ${bez.length ? `<h2 class="sekcja">Klienci bez umowy (${bez.length})</h2>
+        <p class="notka">Cash flow liczy ich tylko z planów w arkuszach: bez pozycji „z umowy” i poza scenariuszem „klienci odchodzą”.</p>
+        <div class="pigulki">${bez.map(x => `<button class="pigulka miekka" type="button" data-nowa-umowa="${esc(x.folder)}" title="Dodaj umowę dla folderu ${esc(x.folder)}">${ik('plus')}${esc(x.folder)}</button>`).join('')}</div>` : ''}`;
   },
 });
 
-async function kartaUmowy(u) {
+// Pakiet 9, decyzja 10: ostrzeżenie w arkuszu, gdy są plany wpływów po końcu umowy na czas określony (zostają w cash flow).
+function umowaArkuszaHtml(u) {
+  const po = u?.plany_po_koncu;
+  if (!u?.umowa || !po?.ile) return '';
+  return `<div class="komunikat ostrzezenie"><span><span class="znacznik-umowy">!</span>${po.ile} ${liczebnik(po.ile, ['plan', 'plany', 'planów'])} wpływu po końcu umowy
+    (${dataPl(u.koniec_umowy)}), od ${esc(mies(po.od_miesiaca))}, netto ${zl(po.netto)}. Jak w BS zostają w cash flow; sprawdź, czy umowa będzie przedłużona.</span>
+    <a href="#/budzet/umowy">Umowy z klientami</a></div>`;
+}
+
+// Formularz umowy: folder klienta i arkusze przychodowe (puste zaznaczenie = wszystkie arkusze folderu z wpływami).
+async function kartaUmowy(u, d) {
   const k = $('#karta');
-  const w = await api('wydatki', { ile: 1 });
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${u ? 'Umowa' : 'Nowa umowa'}</h2>
+  d = d || await api('umowy');
+  const foldery = d.foldery || [];
+  const folder = u?.folder || '';
+  const wlasne = Array.isArray(u?.arkusze) && u.arkusze.length && typeof u.arkusze[0] === 'object' && u.arkusze_zrodlo === 'wpis' ? u.arkusze.map(a => a.id) : [];
+  const listaArkuszy = f => {
+    const ark = (foldery.find(x => x.folder === f) || { arkusze: [] }).arkusze;
+    if (!ark.length) return '<span class="szary">Wybierz folder klienta.</span>';
+    return ark.map(a => `<label><input type="checkbox" value="${esc(a.id)}"${wlasne.length ? (wlasne.includes(a.id) ? ' checked' : '') : (a.wplywy ? ' checked' : '')}>${esc(a.nazwa)}${a.wplywy ? '' : ' <span class="szary">(bez wpływów)</span>'}</label>`).join('');
+  };
+  const istniejaca = u && !u.nowa;
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${istniejaca ? 'Umowa' : 'Nowa umowa'}</h2>
     <div class="formularz">
-      ${pole('', 'Klient', `<input id="u-klient" list="lista-klientow" value="${esc(u?.klient || '')}">`)}${listaKlientow(w.klienci)}
+      ${pole('', 'Klient', `<input id="u-klient" value="${esc(u?.klient || '')}">`)}
+      ${pole('', 'Folder klienta w budżecie', `<select id="u-folder"><option value="">(dopasuj po nazwie klienta)</option>${foldery.map(f => `<option${f.folder === folder ? ' selected' : ''}>${esc(f.folder)}</option>`).join('')}</select>`)}
+      ${pole('', 'Arkusze przychodowe (zaznaczone liczą się w cash flow)', `<div class="umowa-arkusze" id="u-arkusze">${listaArkuszy(folder)}</div>`)}
       ${pole('', 'Data zawarcia', `<input id="u-zawarta" type="date" value="${esc(u?.zawarta || '')}">`)}
       ${pole('', 'Czas trwania', `<select id="u-rodzaj"><option value="nieokreslony">nieokreślony</option><option value="okreslony"${u?.rodzaj === 'okreslony' ? ' selected' : ''}>określony</option></select>`)}
       ${pole('', 'Koniec (czas określony)', `<input id="u-do" type="date" value="${esc(u?.do || '')}">`)}
       ${pole('', 'Przedłuża się automatycznie', `<select id="u-przedl"><option value="">nie</option><option value="1"${u?.przedluzenie ? ' selected' : ''}>tak</option></select>`)}
       ${pole('', 'Okres wypowiedzenia (miesiące)', `<input id="u-okres" inputmode="numeric" value="${u?.wypowiedzenie_mies ?? 1}">`)}
-      ${pole('', 'Ze skutkiem na koniec miesiąca', `<select id="u-km"><option value="1">tak</option><option value=""${u && !u.koniec_miesiaca ? ' selected' : ''}>nie</option></select>`)}
+      ${pole('', 'Nasz okres wypowiedzenia, gdy inny (miesiące)', `<input id="u-okres-my" inputmode="numeric" placeholder="jak klienta" value="${u?.wypowiedzenie_mies_my ?? ''}">`)}
+      ${pole('', 'Ze skutkiem na koniec miesiąca', `<select id="u-km"><option value="1">tak</option><option value=""${u && u.koniec_miesiaca === false ? ' selected' : ''}>nie</option></select>`)}
       ${pole('', 'Wartość miesięczna netto (zł)', `<input id="u-wartosc" inputmode="decimal" value="${u?.wartosc_mies ? (u.wartosc_mies / 100).toFixed(2).replace('.', ',') : ''}">`)}
       ${pole('', 'Alert ile dni wcześniej', `<input id="u-alert" inputmode="numeric" value="${u?.alert_dni ?? 30}">`)}
       ${pole('', 'Uwagi', `<input id="u-uwagi" value="${esc(u?.uwagi || '')}">`)}
     </div>
-    <div class="akcje"><button class="glowny" id="u-zapisz">Zapisz</button>${u ? '<button id="u-usun">Usuń umowę</button>' : ''}</div>`;
+    <p class="szary">Bez zaznaczonych arkuszy liczą się wszystkie arkusze folderu z wierszami wpływów. Stawka VAT i dni na płatność pozycji „z umowy” są z wiersza wpływów klienta (domyślnie 23% i 7 dni).</p>
+    <div class="akcje"><button class="glowny" id="u-zapisz">Zapisz</button>${istniejaca ? '<button id="u-usun">Usuń umowę</button>' : ''}</div>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
-  $('#u-zapisz').onclick = () => zmiana('umowa', { id: u?.id || nowyId('u'), klient: $('#u-klient').value.trim(), zawarta: $('#u-zawarta').value,
-    rodzaj: $('#u-rodzaj').value, do: $('#u-do').value, przedluzenie: !!$('#u-przedl').value, wypowiedzenie_mies: $('#u-okres').value,
-    koniec_miesiaca: !!$('#u-km').value, wartosc_mies: String(naGrosze($('#u-wartosc').value || '0') || 0), alert_dni: $('#u-alert').value, uwagi: $('#u-uwagi').value });
-  if (u) $('#u-usun').onclick = () => zmiana('umowa', { id: u.id, usun: true });
+  $('#u-folder').onchange = e => {
+    if (!$('#u-klient').value.trim()) $('#u-klient').value = e.target.value;
+    $('#u-arkusze').innerHTML = listaArkuszy(e.target.value);
+  };
+  $('#u-zapisz').onclick = () => {
+    const f = $('#u-folder').value;
+    const zazn = [...document.querySelectorAll('#u-arkusze input:checked')].map(x => x.value);
+    const domyslne = ((foldery.find(x => x.folder === f) || { arkusze: [] }).arkusze).filter(a => a.wplywy).map(a => a.id);
+    const arkusze = f && !(zazn.length === domyslne.length && zazn.every(x => domyslne.includes(x))) ? zazn : [];
+    zmiana('umowa', { id: istniejaca ? u.id : nowyId('u'), klient: $('#u-klient').value.trim() || f, folder: f, arkusze, zawarta: $('#u-zawarta').value,
+      rodzaj: $('#u-rodzaj').value, do: $('#u-do').value, przedluzenie: !!$('#u-przedl').value, wypowiedzenie_mies: $('#u-okres').value,
+      wypowiedzenie_mies_my: $('#u-okres-my').value.trim(), koniec_miesiaca: !!$('#u-km').value,
+      wartosc_mies: String(naGrosze($('#u-wartosc').value || '0') || 0), alert_dni: $('#u-alert').value, uwagi: $('#u-uwagi').value });
+  };
+  if (istniejaca) $('#u-usun').onclick = () => zmiana('umowa', { id: u.id, usun: true });
 }
 
 // ---------- Cash flow jak w Budget Studio ----------
-// Zapisane widoki (zakres liczony od dnia stanu przy każdym otwarciu), pasek filtrów, panel „Wygląd i filtry”,
-// tabela okresów z SUM/MAX/MIN, minimapa z ramką wycinka, wykres i lista płatności wycinka. Wszystkie liczby z serwera
-// (GET /api/cashflow/okresy); tu tylko wycinek, wyszukiwarka, sortowanie i strony listy.
-const WIDOKI_CF = [
-  { id: '2tyg', nazwa: '2 tyg. w przód', ik: 'kalendarz', granulacja: 'dzien', dni: 13 },
-  { id: '13tyg', nazwa: '13 tyg. w przód', ik: 'kalendarz', granulacja: 'tydzien', dni: 90 },
-  { id: '6mies', nazwa: '6 mies. w przód', ik: 'kalendarz', granulacja: 'tydzien', mies: 6 },
-  { id: '12mies', nazwa: '12 mies. w przód', ik: 'kalendarz', granulacja: 'miesiac', mies: 12 },
-  { id: 'rok', nazwa: 'Ten rok: historia i prognoza', ik: 'fale', granulacja: 'miesiac', rok: true },
-  { id: 'dni', nazwa: 'Dzień po dniu (30 dni)', ik: 'fale', granulacja: 'dzien', dni: 29 },
-];
-const GRANULACJE = { dzien: 'Dzień', tydzien: 'Tydzień', miesiac: 'Miesiąc' };
-const TYPY_CF = { plan: 'Plany z budżetu', faktura: 'Należności z faktur', bank: 'Przepływy z banku', szacunek: 'Szacunek kosztów' };
-const SERIE_CF = { wplywy: 'Wpływy', obciazenia: 'Obciążenia', saldo: 'Saldo okresu', narastajaco: 'Saldo narastające' };
-const KOLUMNY_CF = [
-  ['rodzaj', 'Rodzaj'], ['podstawa', 'Podstawa<br>płatności'], ['kontrahent', 'Kontrahent'], ['tytul', 'Tytuł'], ['nr_dok', 'Numer<br>dokumentu'],
-  ['netto', 'Netto PLN<br>(wartość)'], ['brutto', 'Brutto PLN<br>(wartość)'], ['vat', 'VAT PLN<br>(wartość)'], ['stawka', 'Stawka<br>VAT'],
-  ['wystawienie', 'Dzień<br>wystawienia'], ['data', 'Dzień realnej<br>płatności'], ['przesuniecie', 'Przesunięcie<br>płatności'],
-  ['arkusz', 'Arkusz budżetu'], ['miesiac', 'Miesiąc<br>budżetowy'], ['metoda', 'Metoda<br>płatności'], ['waluta', 'Waluta'], ['etap', 'Etap']];
-const KOLUMNY_CF_DOMYSLNE = KOLUMNY_CF.map(k => k[0]).filter(k => k !== 'etap');
-const KROPKA_TYPU = { plan: 'niebieska', faktura: 'zolta', bank: 'zielona', szacunek: 'szara' };
-const MAKS_PUNKTOW = 120;
-let cfPanel = false;   // panel „Wygląd i filtry” zostaje otwarty po Zastosuj (jak w BS)
-
-const plusMies = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
-function zakresWidoku(v, stan) {
-  if (v.rok) { const k = `${stan.slice(0, 4)}-12-31`, pol = plusMies(stan, 6); return { od: `${stan.slice(0, 4)}-01-01`, do: pol > k ? pol : k }; }
-  return { od: stan, do: v.dni ? plusDni(stan, v.dni) : plusMies(stan, v.mies) };
-}
-const zlSaldo = s => { const t = String(s ?? '').replace(/[\s ]/g, '').replace(',', '.'); const m = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(t);
-  return m ? (m[1] ? -1 : 1) * ((+m[2]) * 100 + +((m[3] || '') + '00').slice(0, 2)) : NaN; };
-function kolumnyCf() {
-  try { const z = JSON.parse(localStorage.getItem('finanse-cf-kolumny') || 'null'); if (Array.isArray(z) && z.length) return z; } catch (e) { /* wygoda, nie stan */ }
-  return KOLUMNY_CF_DOMYSLNE;
-}
-
-function kartaSumCf(okresy, maks, mini) {
-  if (!okresy.length) return '';
-  const zakres = okresy.length === 1 ? okresy[0].etykieta : `${okresy[0].etykieta.split(' – ')[0]} - ${okresy[okresy.length - 1].etykieta.split(' – ').pop()}`;
-  const kl = v => v < 0 ? 'minus' : 'plus';
-  const sum = okresy[okresy.length - 1].narastajaco;
-  return `<div class="cf-karta"><div class="zakres">${esc(zakres)}</div><dl>
-    <dt>SUM</dt><dd class="${kl(sum)}" title="saldo narastające na koniec wycinka">${zl(sum, false)}</dd>
-    <dt>MAX</dt><dd class="${kl(maks.narastajaco)}" title="${esc(maks.etykieta)}">${zl(maks.narastajaco, false)}</dd>
-    <dt>MIN</dt><dd class="${kl(mini.narastajaco)}" title="${esc(mini.etykieta)}">${zl(mini.narastajaco, false)}</dd></dl></div>`;
-}
-
-function tabelaOkresowCf(okresy) {
-  if (!okresy.length) return '';
-  const mx = okresy.reduce((a, x) => x.narastajaco > a.narastajaco ? x : a), mn = okresy.reduce((a, x) => x.narastajaco < a.narastajaco ? x : a);
-  const kl = v => v < 0 ? 'minus' : v > 0 ? 'plus' : 'zero';
-  const wiersz = (nazwa, znak, pole, klasa = '', ramki = false) => `<tr class="${klasa}"><td><span class="znak-w">${znak}</span>${nazwa}</td>${okresy.map(o => {
-    const v = o[pole], r = ramki ? (o === mx ? ' max' : o === mn ? ' min' : '') : '';
-    return `<td class="${klasa ? '' : kl(v)}">${r ? `<span class="ramka${r}" title="${r === ' max' ? 'najwyższe saldo' : 'najniższe saldo'}">${zl(v, false)}</span>` : zl(v, false)}</td>`;
-  }).join('')}</tr>`;
-  return `<div class="cf-tabela"><table><thead><tr><th></th>${okresy.map(o => `<th>${o.biezacy ? `<span class="biezacy" title="okres dnia stanu">${esc(o.etykieta)}</span>` : esc(o.etykieta)}</th>`).join('')}</tr></thead>
-    <tbody>${wiersz('Saldo narastająco', '+', 'narastajaco', '', true)}${wiersz('Saldo okresu', '=', 'saldo')}
-    <tr class="oddziel w-wplywy"><td><span class="znak-w">↗</span>Wpływy</td>${okresy.map(o => `<td>${zl(o.wplywy, false)}</td>`).join('')}</tr>
-    ${wiersz('Obciążenia', '↘', 'obciazenia', 'w-obciazenia')}</tbody></table></div>`;
-}
-
-function komorkaCf(x, k) {
-  const z = v => v == null ? '' : zl(v, false);
-  return {
-    rodzaj: chipZnak(x.kwota), podstawa: esc(x.podstawa || ''), kontrahent: esc(x.kontrahent || ''), tytul: esc(x.tytul || ''), nr_dok: esc(x.nr_dok || '-'),
-    netto: z(x.netto), brutto: z(x.kwota), vat: z(x.vat), stawka: x.stawka != null ? `${x.stawka}%` : '-', wystawienie: dataPl(x.wystawienie),
-    data: dataPl(x.data), przesuniecie: `${x.przesuniecie || 0} dni`, arkusz: esc(x.arkusz || '-'), miesiac: x.miesiac ? mies(x.miesiac) : '',
-    metoda: esc(x.metoda || ''), waluta: esc(x.waluta || 'PLN'), etap: esc(x.etap || ''),
-  }[k];
-}
-const SORT_CF = { rodzaj: x => x.kwota > 0 ? 1 : 0, netto: x => x.netto ?? 0, brutto: x => x.kwota, vat: x => x.vat ?? 0, stawka: x => x.stawka ?? -1,
-  przesuniecie: x => x.przesuniecie || 0 };
-const LICZBOWE_CF = ['netto', 'brutto', 'vat', 'stawka', 'przesuniecie'];
-
-async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
-  const stan = STAN?.naleznosci?.dzien_stanu || STAN?.bank_do;
-  const widok = WIDOKI_CF.find(v => v.id === p.widok) || WIDOKI_CF[1];
-  const bazowy = arkusz ? { granulacja: 'tydzien', od: stan, do: ark && `${ark.do}-28` > stan ? plusMies(`${ark.do}-01`, 1) : plusMies(stan, 6) } : { granulacja: widok.granulacja, ...zakresWidoku(widok, stan) };
-  const ef = { granulacja: p.granulacja || bazowy.granulacja, od: p.od || bazowy.od, do: p.do || bazowy.do, rodzaj: p.rodzaj || '',
-    saldo_start: p.saldo ?? '', scenariusz: p.scenariusz || 'ostrozny' };
-  const d = await api('cashflow/okresy', { ...ef, arkusz: arkusz || '' });
-  if (d.brak_danych) return '<h1>Cash flow</h1><div class="pusto">Brak danych z banku.</div>';
-  const typy = (p.typ || '').split(',').filter(Boolean);
-  const serie = p.serie ? Object.fromEntries(Object.keys(SERIE_CF).map(k => [k, p.serie.split(',').includes(k)])) : {};
-  const zmienione = ['granulacja', 'od', 'do', 'rodzaj', 'saldo', 'scenariusz', 'typ', 'serie'].filter(k => p[k] != null && p[k] !== '');
-  const n = d.okresy.length;
-  const bi = Math.max(0, d.okresy.findIndex(o => o.biezacy));
-  let okno = n <= MAKS_PUNKTOW ? [0, n - 1] : [Math.max(0, Math.min(n - MAKS_PUNKTOW, bi - 4)), Math.max(0, Math.min(n - MAKS_PUNKTOW, bi - 4)) + MAKS_PUNKTOW - 1];
-  const caly = d.okresy, maxC = caly[d.max.okres], minC = caly[d.min.okres];
-  const poTerminie = d.pozycje.filter(z => z.etap === 'Po terminie').length;
-  const pasujacyZakres = WIDOKI_CF.find(v => { const z = zakresWidoku(v, stan); return z.od === ef.od && z.do === ef.do; });
-  let lista = { q: '', strona: 1, ile: 100, sort: 'data', kier: 'rosnaco' };
-
-  const rysujWycinek = () => {
-    const [a, b] = okno, wyc = caly.slice(a, b + 1);
-    const mx = wyc.reduce((x, y) => y.narastajaco > x.narastajaco ? y : x), mn = wyc.reduce((x, y) => y.narastajaco < x.narastajaco ? y : x);
-    $('#cf-karta-dol').innerHTML = kartaSumCf(wyc, mx, mn);
-    $('#cf-tabela').innerHTML = tabelaOkresowCf(wyc);
-    $('#cf-powieksz').disabled = n > MAKS_PUNKTOW || (a === 0 && b === n - 1);
-    WYK.ustaw({ okresy: wyc });
-    rysujListe();
-  };
-  let WYK = null;
-  const rysujListe = () => {
-    const [a, b] = okno, q = lista.q.trim().toLowerCase();
-    let poz = d.pozycje.filter(z => z.okres >= a && z.okres <= b && (!typy.length || typy.includes(z.typ)));
-    if (q) poz = poz.filter(z => `${z.kontrahent} ${z.tytul} ${z.nr_dok} ${z.arkusz} ${z.opis}`.toLowerCase().includes(q));
-    const f = SORT_CF[lista.sort] || (x => x[lista.sort] ?? '');
-    const znak = lista.kier === 'rosnaco' ? 1 : -1;
-    poz.sort((x, y) => { const u = f(x), v = f(y); return znak * (typeof u === 'number' ? u - v : String(u).localeCompare(String(v), 'pl')); });
-    const kol = kolumnyCf();
-    const razem = poz.length, ost = Math.max(1, Math.ceil(razem / lista.ile));
-    lista.strona = Math.min(lista.strona, ost);
-    const od = (lista.strona - 1) * lista.ile, strona = poz.slice(od, od + lista.ile);
-    const th = kol.map(k => `<th class="sort${LICZBOWE_CF.includes(k) ? ' liczba-kol' : ''}" data-k="${k}"${lista.sort === k ? ` data-kierunek="${lista.kier}"` : ''}>${KOLUMNY_CF.find(x => x[0] === k)[1]}</th>`).join('');
-    const tr = strona.map((x, i) => `<tr data-i="${od + i}" class="${x.typ === 'plan' || x.typ === 'szacunek' ? 'wiersz-plan' : x.etap === 'Po terminie' ? 'wiersz-po' : ''}${x.kwota > 0 ? ' wiersz-plus' : ''}" title="${esc(x.opis)}">
-      <td class="lp">${od + i + 1}.</td><td class="kr"><span class="kropka ${x.etap === 'Po terminie' ? 'czerwona' : KROPKA_TYPU[x.typ]}" title="${esc(TYPY_CF[x.typ])}${x.etap ? ', ' + esc(x.etap.toLowerCase()) : ''}"></span></td>
-      ${kol.map(k => `<td class="${LICZBOWE_CF.includes(k) ? 'liczba-kol' : ''}">${komorkaCf(x, k)}</td>`).join('')}</tr>`).join('');
-    $('#cf-lista').innerHTML = razem ? `<div class="tabela-ramka niska"><table><thead><tr><th class="lp"></th><th></th>${th}</tr></thead><tbody>${tr}</tbody></table></div>`
-      : '<div class="pusto">Brak płatności w tym wycinku.</div>';
-    $('#cf-info').textContent = `Wyświetlono ${razem ? od + 1 : 0}-${Math.min(od + lista.ile, razem)} z ${razem}`;
-    $('#cf-poprz').disabled = lista.strona <= 1;
-    $('#cf-nast').disabled = lista.strona >= ost;
-    if (typeof podepnijCfLaczenie === 'function') podepnijCfLaczenie(poz);   // pakiet 5 (laczenie.js): odłącz od budżetu
-    $('#cf-lista').querySelectorAll('th.sort').forEach(h => h.onclick = () => {
-      lista.kier = lista.sort === h.dataset.k && lista.kier === 'rosnaco' ? 'malejaco' : 'rosnaco'; lista.sort = h.dataset.k; rysujListe(); });
-    $('#cf-lista').querySelectorAll('tbody tr').forEach(r => r.onclick = e => {
-      e.stopPropagation();
-      const x = poz[r.dataset.i];
-      if (x.typ === 'plan') kartaPlatnosci([x.zrodlo], null);
-      else if (x.typ === 'faktura') location.hash = `#/platnosci/faktury?q=${encodeURIComponent(x.nr_dok)}`;
-      else if (x.typ === 'bank') location.hash = `#/platnosci/bank?q=${encodeURIComponent(x.kontrahent || x.tytul)}&od=${x.data}&do=${x.data}`;
-    });
-  };
-
-  setTimeout(() => {
-    if (!$('#cf-wyk')) return;
-    WYK = Wykresy.bs($('#cf-wyk'), { okresy: caly.slice(okno[0], okno[1] + 1), wysokosc: 220, serie, opis: 'Cash flow: wpływy, obciążenia i saldo' });
-    const mapa = Wykresy.minimapa($('#cf-mapa'), { wartosci: caly.map(o => o.narastajaco), etykiety: caly.map(o => o.etykieta), okno, maks: MAKS_PUNKTOW,
-      naZmiane: o2 => { okno = o2; lista.strona = 1; rysujWycinek(); } });
-    $('#cf-powieksz').onclick = () => { okno = [0, n - 1]; mapa.ustaw(okno); rysujWycinek(); };
-    rysujWycinek();
-    $('#cf-ile').onchange = e => { lista.ile = +e.target.value; lista.strona = 1; rysujListe(); };
-    $('#cf-poprz').onclick = () => { lista.strona--; rysujListe(); };
-    $('#cf-nast').onclick = () => { lista.strona++; rysujListe(); };
-    let t;
-    $('#cf-szukaj').oninput = e => { clearTimeout(t); t = setTimeout(() => { lista.q = e.target.value; lista.strona = 1; rysujListe(); }, 200); };
-    // pasek filtrów: działa od razu, jak filtry podręczne w BS
-    document.querySelectorAll('[data-cf]').forEach(el => el.onchange = () => {
-      const k = el.dataset.cf;
-      if (k === 'zakres') {
-        if (el.value === 'wlasny') { cfPanel = true; return otworzPanelCf(); }
-        const v = WIDOKI_CF.find(x => x.id === el.value);
-        if (v) return ustawParametry(zakresWidoku(v, stan));
-      }
-      ustawParametry({ [k]: el.value });
-    });
-    const saldo = $('#cf-saldo');
-    saldo.onchange = () => {
-      if (!saldo.value.trim()) return ustawParametry({ saldo: '' });
-      const g = zlSaldo(saldo.value);
-      if (isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
-      ustawParametry({ saldo: String(g) });
-    };
-    $('#cf-saldo-wyczysc').onclick = () => ustawParametry({ saldo: '' });
-    const przyw = $('#cf-przywroc');
-    if (przyw) przyw.onclick = () => { location.hash = arkusz ? `#/budzet/arkusz?id=${encodeURIComponent(arkusz)}&zakladka=cashflow` : `#/cashflow?widok=${widok.id}`; };
-    $('#cf-filtry').onclick = e => { e.stopPropagation(); cfPanel = !cfPanel; cfPanel ? otworzPanelCf() : zamknijPanelCf(); };
-    const menu = $('#cf-menu');
-    if (menu) menu.onclick = e => {
-      e.stopPropagation();
-      const m = document.createElement('div');
-      m.className = 'zarzadzaj-menu';
-      m.innerHTML = `<a href="/api/eksport/cashflow">${ik('plik')}Eksport do Excela (prognoza 13 tygodni)</a>
-        <a href="#/cashflow?widok=${widok.id}">${ik('przywroc')}Usuń zastosowane filtry</a>`;
-      const r = menu.getBoundingClientRect();
-      m.style.left = `${r.left}px`; m.style.top = `${r.bottom + window.scrollY + 4}px`;
-      document.body.appendChild(m);
-      setTimeout(() => document.addEventListener('click', () => m.remove(), { once: true }));
-    };
-    if (cfPanel) otworzPanelCf();
-  });
-
-  function otworzPanelCf() {   // wspólny panel „Wygląd i filtry” (panel.js)
-    const szkic = { granulacja: ef.granulacja, saldo: p.saldo ?? '', scenariusz: ef.scenariusz, rodzaj: ef.rodzaj, od: ef.od, do: ef.do,
-      typ: typy.length ? typy : Object.keys(TYPY_CF), serie: Object.keys(SERIE_CF).filter(k => serie[k] !== false), kolumny: kolumnyCf() };
-    panelFiltrow({
-      widoki: arkusz ? null : { opcje: WIDOKI_CF.map(v => [v.id, v.nazwa]), wybrany: widok.id, naZmiane: id => { location.hash = `#/cashflow?widok=${id}`; } },
-      sekcje: [
-        { grupa: 'Wygląd' },
-        { klucz: 'granulacja', etykieta: 'Granulacja', typ: 'radio', opcje: GRANULACJE, wartosc: szkic.granulacja, zmieniona: !!p.granulacja },
-        { klucz: 'saldo', etykieta: 'Saldo startowe', typ: 'tekst', inputmode: 'decimal', placeholder: `z banku: ${zl(d.saldo_start, false)}`, puste: 'z banku',
-          wartosc: szkic.saldo !== '' ? zlWpis(+szkic.saldo) : '', opis: 'Puste: gotówka z banku na koniec dnia przed zakresem.', zmieniona: !!p.saldo },
-        { klucz: 'scenariusz', etykieta: 'Scenariusz', typ: 'radio', opcje: { ostrozny: 'ostrożny: bez zaległości', pelny: 'pełny: zaległości za 7 dni' },
-          wartosc: szkic.scenariusz, zmieniona: !!p.scenariusz },
-        { klucz: 'serie', etykieta: 'Serie wykresu', typ: 'multi', opcje: Object.entries(SERIE_CF), wartosc: szkic.serie, zmieniona: !!p.serie },
-        { klucz: 'kolumny', etykieta: 'Widoczne kolumny', typ: 'kolumny', opcje: KOLUMNY_CF, wartosc: szkic.kolumny, domyslne: KOLUMNY_CF_DOMYSLNE },
-        { grupa: 'Cechy' },
-        { klucz: 'rodzaj', etykieta: 'Rodzaj', typ: 'radio', opcje: { '': 'Wszystko', 1: 'Wpływy', '-1': 'Obciążenia' }, wartosc: szkic.rodzaj, zmieniona: !!p.rodzaj },
-        { klucz: 'typ', etykieta: 'Pochodzenie', typ: 'multi', opcje: Object.entries(TYPY_CF), wartosc: szkic.typ, zmieniona: !!p.typ },
-        { grupa: 'Daty' },
-        { klucz: 'daty', etykieta: 'Dzień realnej płatności', typ: 'zakres', wartosc: { od: szkic.od, do: szkic.do }, zmieniona: !!(p.od || p.do) },
-      ],
-      naZamknij: () => { cfPanel = false; zamknijPanelCf(); },
-      naZastosuj: w => {
-        const przed = kolumnyCf();
-        try { localStorage.setItem('finanse-cf-kolumny', JSON.stringify(w.kolumny.length ? w.kolumny : KOLUMNY_CF_DOMYSLNE)); } catch (e) { /* wygoda */ }
-        const g = w.saldo ? zlSaldo(w.saldo) : '';
-        if (w.saldo && isNaN(g)) return komunikat('Saldo startowe wpisz liczbą, np. 70 000,00.', true);
-        const { od, do: doo } = w.daty;
-        if (!od || !doo || od > doo) return komunikat('Zakres dat: początek nie może być po końcu.', true);
-        ustawParametry({ granulacja: w.granulacja === bazowy.granulacja ? '' : w.granulacja, saldo: w.saldo ? String(g) : '',
-          scenariusz: w.scenariusz === 'ostrozny' ? '' : w.scenariusz, rodzaj: w.rodzaj,
-          typ: w.typ.length === 4 ? '' : w.typ.join(','), serie: w.serie.length === 4 ? '' : w.serie.join(','),
-          od: od === bazowy.od ? '' : od, do: doo === bazowy.do ? '' : doo });
-        if (JSON.stringify(przed) !== JSON.stringify(kolumnyCf())) rysujListe();   // same kolumny: adres bez zmian, lista od nowa
-      },
-    });
-    const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('zamknij')}Zamknij filtry <span class="kropka-fil"></span>`;
-  }
-
-  const opcjeZakresu = [...(arkusz ? [] : WIDOKI_CF.map(v => [v.id, v.nazwa])), ['wlasny', pasujacyZakres && !arkusz ? 'Własny zakres…' : `${dataPl(ef.od)} - ${dataPl(ef.do)}`]];
-  const wybranyZakres = !arkusz && pasujacyZakres ? pasujacyZakres.id : 'wlasny';
-  const pasekFiltrow = `<div class="filtry">
-      <label>Dzień realnej płatności<select data-cf="zakres">${opcjeZakresu.map(([v, t]) => `<option value="${v}"${v === wybranyZakres ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
-      <label>Granulacja<select data-cf="granulacja">${Object.entries(GRANULACJE).map(([v, t]) => `<option value="${v}"${v === ef.granulacja ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-      <label>Rodzaj<select data-cf="rodzaj"><option value="">Wszystko</option><option value="1"${ef.rodzaj === '1' ? ' selected' : ''}>Wpływy</option><option value="-1"${ef.rodzaj === '-1' ? ' selected' : ''}>Obciążenia</option></select></label>
-      <label class="pole-saldo">Saldo startowe<input id="cf-saldo" inputmode="decimal" value="${p.saldo != null && p.saldo !== '' ? esc(zlWpis(+p.saldo)) : ''}" placeholder="${esc(zl(d.saldo_start, false))}" title="${d.zrodlo_salda === 'ręcznie' ? 'wpisane ręcznie' : 'z banku: gotówka na koniec dnia przed zakresem'}">
-        <button id="cf-saldo-wyczysc" type="button" aria-label="Wyczyść saldo startowe">${ik('zamknij')}</button></label>
-      <button class="przycisk miekki" id="cf-filtry" type="button">${ik('filtr')}Wygląd i filtry ${zmienione.length ? '<span class="kropka-fil"></span>' : ''}</button>
-      ${d.scenariusz === 'pelny' ? '<span class="pigulka miekka">scenariusz pełny</span>' : ''}
-    </div>`;
-  const naglowek = arkusz ? '' : `<h1>Cash flow ${pytajnik('cashflow')}</h1>
-    <div class="pigulki"><span class="pigulka">${ik('warstwy')}${esc(widok.nazwa)}</span>
-      ${zmienione.length ? `<button class="pigulka przywroc" id="cf-przywroc">${ik('przywroc')}Przywróć</button>` : ''}
-      <button class="przycisk-ikona" id="cf-menu" aria-label="Więcej">${ik('kropki')}</button>
-      <span class="szary">dzień stanu ${dataPl(d.dzien_stanu)}, saldo z ING ${zl(d.saldo_ing)}</span></div>`;
-  return `${naglowek}${pasekFiltrow}
-    <div class="cf-uklad">${kartaSumCf(caly, maxC, minC)}<div id="cf-tabela"></div></div>
-    <div class="cf-mapa-uklad"><button class="przycisk" id="cf-powieksz">Powiększ zakres ↔</button><div id="cf-mapa"></div></div>
-    <div class="cf-uklad"><div id="cf-karta-dol"></div><div id="cf-wyk"></div></div>
-    <div class="cf-lista-naglowek"><h2 class="sekcja">Płatności w wycinku</h2>
-      <span class="legenda-stany"><span><span class="kropka niebieska"></span>plan</span><span><span class="kropka zolta"></span>faktura czeka</span>
-        <span><span class="kropka czerwona"></span>po terminie</span><span><span class="kropka zielona"></span>bank</span><span><span class="kropka szara"></span>szacunek</span></span>
-      ${poTerminie ? `<a class="cf-uwaga" href="#/platnosci/plan?lista=po_terminie"><span class="kropka czerwona"></span>${poTerminie} po terminie do decyzji</a>` : ''}</div>
-    <div id="cf-lista"></div>
-    <div class="stopka">
-      <label>Max widocznych <select id="cf-ile">${[50, 100, 200, 500].map(x => `<option${x === 100 ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
-      <button id="cf-poprz" aria-label="Poprzednia strona">↑</button><span id="cf-info"></span><button id="cf-nast" aria-label="Następna strona">↓</button>
-      <input class="szukaj" id="cf-szukaj" type="search" placeholder="Wyszukaj" aria-label="Wyszukaj kontrahenta, tytuł, numer dokumentu">
-    </div>`;
-}
-
-function zamknijPanelCf() {
-  zamknijPanelFiltrow();
-  const w = $('#cf-filtry'); if (w) w.innerHTML = `${ik('filtr')}Wygląd i filtry`;
-}
+// Ekran cash flow (widokCashflow, także zakładka arkusza) i jego pomoc: web/cashflow.js (pakiet 9).
