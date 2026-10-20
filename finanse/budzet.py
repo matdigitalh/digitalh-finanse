@@ -1517,6 +1517,15 @@ def _zastosuj_listy(st: dict, wpisy: list[dict], historia: list[dict], osierocon
         rek = {r: st['polaczenia'][r]['platnosci'] for r in st['polaczenia'] if r.startswith(f'lista:{m}:')}
         historia.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': 'lista_plac', 'obiekt': f'lista płac {m}',
                          'bylo': None, 'jest': {'platnosci': [p for ps in rek.values() for p in ps]} if rek else None})
+    # plan PPK w miesiącu listy (wpis „ppk_plan”, BL-06): po listach, bo lista płac z PPK za ten miesiąc ma pierwszeństwo
+    for m, w in lista_plac.obowiazujace_plany(wpisy).items():
+        powod = lista_plac.zastosuj_plan(st, w['dane'])
+        if powod:
+            osierocone.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': 'ppk_plan',
+                               'obiekt': f'plan PPK {m}', 'powod': powod})
+        rek = st['polaczenia'].get(lista_plac.ref_planu(m))
+        historia.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': 'ppk_plan', 'obiekt': f'plan PPK {m}',
+                         'bylo': None, 'jest': {'platnosci': rek['platnosci']} if rek else None})
 
 
 def sprawdz_liste(dane: dict, wpisy: list[dict], dokumenty=None):
@@ -1528,6 +1537,18 @@ def sprawdz_liste(dane: dict, wpisy: list[dict], dokumenty=None):
         raise ValueError('brak budżetu: nie ma pliku importu z Budget Studio')
     zastosuj_zdarzenia(model, wpisy_modelu, dokumenty)
     powod = lista_plac.zastosuj(_stan(model), dane, scisle=True)
+    if powod:
+        raise ValueError(f'Nic nie zapisano. {powod}' if powod[:1].isupper() else f'Nic nie zapisano: {powod}')
+
+
+def sprawdz_plan_ppk(dane: dict, wpisy: list[dict], dokumenty=None):
+    """Próba wpisu planu PPK (BL-06) na bieżącym budżecie, bez zapisu; planowanie nie jest potrzebne."""
+    from . import lista_plac
+    model, wpisy_modelu, _ = model_bazowy(wpisy, odswiez=False)
+    if not model:
+        raise ValueError('brak budżetu: nie ma pliku importu z Budget Studio')
+    zastosuj_zdarzenia(model, wpisy_modelu, dokumenty)
+    powod = lista_plac.zastosuj_plan(_stan(model), dane, scisle=True)
     if powod:
         raise ValueError(f'Nic nie zapisano. {powod}' if powod[:1].isupper() else f'Nic nie zapisano: {powod}')
 
@@ -1723,9 +1744,9 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     con.executemany('INSERT INTO bud_reczne (id, dane, wpis) VALUES (?,?,?)',
                     [(rid, json.dumps(o, ensure_ascii=False, sort_keys=True), wpis_recznej.get(rid)) for rid, o in sorted(model.get('reczne', {}).items())])
     lekkie = {r: {k: v for k, v in rek.items() if k in ('czesci', 'platnosci', 'reszta', 'zrodlo', 'kwoty', 'bs', 'plan', 'osoby',
-                                                          'data_wyplaty', 'uwaga', 'ppk', 'miesiac_listy', 'komorka_bs')}
+                                                          'data_wyplaty', 'uwaga', 'ppk', 'miesiac_listy', 'komorka_bs', 'estymacja')}
               | ({'bs_zastapione': sorted(p['bs_id'] for p in rek.get('zastapione', []) if p.get('bs_id'))}
-                 if rek.get('zrodlo') == 'lista płac' else {})
+                 if rek.get('zrodlo') in ('lista płac', 'plan PPK') else {})
               for r, rek in model.get('polaczenia', {}).items()}   # bez planów zastąpionych (te są tylko do odłączenia); lista płac:
     # ID płatności BS, które zastąpiła (odbiór 1:1 z plikiem BS pomija je jawnie)
     con.execute("INSERT OR REPLACE INTO meta VALUES ('polaczenia', ?)", (json.dumps(lekkie, ensure_ascii=False, sort_keys=True),))
