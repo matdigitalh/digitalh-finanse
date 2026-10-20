@@ -6,7 +6,8 @@
 // Sekcja: {grupa: 'Wygląd'} albo {klucz, etykieta, typ, wartosc, zmieniona, ...}:
 //   radio   opcje: {wartość: tekst}
 //   select  opcje: [[wartość, tekst]]
-//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę; opis pod listą
+//   multi   opcje: [[wartość, tekst]], wartosc: tablica (pusta = wszystko); szukaj: true dodaje pole zawężające listę;
+//           opis pod listą; puste i wszystkie: opis w nagłówku, gdy nic albo wszystko zaznaczone (domyślnie „Wszystko”)
 //   tekst   placeholder, opis
 //   zakres  wartosc: {od, do} (dwa pola dat)
 //   data    filtr daty BS (tryby: wszystko, bieżący okres, od dziś do końca okresu, zakres statyczny, zakres ruchomy);
@@ -65,7 +66,7 @@ function opisDaty(spec, miesieczny = false) {
 function opisSekcji(s, w) {
   if (s.typ === 'radio') return s.opcje[w] ?? s.opcje[''] ?? '';
   if (s.typ === 'select') return (s.opcje.find(([v]) => String(v) === String(w)) || ['', ''])[1];
-  if (s.typ === 'multi') return !w.length || w.length === s.opcje.length ? 'Wszystko'
+  if (s.typ === 'multi') return !w.length ? (s.puste ?? 'Wszystko') : w.length === s.opcje.length ? (s.wszystkie ?? 'Wszystko')
     : w.length <= 2 ? w.map(v => (s.opcje.find(([x]) => x === v) || [v, v])[1]).join(', ') : `${w.length} z ${s.opcje.length}`;
   if (s.typ === 'tekst') return w || s.puste || '';
   if (s.typ === 'zakres') return `${dataPl(w.od)} - ${dataPl(w.do)}`;

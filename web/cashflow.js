@@ -289,11 +289,12 @@ async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
       ...(arkusz ? [] : [{ klucz: 'historia', etykieta: 'Przed dniem stanu', typ: 'radio', opcje: { '': 'historia z banku (przelewy ING)', budzet: 'płatności budżetu wg etapu, jak w BS' },
         wartosc: ef.historia || '', zmieniona: zm('historia') }]),
       { grupa: 'Prognoza' },
-      { klucz: 'pochodzenie', etykieta: 'Pochodzenie', typ: 'multi', opcje: (o.pochodzenie || []).filter(([k]) => !arkusz || !['bank', 'faktura', 'szacunek'].includes(k)),
+      { klucz: 'pochodzenie', etykieta: 'Pochodzenie', typ: 'multi', puste: 'jak w BS', opcje: (o.pochodzenie || []).filter(([k]) => !arkusz || !['bank', 'faktura', 'szacunek'].includes(k)),
         wartosc: pochodzenie, zmieniona: zm('pochodzenie'), opis: 'Domyślnie jak w BS: plany, rzeczywiste nieopłacone, pozycje z umów i historia z banku. Szacunek kosztów i należności spoza budżetu są poza BS i na wykresie wyróżnione.' },
       { klucz: 'scenariusz', etykieta: 'Zaległości', typ: 'radio', opcje: { '': 'na swoim dniu realnym, jak w BS', pelny: 'za 7 dni (scenariusz pełny)' },
         wartosc: ef.scenariusz === 'pelny' ? 'pelny' : '', zmieniona: zm('scenariusz') },
       ...(arkusz ? [] : [{ klucz: 'odejscia', etykieta: 'Klienci odchodzą', typ: 'multi', opcje: klienci.map(k => [k, k]), wartosc: odejscia, zmieniona: zm('odejscia'),
+        puste: 'wyłączony', wszystkie: 'wszyscy klienci z umową',
         opis: klienci.length ? 'Zaznaczeni klienci z umową wypowiadają dziś i od miesiąca po okresie wypowiedzenia nie płacą. Nic nie zaznaczone: scenariusz wyłączony.'
           : 'Brak umów powiązanych z budżetem: dodaj je w Budżet, Umowy z klientami.' }]),
       { grupa: 'Cechy' },

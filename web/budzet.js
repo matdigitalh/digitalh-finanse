@@ -97,7 +97,7 @@ Object.assign(WIDOKI, {
         <button role="tab" data-zakl="platnosci" aria-selected="${zakl === 'platnosci'}">${ik('fale')}Płatności</button>
         <button role="tab" data-zakl="cashflow" aria-selected="${zakl === 'cashflow'}">${ik('fale')}Cash flow</button>
         <button role="tab" data-zakl="zarzadzaj" aria-selected="false" data-karta>${ik('zebatka')}Zarządzaj</button></div>
-      ${banerOsieroconych(0)}${d.systemowy ? `<p class="notka">Arkusz systemowy: VAT i podatek dochodowy liczy apka z budżetu, więc tu nic się nie edytuje.
+      ${banerOsieroconych(0)}${umowaArkuszaHtml(d.umowa)}${d.systemowy ? `<p class="notka">Arkusz systemowy: VAT i podatek dochodowy liczy apka z budżetu, więc tu nic się nie edytuje.
         Kwotę od biura i dzień realnej płatności wpiszesz w <a href="#/budzet/podatki">Budżet, Podatki i ZUS</a>.</p>` : ''}`;
     const tresc = zakl === 'cashflow' ? await widokCashflow(p, { arkusz: a.id, ark: a })
       : zakl === 'platnosci' ? await listaPlatnosci(p, { arkusz: a.id })   // lista z pakietu 7 (listy.js)
@@ -498,59 +498,106 @@ function kartaArkusza(a, drzewo) {
 }
 
 // ---------- Rejestr umów z klientami ----------
+// Pakiet 9: umowa wskazuje folder klienta w budżecie i jego arkusze przychodowe (cash flow: pozycje „z umowy”, scenariusz
+// „klienci odchodzą”, ostrzeżenie o planach po końcu umowy). Kartę klienta z umową robi pakiet 11.
 Object.assign(POMOC, {
-  umowy: { tytul: 'Rejestr umów', krotko: 'Umowy z klientami i terminy wypowiedzenia, z alertem przed czasem.',
-    co: 'Każda umowa: klient, data zawarcia, czas określony albo nieokreślony, okres wypowiedzenia, wartość miesięczna.',
-    skad: 'Wpisujesz Ty; zapis w pliku zmian (oba Maki widzą to samo).',
-    jak: 'Określony z przedłużeniem: ostatni dzień na wypowiedzenie = koniec minus okres. Bez przedłużenia: data wygaśnięcia. Nieokreślony: najwcześniejszy koniec przy wypowiedzeniu dziś.',
-    zrob: 'Czerwone i żółte wiersze wymagają decyzji: przedłużyć, renegocjować albo wypowiedzieć.' },
+  umowy: { tytul: 'Rejestr umów', krotko: 'Umowy z klientami i terminy wypowiedzenia, z alertem przed czasem; powiązane z folderem klienta w budżecie.',
+    co: 'Każda umowa: klient i jego folder w budżecie, arkusze przychodowe, data zawarcia, czas określony albo nieokreślony, okres wypowiedzenia (osobno nasz, gdy inny), wartość miesięczna netto.',
+    skad: 'Wpisujesz Ty; zapis w pliku zmian (oba Maki widzą to samo). Stara umowa bez folderu jest dopasowana do folderu po nazwie klienta.',
+    jak: 'Określony z przedłużeniem: ostatni dzień na wypowiedzenie = koniec minus okres. Bez przedłużenia: data wygaśnięcia. Nieokreślony: najwcześniejszy koniec przy wypowiedzeniu dziś. Cash flow: gdy plany wpływów klienta się kończą, dolicza wartość z umowy (czas nieokreślony albo z przedłużeniem); po końcu umowy na czas określony nie dolicza, a plany po końcu oznacza ostrzeżeniem.',
+    zrob: 'Czerwone i żółte wiersze wymagają decyzji: przedłużyć, renegocjować albo wypowiedzieć. Klienci bez umowy są liczeni w cash flow tylko z planów.' },
 });
 const STAN_UMOWY = { 'minął': 'minus', alert: 'ostrzezenie', ok: 'plus', 'bez terminu': 'neutral' };
 
 Object.assign(WIDOKI, {
   async 'budzet/umowy'() {
     const d = await api('umowy');
+    const obie = (o, pole) => o[pole].klient === o[pole].my ? dataPl(o[pole].klient) : `klient ${dataPl(o[pole].klient)}, my ${dataPl(o[pole].my)}`;
     const wiersze = d.umowy.map((u, i) => `<tr data-i="${i}"><td><span class="chip ${STAN_UMOWY[u.stan]}">${esc(u.stan)}</span></td><td>${esc(u.klient)}</td>
+      <td>${u.folder ? esc(u.folder) : '<span class="chip ostrzezenie">brak folderu</span>'}${u.folder_zrodlo && u.folder_zrodlo !== 'wpis' ? `<div class="szary">${esc(u.folder_zrodlo)}</div>` : ''}
+        <div class="szary">${u.arkusze.length ? esc(u.arkusze.map(a => a.nazwa).join(', ')) : 'bez arkuszy przychodowych'}</div></td>
       <td>${u.rodzaj === 'okreslony' ? `do ${dataPl(u.do)}${u.przedluzenie ? ', przedłuża się' : ''}` : 'nieokreślony'}</td>
-      <td>${u.wypowiedzenie_mies} mies.${u.koniec_miesiaca ? ', na koniec miesiąca' : ''}</td>
+      <td>${u.wypowiedzenie_mies} mies.${u.wypowiedzenie_mies_my != null && u.wypowiedzenie_mies_my !== u.wypowiedzenie_mies ? ` (nasz ${u.wypowiedzenie_mies_my} mies.)` : ''}${u.koniec_miesiaca ? ', na koniec miesiąca' : ''}
+        ${u.ostatni_dzien_wypowiedzenia.klient ? `<div class="szary">ostatni dzień: ${esc(obie(u, 'ostatni_dzien_wypowiedzenia'))}</div>` : ''}</td>
       <td><b>${dataPl(u.data)}</b><div class="szary">${esc(u.co)}${u.dni >= 0 ? ` · za ${u.dni} dni` : ''}</div></td>
-      <td class="liczba-kol">${zl(u.wartosc_mies, false)}</td><td class="szary">${esc(u.uwagi || '')}</td></tr>`).join('');
+      <td>${esc(obie(u, 'odejscie_przy_wypowiedzeniu_dzis'))}</td>
+      <td class="liczba-kol">${zl(u.wartosc_mies, false)}</td>
+      <td class="szary">${u.plany_po_koncu.ile ? `<span class="chip ostrzezenie" title="Plany zostają w cash flow jak w BS">${u.plany_po_koncu.ile} plan. po końcu umowy</span> ` : ''}${esc(u.uwagi || '')}</td></tr>`).join('');
+    const bez = d.klienci.filter(x => x.brak_umowy);
     setTimeout(() => {
-      $('#dodaj-umowe').onclick = e => { e.stopPropagation(); kartaUmowy(null); };
-      document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaUmowy(d.umowy[tr.dataset.i]); });
+      $('#dodaj-umowe').onclick = e => { e.stopPropagation(); kartaUmowy(null, d); };
+      document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = e => { e.stopPropagation(); kartaUmowy(d.umowy[tr.dataset.i], d); });
+      document.querySelectorAll('[data-nowa-umowa]').forEach(b => b.onclick = e => { e.stopPropagation(); kartaUmowy({ klient: b.dataset.nowaUmowa, folder: b.dataset.nowaUmowa, nowa: true }, d); });
     });
     return `<div class="naglowek-strony"><div><h1>Umowy z klientami ${pytajnik('umowy')}</h1>
-        <div class="okruszki">Budżet / rejestr umów · ${d.umowy.length} umów, ${zl(d.wartosc_mies)} miesięcznie${d.alerty ? ` · <b class="minus">${d.alerty} do decyzji</b>` : ''}</div></div>
+        <div class="okruszki">Budżet / rejestr umów · ${d.umowy.length} ${liczebnik(d.umowy.length, ['umowa', 'umowy', 'umów'])}, ${zl(d.wartosc_mies)} miesięcznie${d.alerty ? ` · <b class="minus">${d.alerty} do decyzji</b>` : ''}${d.plany_po_koncu ? ` · <b class="minus">${d.plany_po_koncu} ${liczebnik(d.plany_po_koncu, ['plan', 'plany', 'planów'])} po końcu umowy</b>` : ''}</div></div>
         <button class="przycisk" id="dodaj-umowe">Dodaj umowę</button></div>
-      ${d.umowy.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Stan</th><th>Klient</th><th>Czas trwania</th><th>Wypowiedzenie</th><th>Termin</th>
-        <th class="liczba-kol">Wartość / mies.</th><th>Uwagi</th></tr></thead><tbody>${wiersze}</tbody></table></div>`
-        : '<div class="pusto">Brak umów. Dodaj pierwszą przyciskiem w prawym górnym rogu.</div>'}`;
+      ${d.umowy.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Stan</th><th>Klient</th><th>Folder i arkusze w budżecie</th><th>Czas trwania</th><th>Wypowiedzenie</th><th>Termin</th>
+        <th>Odejście przy wypowiedzeniu dziś</th><th class="liczba-kol">Wartość / mies.</th><th>Uwagi</th></tr></thead><tbody>${wiersze}</tbody></table></div>`
+        : '<div class="pusto">Brak umów. Dodaj pierwszą przyciskiem w prawym górnym rogu.</div>'}
+      ${bez.length ? `<h2 class="sekcja">Klienci bez umowy (${bez.length})</h2>
+        <p class="notka">Cash flow liczy ich tylko z planów w arkuszach: bez pozycji „z umowy” i poza scenariuszem „klienci odchodzą”.</p>
+        <div class="pigulki">${bez.map(x => `<button class="pigulka miekka" type="button" data-nowa-umowa="${esc(x.folder)}" title="Dodaj umowę dla folderu ${esc(x.folder)}">${ik('plus')}${esc(x.folder)}</button>`).join('')}</div>` : ''}`;
   },
 });
 
-async function kartaUmowy(u) {
+// Pakiet 9, decyzja 10: ostrzeżenie w arkuszu, gdy są plany wpływów po końcu umowy na czas określony (zostają w cash flow).
+function umowaArkuszaHtml(u) {
+  const po = u?.plany_po_koncu;
+  if (!u?.umowa || !po?.ile) return '';
+  return `<div class="komunikat ostrzezenie"><span><span class="znacznik-umowy">!</span>${po.ile} ${liczebnik(po.ile, ['plan', 'plany', 'planów'])} wpływu po końcu umowy
+    (${dataPl(u.koniec_umowy)}), od ${esc(mies(po.od_miesiaca))}, netto ${zl(po.netto)}. Jak w BS zostają w cash flow; sprawdź, czy umowa będzie przedłużona.</span>
+    <a href="#/budzet/umowy">Umowy z klientami</a></div>`;
+}
+
+// Formularz umowy: folder klienta i arkusze przychodowe (puste zaznaczenie = wszystkie arkusze folderu z wpływami).
+async function kartaUmowy(u, d) {
   const k = $('#karta');
-  const w = await api('wydatki', { ile: 1 });
-  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${u ? 'Umowa' : 'Nowa umowa'}</h2>
+  d = d || await api('umowy');
+  const foldery = d.foldery || [];
+  const folder = u?.folder || '';
+  const wlasne = Array.isArray(u?.arkusze) && u.arkusze.length && typeof u.arkusze[0] === 'object' && u.arkusze_zrodlo === 'wpis' ? u.arkusze.map(a => a.id) : [];
+  const listaArkuszy = f => {
+    const ark = (foldery.find(x => x.folder === f) || { arkusze: [] }).arkusze;
+    if (!ark.length) return '<span class="szary">Wybierz folder klienta.</span>';
+    return ark.map(a => `<label><input type="checkbox" value="${esc(a.id)}"${wlasne.length ? (wlasne.includes(a.id) ? ' checked' : '') : (a.wplywy ? ' checked' : '')}>${esc(a.nazwa)}${a.wplywy ? '' : ' <span class="szary">(bez wpływów)</span>'}</label>`).join('');
+  };
+  const istniejaca = u && !u.nowa;
+  k.innerHTML = `<button class="zamknij" aria-label="Zamknij">×</button><h2>${istniejaca ? 'Umowa' : 'Nowa umowa'}</h2>
     <div class="formularz">
-      ${pole('', 'Klient', `<input id="u-klient" list="lista-klientow" value="${esc(u?.klient || '')}">`)}${listaKlientow(w.klienci)}
+      ${pole('', 'Klient', `<input id="u-klient" value="${esc(u?.klient || '')}">`)}
+      ${pole('', 'Folder klienta w budżecie', `<select id="u-folder"><option value="">(dopasuj po nazwie klienta)</option>${foldery.map(f => `<option${f.folder === folder ? ' selected' : ''}>${esc(f.folder)}</option>`).join('')}</select>`)}
+      ${pole('', 'Arkusze przychodowe (zaznaczone liczą się w cash flow)', `<div class="umowa-arkusze" id="u-arkusze">${listaArkuszy(folder)}</div>`)}
       ${pole('', 'Data zawarcia', `<input id="u-zawarta" type="date" value="${esc(u?.zawarta || '')}">`)}
       ${pole('', 'Czas trwania', `<select id="u-rodzaj"><option value="nieokreslony">nieokreślony</option><option value="okreslony"${u?.rodzaj === 'okreslony' ? ' selected' : ''}>określony</option></select>`)}
       ${pole('', 'Koniec (czas określony)', `<input id="u-do" type="date" value="${esc(u?.do || '')}">`)}
       ${pole('', 'Przedłuża się automatycznie', `<select id="u-przedl"><option value="">nie</option><option value="1"${u?.przedluzenie ? ' selected' : ''}>tak</option></select>`)}
       ${pole('', 'Okres wypowiedzenia (miesiące)', `<input id="u-okres" inputmode="numeric" value="${u?.wypowiedzenie_mies ?? 1}">`)}
-      ${pole('', 'Ze skutkiem na koniec miesiąca', `<select id="u-km"><option value="1">tak</option><option value=""${u && !u.koniec_miesiaca ? ' selected' : ''}>nie</option></select>`)}
+      ${pole('', 'Nasz okres wypowiedzenia, gdy inny (miesiące)', `<input id="u-okres-my" inputmode="numeric" placeholder="jak klienta" value="${u?.wypowiedzenie_mies_my ?? ''}">`)}
+      ${pole('', 'Ze skutkiem na koniec miesiąca', `<select id="u-km"><option value="1">tak</option><option value=""${u && u.koniec_miesiaca === false ? ' selected' : ''}>nie</option></select>`)}
       ${pole('', 'Wartość miesięczna netto (zł)', `<input id="u-wartosc" inputmode="decimal" value="${u?.wartosc_mies ? (u.wartosc_mies / 100).toFixed(2).replace('.', ',') : ''}">`)}
       ${pole('', 'Alert ile dni wcześniej', `<input id="u-alert" inputmode="numeric" value="${u?.alert_dni ?? 30}">`)}
       ${pole('', 'Uwagi', `<input id="u-uwagi" value="${esc(u?.uwagi || '')}">`)}
     </div>
-    <div class="akcje"><button class="glowny" id="u-zapisz">Zapisz</button>${u ? '<button id="u-usun">Usuń umowę</button>' : ''}</div>`;
+    <p class="szary">Bez zaznaczonych arkuszy liczą się wszystkie arkusze folderu z wierszami wpływów. Stawka VAT i dni na płatność pozycji „z umowy” są z wiersza wpływów klienta (domyślnie 23% i 7 dni).</p>
+    <div class="akcje"><button class="glowny" id="u-zapisz">Zapisz</button>${istniejaca ? '<button id="u-usun">Usuń umowę</button>' : ''}</div>`;
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; };
-  $('#u-zapisz').onclick = () => zmiana('umowa', { id: u?.id || nowyId('u'), klient: $('#u-klient').value.trim(), zawarta: $('#u-zawarta').value,
-    rodzaj: $('#u-rodzaj').value, do: $('#u-do').value, przedluzenie: !!$('#u-przedl').value, wypowiedzenie_mies: $('#u-okres').value,
-    koniec_miesiaca: !!$('#u-km').value, wartosc_mies: String(naGrosze($('#u-wartosc').value || '0') || 0), alert_dni: $('#u-alert').value, uwagi: $('#u-uwagi').value });
-  if (u) $('#u-usun').onclick = () => zmiana('umowa', { id: u.id, usun: true });
+  $('#u-folder').onchange = e => {
+    if (!$('#u-klient').value.trim()) $('#u-klient').value = e.target.value;
+    $('#u-arkusze').innerHTML = listaArkuszy(e.target.value);
+  };
+  $('#u-zapisz').onclick = () => {
+    const f = $('#u-folder').value;
+    const zazn = [...document.querySelectorAll('#u-arkusze input:checked')].map(x => x.value);
+    const domyslne = ((foldery.find(x => x.folder === f) || { arkusze: [] }).arkusze).filter(a => a.wplywy).map(a => a.id);
+    const arkusze = f && !(zazn.length === domyslne.length && zazn.every(x => domyslne.includes(x))) ? zazn : [];
+    zmiana('umowa', { id: istniejaca ? u.id : nowyId('u'), klient: $('#u-klient').value.trim() || f, folder: f, arkusze, zawarta: $('#u-zawarta').value,
+      rodzaj: $('#u-rodzaj').value, do: $('#u-do').value, przedluzenie: !!$('#u-przedl').value, wypowiedzenie_mies: $('#u-okres').value,
+      wypowiedzenie_mies_my: $('#u-okres-my').value.trim(), koniec_miesiaca: !!$('#u-km').value,
+      wartosc_mies: String(naGrosze($('#u-wartosc').value || '0') || 0), alert_dni: $('#u-alert').value, uwagi: $('#u-uwagi').value });
+  };
+  if (istniejaca) $('#u-usun').onclick = () => zmiana('umowa', { id: u.id, usun: true });
 }
 
 // ---------- Cash flow jak w Budget Studio ----------
