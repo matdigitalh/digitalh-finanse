@@ -153,7 +153,9 @@ Object.assign(WIDOKI, {
   const ustawienia = WIDOKI['budzet/ustawienia'];
   if (!ustawienia) return;
   WIDOKI['budzet/ustawienia'] = async p => {
-    const [html, d] = await Promise.all([ustawienia(p), api('budzet/drzewo')]);
+    // najpierw dane, potem ekran: ekran podpina przyciski w setTimeout, który musi wypaść po wstawieniu HTML
+    const d = await api('budzet/drzewo');
+    const html = await ustawienia(p);
     const k = d.kopia_bs;
     setTimeout(() => {
       document.querySelectorAll('[data-idz]').forEach(b => { b.onclick = () => { location.hash = b.dataset.idz; }; });

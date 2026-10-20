@@ -599,14 +599,17 @@ const htmlOstrzezen = (lista, ile) => {
 (() => {
   const stary = WIDOKI.pulpit;
   WIDOKI.pulpit = async function (p) {
-    const [html, o] = await Promise.all([stary.call(this, p), api('ostrzezenia').catch(() => null)]);
+    // najpierw dane, potem ekran: ekran podpina przyciski w setTimeout, który musi wypaść po wstawieniu HTML
+    const o = await api('ostrzezenia').catch(() => null);
+    const html = await stary.call(this, p);
     // ostrzeżenia listy płac pokazuje na pulpicie kafel „Lista płac do wpisania” (pakiet 11, pulpit.js); tu zostaje Do połączenia
     const pas = o ? htmlOstrzezen(typeof pulpitDodatki === 'function' ? [] : o.ostrzezenia, o.do_polaczenia) : '';
     return pas ? html.replace(/(<\/h1>)/, `$1${pas}`) : html;
   };
   const ark = WIDOKI['budzet/arkusz'];
   WIDOKI['budzet/arkusz'] = async function (p) {
-    const [html, o] = await Promise.all([ark.call(this, p), api('ostrzezenia').catch(() => null)]);
+    const o = await api('ostrzezenia').catch(() => null);   // przed ekranem, jak wyżej
+    const html = await ark.call(this, p);
     setTimeout(() => {
       if (!o || !ARK?.d?.wiersze) return;
       const ids = new Set(ARK.d.wiersze.map(w => w.id));
