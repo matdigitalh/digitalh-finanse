@@ -253,15 +253,42 @@ budżetu); bez niego arkusz jest do odczytu, a serwer odrzuca zmiany z komunikat
 - Testy: `testy/test_pakiet3.py` (scal, podziel, duplikuj, usuń, przenieś, limit wierszy, zakres, przesunięcie, duplikat arkusza,
   usunięcie arkusza, odstępstwa, karta komórki, plan na inny miesiąc, ostatnia zmiana do cofnięcia, komunikaty).
 
-## Pakiet 5: rzeczywiste vs planowane i łączenie (2026-10-19)
+## Pakiet 5: rzeczywiste vs planowane i łączenie (2026-10-19, dokończony 2026-10-20)
 
-**Do dokończenia** (stan pośredni, aktualizowane na bieżąco):
-- przeklikanie w przeglądarce na kopii danych (Do połączenia, ekran łączenia, Dodaj płatność, zamiana planu, lista płac),
-- poprawki interfejsu po przeklikaniu,
-- pełny opis w tej sekcji (zasady, API, ostrzeżenia).
+Zasada jak w BS: płatność rzeczywista (faktura z Fakturowni, dokument z rejestru biura, przelew ING bez dokumentu,
+płatność dodana ręcznie, plan zamieniony na rzeczywistą, lista płac) liczy się do budżetu dopiero po połączeniu z komórką.
+**Nic nie łączy się samo** (decyzja Mata 2). Dokumenty sprzed dnia „Łączenie w apce od” (domyślnie 1.11.2026, zmiana na
+liście Do połączenia) są połączone w Budget Studio i przychodzą z kopii BS.
 
-Serwer: `finanse/budzet.py` (operacje `polacz`, `odlacz`, `rzeczywista`, `zamien`, `lista_plac`), `finanse/laczenie.py`
-(dokumenty, podpowiedzi, lista Do połączenia, lista płac, ostrzeżenia), interfejs `web/laczenie.js` i `web/laczenie.css`.
+Co działa:
+- **Do połączenia** (Płatności): poczekalnia z podpowiedzią planu przy każdej pozycji (arkusz, wiersz, miesiąc, pewność,
+  uzasadnienie: kontrahent, kwota, miesiąc, wcześniejsze połączenia). „Połącz” = podpowiedź jednym kliknięciem (komunikat
+  z różnicą od planu, „Zostaw resztę planu”, „Cofnij”). Akcje grupowe: połącz wg podpowiedzi (jedna seria), połącz
+  z budżetem jako nowe wiersze (B-LACZ-07; dzień wystawienia, stawka VAT i dni na płatność z dokumentu), odłącz,
+  do weryfikacji, usuń płatność dodaną ręcznie. Zakładki: do połączenia, starsze niż start, połączone w apce.
+- **Ekran łączenia** (klik w pozycję albo „Inny plan”): podpowiedzi i wyszukiwarka komórek, wybrane komórki z kwotami,
+  „Do rozliczenia” (Połącz aktywne przy 0,00), „Różnica od planu”, podział na wiele komórek i arkuszy, co z resztą planu.
+- Reguły: tylko komórka z planem (choćby 0), ten sam rodzaj, zgodna podstawa (stawka VAT wiersza bez znaczenia), plan
+  znika, komórka = kwota rzeczywistej i jest zablokowana, wiersz ma zablokowaną podstawę; odłączenie przywraca plan.
+- **Worek**: przyjmuje kolejne rzeczywiste; komórka bez zmian, dopóki suma ≤ plan. Karta komórki pokazuje podpięte
+  rzeczywiste i niezrealizowane plany tygodniowe, „Zamknij worek” (operacja `zamknij_worek`) i „Otwórz worek”.
+- **Zmień na rzeczywistą** na karcie planu (numer dokumentu, 1:1, nie worek, nie z przyszłym wystawieniem).
+- **Dodaj płatność** (formularz jak w BS: faktura albo bez faktury, walidacje dat BS).
+- **Opłacona** wyłącznie z banku; ręcznie tylko wyjątek poza bankiem i zawsze z datą przelewu (serwer odrzuca bez daty).
+- **Lista płac za miesiąc** (Budżet, decyzja 12): per osoba wypłata, PIT, ZUS z listy od biura zastępują estymację.
+  Obsługuje umowy w jednym wierszu i składowe z kopii BS w osobnych wierszach („Umowa o pracę - PIT” itd.). Plan
+  wynagrodzenia nigdy nie zamyka się sam (etap BS, przelew, zamiana planu); „Niewymagana” z BS nie jest opłacona i zostaje
+  w cash flow. Ostrzeżenia (a) lista niewpisana po terminie wypłaty, (b) estymacja niższa niż ostatnia lista, (c) lista
+  inna niż przelew o ponad 1 zł: na pulpicie, w arkuszu, w Do weryfikacji i na liście płac.
+- **Odłącz od budżetu** masowo: na liście Do połączenia (zakładka połączone), na liście płatności i w cash flow
+  (przycisk nad listą płatności wycinka).
+- Rozjazdy „Faktura bez pozycji w BS” i „Wydatek z banku bez pozycji w BS”: klik prowadzi do ekranu łączenia, przycisk
+  „Połącz z budżetem: nowe wiersze” dla całej grupy.
+
+API: `GET /api/lista/do-polaczenia`, `GET /api/laczenie/dokument?ref=&q=`, `GET /api/laczenie/polaczone`,
+`GET /api/lista-plac?miesiac=`, `GET /api/ostrzezenia` (lista z polami `typ`, `opis`, `osoba`, `miesiac`, `kwota_gr`,
+`link`). Zdarzenia „bud”: `polacz`, `odlacz` (także `worek:`, `zamiana:`, `lista:`), `rzeczywista`, `zamien`,
+`lista_plac`, `zamknij_worek`. Kod: `finanse/budzet.py`, `finanse/laczenie.py`, `web/laczenie.js`, `web/laczenie.css`.
 
 ## Pakiet 6: kopia z Budget Studio i kontrola zgodności (2026-10-19)
 

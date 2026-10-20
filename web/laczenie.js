@@ -21,9 +21,9 @@ const LACZ = { planowanie: false };
 
 // Opisy nowych operacji w historii zmian i w „Cofnij”
 Object.assign(OPISY_OP, { polacz: 'połączenie z budżetem', odlacz: 'odłączenie od budżetu', rzeczywista: 'płatność dodana ręcznie',
-  zamien: 'zamiana planu na rzeczywistą', lista_plac: 'lista płac' });
+  zamien: 'zamiana planu na rzeczywistą', lista_plac: 'lista płac', zamknij_worek: 'zamknięcie worka' });
 Object.assign(NAZWY_OP, { polacz: 'połączenie z budżetem', odlacz: 'odłączenie od budżetu', rzeczywista: 'płatność dodana ręcznie',
-  zamien: 'zamiana planu na rzeczywistą', lista_plac: 'lista płac' });
+  zamien: 'zamiana planu na rzeczywistą', lista_plac: 'lista płac', zamknij_worek: 'zamknięcie worka' });
 
 // Menu: „Do połączenia” to poczekalnia rzeczywistych jak w BS; wpłaty do faktur (etap 2) jako osobna pozycja w Banku ING.
 (() => {
@@ -81,6 +81,8 @@ function polaczWgPodpowiedzi(r) {
 
 // B-LACZ-07: każdy zaznaczony dokument jako NOWY wiersz w wybranym arkuszu (1 wiersz = 1 płatność), wiersz z danymi dokumentu
 // (dzień wystawienia, stawka VAT, dni na płatność), plan 0 w miesiącu dokumentu i połączenie, wszystko jedną serią.
+// Wołane też z rozjazdów „Faktura bez pozycji w BS” i „Wydatek z banku bez pozycji w BS” (budzet.js).
+const dniMiedzy = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
 async function nowymiWierszami(r) {
   let drzewo;
   try { drzewo = await api('budzet/drzewo'); } catch (e) { return komunikat(e.message, true); }
@@ -93,9 +95,11 @@ async function nowymiWierszami(r) {
         const wid = nowyId('w');
         const dzien = x.data ? `${+x.data.slice(8, 10)}.` : 'Ostatni';
         const stawka = x.netto ? [23, 8, 5, 0].find(s => Math.abs(x.vat * 100 / x.netto - s) <= 0.1) : null;
-        operacje.push({ op: 'wiersz', obiekt: { id: wid, arkusz: aid, rodzaj: x.rodzaj, podstawa: x.rodzina === 'Bez faktury' ? 'Bez faktury' : 'Faktura (jedna)',
-          kontrahent: (x.kontrahent_krotko || x.kontrahent || '').slice(0, 200), dzien_wystawienia: dzien, dni_na_platnosc: 14,
-          ...(x.rodzina === 'Bez faktury' ? {} : { stawka_vat: stawka ?? 23 }) } },
+        const bezFaktury = x.rodzina === 'Bez faktury' || x.rodzina === 'bank';   // przelew bez dokumentu = bez faktury
+        const dni = x.termin && x.data ? Math.max(0, dniMiedzy(x.data, x.termin)) : 14;
+        operacje.push({ op: 'wiersz', obiekt: { id: wid, arkusz: aid, rodzaj: x.rodzaj, podstawa: bezFaktury ? 'Bez faktury' : 'Faktura (jedna)',
+          kontrahent: (x.kontrahent_krotko || x.kontrahent || '').slice(0, 200), dzien_wystawienia: dzien, dni_na_platnosc: dni,
+          ...(bezFaktury ? {} : { stawka_vat: stawka ?? 23 }) } },
         { op: 'komorka', wiersz: wid, miesiac: x.data.slice(0, 7), kwota: 0 },
         { op: 'polacz', dokument: x.ref, czesci: [{ wiersz: wid, miesiac: x.data.slice(0, 7), kwota: x.kwota }] });
       }
@@ -160,7 +164,7 @@ EKRANY_LIST.do_polaczenia = {
         : r.some(x => !x.pod_wiersz) ? 'Część zaznaczonych nie ma podpowiedzi: połącz je na ekranie łączenia („Wybierz plan”).' : null),
       wykonaj: r => polaczWgPodpowiedzi(r) },
     { id: 'nowe_wiersze', nazwa: 'Połącz z budżetem: nowe wiersze', ik: 'arkusz',
-      powod: (r, d) => powodPlanowania(d) || (r.some(x => x.stan !== 'do_polaczenia') ? 'Tylko pozycje z zakładki Do połączenia.' : null),
+      powod: (r, d) => powodPlanowania(d) || (r.some(x => x.stan === 'polaczony') ? 'Pozycje połączone w apce najpierw odłącz.' : null),
       wykonaj: r => nowymiWierszami(r) },
     { id: 'odlacz', nazwa: 'Odłącz od budżetu', ik: 'rozlacz',
       powod: (r, d) => powodPlanowania(d) || (r.some(x => x.stan !== 'polaczony') ? 'Odłączysz tylko pozycje połączone w apce.' : null),
@@ -442,7 +446,7 @@ function podepnijFormularzRecznej(o, id) {
 // ---------- Karta płatności: zamiana planu na rzeczywistą, odłączenie, lista płac (hooki w htmlPlatnosci) ----------
 function akcjeRzeczywistych({ platnosc: p, wiersz: w }, plan) {
   if (!plan || String(p.id).startsWith('sys:')) return '';
-  const wyn = UMOWY[p.podstawa] || w?.lista_plac;
+  const wyn = UMOWY[p.podstawa] || /^Umowa (o pracę|zlecenie|o dzieło) - /.test(p.podstawa || '') || w?.lista_plac;
   const btn = [];
   if (p.typ === 'plan' && wyn && (!p.skladowa || p.skladowa === 'osoba')) {
     btn.push(`<a class="przycisk" href="#/budzet/lista-plac?miesiac=${esc(p.miesiac)}">${ik('osoby')}Lista płac za ${esc(miesPelny(p.miesiac))}</a>`);
@@ -559,4 +563,81 @@ function podepnijListePlac(d) {
   if (u) u.onclick = () => zmiana('bud', { op: 'lista_plac', miesiac: d.miesiac, usun: true, pozycje: d.osoby.filter(o => o.z_listy).map(o => ({ wiersz: o.wiersz })) });
   const k = $('#lp-kand-ok');
   if (k) k.onclick = () => zmiana('bud', { op: 'wiersz', obiekt: { id: $('#lp-kand').value, lista_plac: true } });
+}
+
+// ---------- Worek na karcie komórki: podpięte rzeczywiste, niezrealizowane plany tygodniowe, ręczne zamknięcie ----------
+function htmlWorka(d) {
+  const w = d.worek;
+  if (!w) return '';
+  const rz = d.platnosci.map(x => x.platnosc).filter(p => p.typ !== 'plan');
+  const lista = rz.length ? `<ul class="lista">${rz.map(p => `<li>${esc(dataPl(p.wystawienie) || '')} ${esc(p.w_kontrahent || '')} <b>${zl(p.netto)}</b>${p.dokument && !p.dokument.startsWith('worek:') ? ` <a href="#/platnosci/polacz?ref=${encodeURIComponent(p.dokument)}">dokument</a>` : ''}</li>`).join('')}</ul>` : '';
+  const stan = w.zamkniety ? '<span class="chip neutral">zamknięty</span>' : '<span class="chip niebieski">otwarty</span>';
+  const akcja = !d.planowanie ? '' : w.zamkniety
+    ? `<button data-worek="otworz">Otwórz worek</button><span class="szary">Wrócą plany tygodniowe na resztę kwoty komórki.</span>`
+    : w.rzeczywistych ? `<button data-worek="zamknij">Zamknij worek</button><span class="szary">Niezrealizowane plany tygodniowe (${zl(w.plany)}) znikną, komórka = suma rzeczywistych.</span>` : '';
+  return `<section class="lacz-worek"><h3>Worek ${stan}</h3>
+    <p class="szary">Rzeczywiste: ${w.rzeczywistych} na ${zl(d.rzeczywiste)} · niezrealizowane plany tygodniowe: ${w.planow} na ${zl(w.plany)}.
+      Worek przyjmuje kolejne płatności z Do połączenia, dopóki go nie zamkniesz.</p>${lista}
+    ${akcja ? `<div class="akcje">${akcja}</div>` : ''}</section>`;
+}
+
+function podepnijWorek(k, d) {
+  k.querySelectorAll('[data-worek]').forEach(b => b.onclick = () => zapiszBud(b.dataset.worek === 'zamknij'
+    ? { op: 'zamknij_worek', wiersz: d.wiersz.id, miesiac: d.miesiac }
+    : { op: 'odlacz', dokument: `worek:${d.wiersz.id}:${d.miesiac}` }, { zostawKarte: true }));
+}
+
+// ---------- Ostrzeżenia kosztu pracy (decyzja 12) i Do połączenia: pulpit i arkusz ----------
+const htmlOstrzezen = (lista, ile) => {
+  if (!lista.length && !ile) return '';
+  const rodz = {};
+  lista.forEach(o => (rodz[o.tytul] ||= []).push(o));
+  return `<div class="komunikat lacz-ostrz"><span>${ile ? `<a href="#/platnosci/laczenie">Do połączenia: ${ile} ${liczebnik(ile, ['pozycja', 'pozycje', 'pozycji'])}</a>. ` : ''}${Object.entries(rodz).map(([t, xs]) =>
+    `<a href="#/budzet/lista-plac?miesiac=${esc(xs[0].miesiac)}">${esc(t)}: ${xs.length}</a>`).join(' · ')}${lista.length ? ` <span class="szary">(${esc(lista[0].opis)})</span>` : ''}</span></div>`;
+};
+
+(() => {
+  const stary = WIDOKI.pulpit;
+  WIDOKI.pulpit = async function (p) {
+    const [html, o] = await Promise.all([stary.call(this, p), api('ostrzezenia').catch(() => null)]);
+    const pas = o ? htmlOstrzezen(o.ostrzezenia, o.do_polaczenia) : '';
+    return pas ? html.replace(/(<\/h1>)/, `$1${pas}`) : html;
+  };
+  const ark = WIDOKI['budzet/arkusz'];
+  WIDOKI['budzet/arkusz'] = async function (p) {
+    const [html, o] = await Promise.all([ark.call(this, p), api('ostrzezenia').catch(() => null)]);
+    setTimeout(() => {
+      if (!o || !ARK?.d?.wiersze) return;
+      const ids = new Set(ARK.d.wiersze.map(w => w.id));
+      const moje = o.ostrzezenia.filter(x => ids.has(x.wiersz));
+      const pas = htmlOstrzezen(moje, 0);
+      const h = document.querySelector('#widok h1') || document.querySelector('h1');
+      if (pas && h && !document.querySelector('.lacz-ostrz')) h.insertAdjacentHTML('afterend', pas);
+    });
+    return html;
+  };
+})();
+
+// ---------- Cash flow: masowe „Odłącz od budżetu” dla płatności połączonych w apce w bieżącym wycinku ----------
+let CF_POZ = [];
+function podepnijCfLaczenie(poz) {
+  CF_POZ = poz;
+  const nag = document.querySelector('.cf-lista-naglowek');
+  if (!nag || nag.querySelector('#cf-odlacz')) return;
+  nag.insertAdjacentHTML('beforeend', `<button class="przycisk miekki" id="cf-odlacz" data-karta>${ik('rozlacz')}Odłącz od budżetu</button>`);
+  $('#cf-odlacz').onclick = async () => {
+    let mapa;
+    try { mapa = await api('laczenie/polaczone'); } catch (e) { return komunikat(e.message, true); }
+    const dok = {};
+    for (const x of CF_POZ) if (x.typ === 'plan' && mapa[x.zrodlo]) (dok[mapa[x.zrodlo]] ||= []).push(x);
+    const refs = Object.keys(dok);
+    if (!refs.length) return komunikat('W tym wycinku nie ma płatności połączonych w apce (z Do połączenia, zamiany planu albo listy płac).');
+    formularzAkcji('Odłącz od budżetu', `Płatności połączone w apce w tym wycinku: ${refs.length}. Zaznaczone wrócą do Do połączenia (lista płac i zamiana planu: wraca plan), w komórkach znów pojawią się plany. Jedna seria, cofasz całość.`,
+      `<div class="lacz-cf-lista">${refs.map((r, i) => { const x = dok[r][0]; return `<label><input type="checkbox" data-cf-ref="${i}" checked> ${esc(dataPl(x.data))} · ${esc(x.kontrahent || x.tytul || '')} · ${esc(x.arkusz || '')} <b>${zl(dok[r].reduce((a, y) => a + y.kwota, 0))}</b></label>`; }).join('')}</div>`,
+      () => {
+        const wyb = [...document.querySelectorAll('[data-cf-ref]:checked')].map(el => refs[+el.dataset.cfRef]);
+        if (!wyb.length) return komunikat('Zaznacz co najmniej jedną płatność.', true);
+        return zmiana('bud', { op: 'seria', operacje: wyb.map(d => ({ op: 'odlacz', dokument: d })) });
+      });
+  };
 }

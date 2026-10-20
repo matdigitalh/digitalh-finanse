@@ -43,3 +43,11 @@ button.link { all: unset; color: var(--fiolet); cursor: pointer; text-decoration
   .lacz-kolumny { grid-template-columns: 1fr; }
   .lacz-sumy { grid-template-columns: 1fr; }
 }
+
+/* Pakiet 5: karta worka, pasek ostrzeżeń, lista do odłączenia w cash flow */
+.lacz-worek { border-top: 1px solid var(--linia, #e5e5e5); margin-top: 12px; padding-top: 8px; }
+.lacz-worek h3 { display: flex; gap: 8px; align-items: center; }
+.lacz-ostrz a { font-weight: 600; }
+.lacz-cf-lista { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.lacz-cf-lista label { display: flex; gap: 8px; align-items: center; }
+.cf-lista-naglowek #cf-odlacz { margin-left: auto; }

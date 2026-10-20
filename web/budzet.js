@@ -116,12 +116,15 @@ Object.assign(WIDOKI, {
     const grupy = {};
     lista.forEach(x => (grupy[x.rodzaj] ||= []).push(x));
     const sekcje = Object.entries(grupy).map(([g, xs]) => `<h2 class="sekcja">${esc(g)} <span class="szary">${xs.length} · ${zl(xs.reduce((a, x) => a + x.kwota, 0))}</span></h2>
+      ${xs.some(x => x.dok) && typeof nowymiWierszami === 'function' ? `<div class="akcje"><button data-nowe-wiersze="${esc(g)}">${ik('arkusz')}Połącz z budżetem: nowe wiersze (${xs.filter(x => x.dok).length})</button><span class="szary">Każdy dokument stanie się nowym wierszem w wybranym arkuszu; pojedynczo: kliknij wiersz i wybierz plan.</span></div>` : ''}
       <div class="tabela-ramka niska"><table><thead><tr><th>Arkusz</th><th>Kontrahent</th><th>Miesiąc</th><th class="liczba-kol">Kwota PLN</th><th>Opis</th></tr></thead><tbody>
-      ${xs.slice(0, 200).map(x => `<tr data-ref="${esc(x.ref)}" data-ark="${esc(x.arkusz_id || '')}"><td>${esc(x.arkusz || '')}</td><td>${esc(x.kontrahent || '')}</td>
+      ${xs.slice(0, 200).map(x => `<tr data-ref="${esc(x.ref)}" data-ark="${esc(x.arkusz_id || '')}"${x.dok ? ` data-dok="${esc(x.dok.ref)}"` : ''}><td>${esc(x.arkusz || '')}</td><td>${esc(x.kontrahent || '')}</td>
         <td>${x.miesiac ? mies(x.miesiac) : ''}</td><td class="liczba-kol">${zl(x.kwota, false)}</td><td class="szary">${esc(x.opis.replace(/(-?\d+) gr/g, (_, v) => zl(+v)))}</td></tr>`).join('')}
       </tbody></table></div>`).join('');
+    setTimeout(() => document.querySelectorAll('[data-nowe-wiersze]').forEach(b => b.onclick = () => nowymiWierszami(grupy[b.dataset.noweWiersze].filter(x => x.dok).map(x => x.dok))));
     setTimeout(() => document.querySelectorAll('tr[data-ref]').forEach(tr => tr.onclick = () => {
-      if (tr.dataset.ref.startsWith('bs:') || tr.dataset.ref.startsWith('plan:')) kartaPlatnosci([tr.dataset.ref], null);
+      if (tr.dataset.dok) location.hash = `#/platnosci/polacz?ref=${encodeURIComponent(tr.dataset.dok)}`;
+      else if (tr.dataset.ref.startsWith('bs:') || tr.dataset.ref.startsWith('plan:')) kartaPlatnosci([tr.dataset.ref], null);
       else if (tr.dataset.ref.startsWith('FV')) location.hash = `#/platnosci/faktury?q=${encodeURIComponent(tr.dataset.ref)}`;
       else if (tr.dataset.ark) location.hash = `#/budzet/arkusz?id=${encodeURIComponent(tr.dataset.ark)}`;
     }));
@@ -315,7 +318,7 @@ function htmlPlatnosci({ platnosc: p, powiazania, historia }, { plan, wKomorce =
     ${odst.size ? `<p class="szary"><span class="inna">Pomarańczowe</span>: inne niż w ustawieniach wiersza (${esc([...odst].map(x => ODSTEPSTWA_OPIS[x] || x).join(', '))}). Zmiana tej cechy w wierszu ${p.typ === 'plan' ? 'je nadpisze' : 'nie zmieni rzeczywistej'}.</p>` : ''}
     <h3>Powiązania</h3>${powiazania.length ? `<ul class="lista">${powiazania.map(x => `<li><b>${esc(x.typ)}</b> ${esc((x.opis || '').replace(/(-?\d+) gr/g, (_, v) => zl(+v)))} <span class="szary">${esc(x.metoda)}, ${esc(x.pewnosc)}</span></li>`).join('')}</ul>` : '<p class="szary">Brak: ani faktury, ani przelewu.</p>'}
     ${plan && p.etap === 'Po terminie' ? `<h3>Decyzja</h3><div class="akcje" data-pid="${esc(p.id)}"><input type="date" data-termin>
-      <button data-d="przesun">Przesuń</button><button data-d="zaplacone">Zapłacone</button><button data-d="anuluj">Anuluj</button></div>` : ''}
+      <button data-d="przesun">Przesuń</button><button data-d="zaplacone" title="Tylko wyjątek poza bankiem (karta w walucie, kompensata): data w polu obok to data przelewu">Opłacona poza bankiem</button><button data-d="anuluj">Anuluj</button></div>` : ''}
     ${typeof akcjeRzeczywistych === 'function' ? akcjeRzeczywistych(arguments[0], plan) : ''}
     ${plan ? `<h3>${p.typ === 'plan' ? 'Zmień ten plan' : 'Dane dokumentu'}</h3>${formularzPlatnosci(p)}` : ''}
     ${historia.length ? `<h3>Historia</h3><ul class="lista">${historia.map(h => `<li>${esc(new Date(h.czas).toLocaleString('pl-PL'))}: ${esc(nazwaOp(h.op))} <span class="szary">${esc(opisZmiany(h))}</span></li>`).join('')}</ul>` : ''}
@@ -332,6 +335,7 @@ function podepnijPlatnosci(k, dane) {
     const box = b.closest('[data-pid]');
     const termin = $('[data-termin]', box).value;
     if (b.dataset.d === 'przesun' && !termin) return komunikat('Wybierz nowy termin.', true);
+    if (b.dataset.d === 'zaplacone' && !termin) return komunikat('Opłaconą oznaczysz ręcznie tylko z datą przelewu: wpisz ją w polu daty. Zwykle opłacenie przychodzi samo z wyciągu ING.', true);
     zapiszBud({ op: 'decyzja_planu', platnosc: box.dataset.pid, decyzja: b.dataset.d, termin, data: termin }, zostaw);
   });
   k.querySelectorAll('[data-edytuj-dane]').forEach(b => b.onclick = () => {
@@ -684,6 +688,7 @@ async function widokCashflow(p, { arkusz = null, ark = null } = {}) {
     $('#cf-info').textContent = `Wyświetlono ${razem ? od + 1 : 0}-${Math.min(od + lista.ile, razem)} z ${razem}`;
     $('#cf-poprz').disabled = lista.strona <= 1;
     $('#cf-nast').disabled = lista.strona >= ost;
+    if (typeof podepnijCfLaczenie === 'function') podepnijCfLaczenie(poz);   // pakiet 5 (laczenie.js): odłącz od budżetu
     $('#cf-lista').querySelectorAll('th.sort').forEach(h => h.onclick = () => {
       lista.kier = lista.sort === h.dataset.k && lista.kier === 'rosnaco' ? 'malejaco' : 'rosnaco'; lista.sort = h.dataset.k; rysujListe(); });
     $('#cf-lista').querySelectorAll('tbody tr').forEach(r => r.onclick = e => {

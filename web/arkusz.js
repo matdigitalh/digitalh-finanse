@@ -903,6 +903,7 @@ async function kartaKomorkiArk(wid, m) {
     ${plan && !zablokowana ? komorkaHtml(w, m, d.kwota ?? (d.platnosci.length ? wartosc : null)) : ''}
     ${zablokowana ? '<p class="notka">W tej komórce jest płatność rzeczywista, więc kwoty komórki nie zmienisz (plan zastąpiła rzeczywista).</p>' : ''}
     ${plan && worek && d.ma_rzeczywiste ? `<p class="notka">Worek ma rzeczywiste na ${zl(d.rzeczywiste)}: kwoty nie zmniejszysz poniżej tej sumy.</p>` : ''}
+    ${typeof htmlWorka === 'function' ? htmlWorka(d) : ''}
     ${nieaktualne.length ? `<div class="komunikat"><span>Nieaktualne plany: ${nieaktualne.length}. Minął ich dzień wystawienia albo płatności. Napraw: przesuń dzień wystawienia na karcie planu niżej, przenieś kwotę na inny miesiąc albo usuń plan.</span></div>` : ''}
     ${plan && plany.length && !d.ma_rzeczywiste ? `<div class="akcje"><label class="szary">Przenieś kwotę na miesiąc</label><select data-przenies>${inne.map(x => `<option value="${x}">${esc(miesPelny(x))}</option>`).join('')}</select><button data-przenies-ok>Przenieś</button></div>` : ''}
     <p class="szary">${d.platnosci.length} ${d.platnosci.length === 1 ? 'płatność' : 'płatności'}${d.platnosci.some(x => (x.platnosc.odstepstwa || []).length) ? ' · <span class="inna">pomarańczowe</span>: inne niż w ustawieniach wiersza' : ''}</p>
@@ -911,6 +912,7 @@ async function kartaKomorkiArk(wid, m) {
   k.hidden = false;
   $('.zamknij', k).onclick = () => { k.hidden = true; ARK.karta = null; };
   if (plan && !zablokowana) podepnijKomorke(k, w, m);
+  if (typeof podepnijWorek === 'function') podepnijWorek(k, d);   // pakiet 5 (laczenie.js): zamknięcie worka
   const b = k.querySelector('[data-przenies-ok]');
   if (b) b.onclick = () => przeniesKwote(w, m, k.querySelector('[data-przenies]').value, d);
   const u = k.querySelector('[data-ustawienia-wiersza]');
