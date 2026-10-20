@@ -570,10 +570,10 @@ def zbuduj_do_polaczenia(con, powiazania, od: str, platnosci) -> int:
         wiersze.append((x['ref'], x['typ'], x['rodzaj'], x['rodzina'], x['data'], x['kontrahent'], x['nr_dok'], x['netto'], x['vat'],
                         x['brutto'], x['kwota'], x['tytul'], x['_stan'], json.dumps(x['_ids']), c.get('wiersz'), c.get('miesiac'),
                         c.get('arkusz'), c.get('plan'), c.get('pewnosc'), c.get('punkty'), c.get('uzasadnienie'), x['zrodlo'],
-                        x.get('oplacono')))
+                        x.get('oplacono'), x.get('termin'), x.get('operacja_id')))
     con.executemany('INSERT OR REPLACE INTO bud_laczenie (ref, typ, rodzaj, rodzina, data, kontrahent, nr_dok, netto, vat, brutto, kwota, tytul,'
-                    ' stan, platnosci, pod_wiersz, pod_miesiac, pod_arkusz, pod_kwota, pewnosc, punkty, uzasadnienie, zrodlo, oplacono)'
-                    ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', wiersze)
+                    ' stan, platnosci, pod_wiersz, pod_miesiac, pod_arkusz, pod_kwota, pewnosc, punkty, uzasadnienie, zrodlo, oplacono,'
+                    ' termin, operacja_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', wiersze)
     return len(do_oceny)
 
 

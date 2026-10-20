@@ -1002,6 +1002,9 @@ def _polacz(st: dict, d: dict, scisle: bool, dzis: str | None, dok):
             return (f"Podstawa się nie zgadza: dokument to {x['rodzina'].lower()}, a wiersz ({miejsce}) ma podstawę "
                     f"„{w.get('podstawa')}”. Wybierz wiersz z tą samą podstawą albo dodaj nowy."), None, ref
         plany = _plany_komorki(st, c['wiersz'], c['miesiac'])
+        if not plany and w.get('podstawa') in plan.WOREK and st['realizacja'].get((c['wiersz'], c['miesiac'])) == 'zamknieta':
+            return (f'Worek {miejsce} jest zamknięty. Otwórz go na karcie komórki (Otwórz worek) albo zwiększ jego kwotę, '
+                    'potem połącz.'), None, ref
         if not plany and any(p['wiersz'] == c['wiersz'] and p['miesiac'] == c['miesiac'] for p in st['platnosc'].values()):
             return (f'Komórka {miejsce} ma już płatność rzeczywistą, a jej plan jest zrealizowany. Wybierz inną komórkę '
                     'albo wpisz plan w innym miesiącu tego wiersza.'), None, ref
@@ -1152,6 +1155,31 @@ def _zamien(st: dict, d: dict, stare: dict, scisle: bool, dzis: str | None):
     return None, dict(p), ref
 
 
+def _zamknij_worek(st: dict, d: dict, scisle: bool):
+    """Ręczne „zamknięcie worka” (BS): worek przyjmuje kolejne rzeczywiste, dopóki Mat go nie zamknie. Zamknięcie usuwa
+    niezrealizowane plany tygodniowe (komórka = suma rzeczywistych), otwarcie to odłączenie „worek:<wiersz>:<miesiąc>”."""
+    wid, m = d['wiersz'], d['miesiac']
+    ref = f'worek:{wid}:{m}'
+    w = st['wiersz'].get(wid)
+    if not w:
+        return 'nie ma wiersza tej komórki', None, ref
+    if w.get('podstawa') not in plan.WOREK:
+        return 'Zamknąć można tylko worek (podstawa „w worku”). Plan pojedynczy zamyka się sam po połączeniu.', None, ref
+    if st['realizacja'].get((wid, m)) == 'zamknieta' or ref in st['polaczenia']:
+        return 'Ten worek jest już zamknięty.', None, ref
+    if scisle and not any(p['wiersz'] == wid and p['miesiac'] == m and p['typ'] != 'plan' for p in st['platnosc'].values()):
+        return ('Worek nie ma jeszcze żadnej płatności rzeczywistej. Pusty worek zmniejszysz albo usuniesz, zmieniając kwotę '
+                'komórki.'), None, ref
+    jawne = [p for p in _plany_komorki(st, wid, m) if not p.get('generowany')]
+    for p in jawne:
+        st['platnosc'].pop(p['id'])
+    k = _klucz(wid, m)
+    st['polaczenia'][ref] = {'czesci': [], 'platnosci': [], 'komorki': {k: 'zamknieta'}, 'zastapione': [dict(p) for p in jawne],
+                             'dodane': [], 'reszta': 'usun', 'zrodlo': 'zamknięcie worka'}
+    _przelicz_realizacje(st, [k])
+    return None, None, ref
+
+
 SKLADNIKI_LISTY = ('osoba', 'us', 'zus')
 
 
@@ -1243,6 +1271,8 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
         return _zamien(st, d, stare, scisle, dzis)
     if op == 'lista_plac':
         return _lista_plac(st, d, scisle)
+    if op == 'zamknij_worek':
+        return _zamknij_worek(st, d, scisle)
     if op == 'komorka':
         wid, m, kwota = d['wiersz'], d['miesiac'], d.get('kwota')
         oid = f'{wid}:{m}'
@@ -1275,7 +1305,9 @@ def _zastosuj_op(st: dict, d: dict, stare: dict, scisle: bool = False, dzis: str
             if (w.get('podstawa') in plan.WOREK and st['realizacja'].get((wid, m)) == 'zamknieta'
                     and kwota > (bylo['kwota'] or 0)):
                 for r, rek in list(st['polaczenia'].items()):
-                    if rek['komorki'].get(k):
+                    if r == f'worek:{wid}:{m}':   # ręczne zamknięcie worka znika razem z zamknięciem
+                        st['polaczenia'].pop(r)
+                    elif rek['komorki'].get(k):
                         st['polaczenia'][r] = {**rek, 'komorki': {**rek['komorki'], k: None}}
                 _przelicz_realizacje(st, [k])
         _odswiez(st, wid, {m})
@@ -1465,14 +1497,14 @@ def zastosuj_zdarzenia(model: dict, wpisy: list[dict], dokumenty=None) -> list[d
             d = w['dane']
             obiekt = ((d.get('obiekt') or {}).get('id') or d.get('platnosc') or d.get('dokument') or d.get('plan')
                       or (f"lista płac {d['miesiac']}" if d['op'] == 'lista_plac' else '') or ','.join(d.get('wiersze', []))
-                      or (f"{d['wiersz']}:{d['miesiac']}" if d['op'] == 'komorka' else d.get('wiersz') or d.get('arkusz')
+                      or (f"{d['wiersz']}:{d['miesiac']}" if d['op'] in ('komorka', 'zamknij_worek') else d.get('wiersz') or d.get('arkusz')
                           or f"{len(d.get('operacje', []))} operacji"))
             osierocone.append({'wpis': w['id'], 'czas': w['czas'], 'mac': w.get('mac', ''), 'op': d['op'], 'obiekt': obiekt, 'powod': powod})
             continue
         for o, bylo, oid in wykonane:
             if o['op'] == 'komorka':
                 jest = {'kwota': st['komorka'].get((o['wiersz'], o['miesiac']))}
-            elif o['op'] in ('polacz', 'zamien', 'lista_plac', 'odlacz', 'rzeczywista'):
+            elif o['op'] in ('polacz', 'zamien', 'lista_plac', 'odlacz', 'rzeczywista', 'zamknij_worek'):
                 rek = st['polaczenia'].get(oid)
                 jest = ({'platnosci': rek['platnosci'], 'czesci': rek['czesci']} if rek else
                         st['reczne'].get(oid[7:]) if oid.startswith('reczna:') else None)
@@ -1683,6 +1715,7 @@ def zbuduj(con, wpisy: list[dict]) -> dict:
     lekkie = {r: {k: v for k, v in rek.items() if k in ('czesci', 'platnosci', 'reszta', 'zrodlo', 'kwoty')}
               for r, rek in model.get('polaczenia', {}).items()}   # bez planów zastąpionych (te są tylko do odłączenia)
     con.execute("INSERT OR REPLACE INTO meta VALUES ('polaczenia', ?)", (json.dumps(lekkie, ensure_ascii=False, sort_keys=True),))
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('realizacja', ?)", (json.dumps(model.get('realizacja', []), ensure_ascii=False),))
     con.executemany('INSERT INTO bud_osierocone (wpis, czas, mac, op, obiekt, powod) VALUES (?,?,?,?,?,?)',
                     [(o['wpis'], o['czas'], o['mac'], o['op'], o['obiekt'], o['powod']) for o in model['osierocone']])
     con.execute("INSERT OR REPLACE INTO meta VALUES ('import_bs', ?)", (json.dumps(model['zrodlo'], ensure_ascii=False),))

@@ -107,7 +107,8 @@ CREATE INDEX bud_platnosc_dok ON bud_platnosc(dokument);
 CREATE TABLE bud_reczne (id TEXT PRIMARY KEY, dane TEXT, wpis TEXT);
 CREATE TABLE bud_laczenie (ref TEXT PRIMARY KEY, typ TEXT, rodzaj INTEGER, rodzina TEXT, data TEXT, kontrahent TEXT, nr_dok TEXT,
   netto INTEGER, vat INTEGER, brutto INTEGER, kwota INTEGER, tytul TEXT, stan TEXT, platnosci TEXT, pod_wiersz TEXT, pod_miesiac TEXT,
-  pod_arkusz TEXT, pod_kwota INTEGER, pewnosc TEXT, punkty INTEGER, uzasadnienie TEXT, zrodlo TEXT, oplacono TEXT);
+  pod_arkusz TEXT, pod_kwota INTEGER, pewnosc TEXT, punkty INTEGER, uzasadnienie TEXT, zrodlo TEXT, oplacono TEXT,
+  termin TEXT, operacja_id INTEGER);
 -- Kwoty komórek (wiersz × miesiąc) wpisane w apce; plany z nich są pochodną (pakiet 2).
 CREATE TABLE bud_komorka (wiersz TEXT, miesiac TEXT, kwota INTEGER, PRIMARY KEY (wiersz, miesiac));
 CREATE TABLE bud_historia (wpis TEXT, czas TEXT, mac TEXT, op TEXT, obiekt TEXT, bylo TEXT, jest TEXT);

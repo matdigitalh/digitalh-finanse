@@ -179,8 +179,15 @@ def komorka(con, wid: str, m: str) -> dict:
     w['ksiegowane'], w['w_cashflow'], w['split'] = bool(w['ksiegowane']), bool(w['w_cashflow']), bool(w['split'])
     w['proporcje'] = json.loads(w['proporcje']) if w.get('proporcje') else None
     rz = [x['platnosc'] for x in platnosci if x['platnosc']['typ'] != 'plan']
+    real = con.execute("SELECT wartosc FROM meta WHERE klucz = 'realizacja'").fetchone()
+    stan = next((x[2] for x in json.loads(real[0]) if x[0] == wid and x[1] == m), None) if real and real[0] else None
+    worek = w['podstawa'] in reguly.WOREK
+    plany_tyg = [x['platnosc'] for x in platnosci if x['platnosc']['typ'] == 'plan' and x['platnosc']['aktualna']]
     return {'wiersz': w, 'arkusz': a, 'miesiac': m, 'kwota': k[0] if k else None, 'platnosci': platnosci,
             'rzeczywiste': sum(p['netto'] for p in rz), 'ma_rzeczywiste': bool(rz),
+            # pakiet 5: karta worka (podpięte rzeczywiste, niezrealizowane plany tygodniowe, zamknięcie ręczne)
+            'worek': ({'zamkniety': stan == 'zamknieta', 'rzeczywistych': len(rz), 'plany': sum(p['netto'] for p in plany_tyg),
+                       'planow': len(plany_tyg)} if worek else None),
             'planowanie': planowanie(con) and a.get('zrodlo') != 'system'}
 
 
@@ -322,6 +329,15 @@ def rozjazdy(con) -> list[dict]:
             f = con.execute('SELECT fk.klient, f.data_wystawienia FROM faktury f LEFT JOIN faktury_klient fk USING(numer) WHERE f.numer = ?',
                             (x['ref'],)).fetchone()
             x.update(kontrahent=x['ref'], arkusz=f[0] if f else '', miesiac=(f[1] or '')[:7] if f else '')
+        # pakiet 5 (B-LACZ-07): faktura i wydatek bez pozycji w BS dają się połączyć z budżetem (nowy wiersz albo plan)
+        dok = None
+        if x['rodzaj'] == 'Faktura bez pozycji w BS':
+            dok = con.execute('SELECT * FROM bud_laczenie WHERE ref = ?', (f"faktura:{x['ref']}",)).fetchone()
+        elif x['rodzaj'] == 'Wydatek z banku bez pozycji w BS' and str(x['ref']).isdigit():
+            dok = con.execute('SELECT * FROM bud_laczenie WHERE operacja_id = ? ORDER BY typ = \'operacja\'', (int(x['ref']),)).fetchone()
+        if dok and dok['stan'] in ('sprzed', 'do_polaczenia'):
+            from .laczenie import nazwa_krotka, NAZWA_ZRODLA
+            x['dok'] = {**dict(dok), 'kontrahent_krotko': nazwa_krotka(dok['kontrahent']), 'zrodlo_nazwa': NAZWA_ZRODLA.get(dok['typ'], dok['typ'])}
         wynik.append(x)
     return wynik
 

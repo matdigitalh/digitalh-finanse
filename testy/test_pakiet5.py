@@ -25,6 +25,7 @@ def dane5(srod):
         faktura(2, 'FV2026/08/1', 'Wystawiona', '2026-08-31', '2026-09-07', 'ALFA SP. Z O.O.', '111', [('Obsługa', 1000)]),
         faktura(3, 'FV2026/10/5', 'Wystawiona', '2026-10-05', '2026-10-19', 'ALFA SP. Z O.O.', '111', [('Obsługa październik', 4500)]),
         faktura(4, 'FV2026/10/6', 'Wystawiona', '2026-10-06', '2026-10-20', 'GAMMA S.A.', '222', [('Kampania', 8530.10)]),
+        faktura(5, 'FV2026/09/7', 'Wystawiona', '2026-09-15', '2026-09-29', 'DELTA SP. Z O.O.', '333', [('Projekt', 777)]),
     ])
     zapisz_ing(srod.dane, 'ing_historia_2026-01-01_2026-10-13.csv', [
         operacja('2026-10-13', '-10,00', '50000,00', 'ING BANK', 'OPŁATA', ref='X'),
@@ -48,6 +49,8 @@ def dane5(srod):
         # BS „Opłacona” z minionym terminem, bez przelewu: opłacona tylko wg BS
         bs('10', '-1', 'Opłacona', 'Faktura ', 'Kurier', '-50,00', '2026-08', '2026-08-20', 'Pracownicy', 'Firma', 'Koszty stałe',
            'Kurier', nr='K 1/08', brutto='-61,50'),
+        # wynagrodzenie z BS „Opłacona” z przyszłym terminem (PIT za wrzesień płatny 20.11): nie zamyka się z BS (decyzja 12)
+        bs('11', '-1', 'Opłacona', 'Umowa o pracę - PIT', 'Paulina', '-780,03', '2026-09', '2026-11-20', 'Pracownicy', 'Firma', 'Koszty stałe'),
     ]
     with open(p, 'w', encoding='utf-8', newline='') as f:
         w = csv.DictWriter(f, fieldnames=KOLUMNY, delimiter='\t')
@@ -299,11 +302,82 @@ class TestOplaconaINiewymagana(Baza5):
         """Etap BS „Niewymagana” = rzeczywista nieopłacona przed terminem: zostaje w cash flow (ZUS za wrzesień płatny
         w listopadzie, faktura kosztowa z terminem 20.11). BS „Opłacona” bez przelewu i z minionym terminem: tylko wg BS."""
         etapy = {r['bs_id']: r['etap'] for r in self.con.execute(
-            "SELECT p.bs_id, s.etap FROM bud_platnosc p JOIN bud_stan s ON s.platnosc = p.id WHERE p.bs_id IN ('8', '9', '10')")}
-        self.assertEqual(etapy, {'8': 'Planowana', '9': 'Planowana', '10': 'Opłacona wg BS'})
-        ids = {r[0] for r in self.con.execute("SELECT id FROM bud_platnosc WHERE bs_id IN ('8', '9')")}
+            "SELECT p.bs_id, s.etap FROM bud_platnosc p JOIN bud_stan s ON s.platnosc = p.id WHERE p.bs_id IN ('8', '9', '10', '11')")}
+        self.assertEqual(etapy, {'8': 'Planowana', '9': 'Planowana', '10': 'Opłacona wg BS', '11': 'Planowana'})
+        ids = {r[0] for r in self.con.execute("SELECT id FROM bud_platnosc WHERE bs_id IN ('8', '9', '11')")}
         zd, _ = cashflow._zdarzenia(self.con, cashflow._d(DZIS), cashflow._d('2027-03-31'))
         self.assertLessEqual(ids, {z['zrodlo'] for z in zd})
+
+
+class TestOplaconaRecznieZData(Baza5):
+    def test_zaplacone_tylko_z_data_przelewu(self):
+        """Decyzja 3: „Opłacona” z banku; ręcznie tylko wyjątek i zawsze z datą przelewu (zapisaną jako dzień realny)."""
+        self.wiersz('w-druk', kontrahent='Drukarnia')
+        self.komorka('w-druk', '2026-09', 50000)
+        pid = 'plan:w-druk:2026-09:1'
+        self.assertIn('tylko z datą przelewu', self.blad({'op': 'decyzja_planu', 'platnosc': pid, 'decyzja': 'zaplacone'}))
+        self.bud({'op': 'decyzja_planu', 'platnosc': pid, 'decyzja': 'zaplacone', 'data': '2026-09-28'})
+        p = self.platnosci('w-druk', '2026-09')[0]
+        self.assertEqual((p['etap'], p['realny'], p['decyzja']), ('Opłacona', '2026-09-28', 'zapłacone (Mat)'))
+
+    def test_reczna_z_data_poza_bankiem_jest_oplacona_po_polaczeniu(self):
+        self.wiersz('w-park', podstawa='Bez faktury', kontrahent='Parking Centrum')
+        self.komorka('w-park', '2026-10', 2000)
+        self.bud(self.reczna('r1', 2000, oplacona='2026-10-06'))
+        self.bud({'op': 'polacz', 'dokument': 'reczna:r1', 'czesci': [{'wiersz': 'w-park', 'miesiac': '2026-10', 'kwota': 2000}]})
+        p = self.platnosci('w-park', '2026-10')[0]
+        self.assertEqual((p['typ'], p['etap'], p['realny']), ('rzeczywista', 'Opłacona', '2026-10-06'))
+
+
+class TestWorekZamkniecie(Baza5):
+    def test_zamknij_i_otworz_worek(self):
+        """Worek przyjmuje rzeczywiste do ręcznego zamknięcia; zamknięcie usuwa niezrealizowane plany tygodniowe (komórka =
+        suma rzeczywistych), zamknięty nie przyjmie kolejnej, otwarcie przywraca plany na resztę."""
+        self.wiersz('w-park', podstawa='Bez faktury (w worku)', kontrahent='Parking Centrum')
+        self.komorka('w-park', '2026-10', 15000)
+        self.assertIn('nie ma jeszcze żadnej płatności rzeczywistej', self.blad({'op': 'zamknij_worek', 'wiersz': 'w-park', 'miesiac': '2026-10'}))
+        self.bud({'op': 'seria', 'operacje': [self.reczna('r1', 2000), self.reczna('r2', 2300)]})
+        self.bud({'op': 'polacz', 'dokument': 'reczna:r1', 'czesci': [{'wiersz': 'w-park', 'miesiac': '2026-10', 'kwota': 2000}]})
+        k = zapytania_budzet.komorka(self.con, 'w-park', '2026-10')
+        self.assertEqual((k['worek']['zamkniety'], k['worek']['rzeczywistych'], k['worek']['plany']), (False, 1, 13000))
+        self.bud({'op': 'zamknij_worek', 'wiersz': 'w-park', 'miesiac': '2026-10'})
+        self.assertEqual([p['typ'] for p in self.platnosci('w-park', '2026-10')], ['rzeczywista'])
+        self.assertEqual(self.wartosc('a-test', 'w-park', '2026-10'), -2000)
+        self.assertTrue(zapytania_budzet.komorka(self.con, 'w-park', '2026-10')['worek']['zamkniety'])
+        self.assertIn('już zamknięty', self.blad({'op': 'zamknij_worek', 'wiersz': 'w-park', 'miesiac': '2026-10'}))
+        self.assertIn('jest zamknięty', self.blad({'op': 'polacz', 'dokument': 'reczna:r2', 'czesci': [
+            {'wiersz': 'w-park', 'miesiac': '2026-10', 'kwota': 2300}]}))
+        self.bud({'op': 'odlacz', 'dokument': 'worek:w-park:2026-10'})
+        self.assertEqual(sum(p['netto'] for p in self.platnosci('w-park', '2026-10') if p['typ'] == 'plan'), 13000)
+        self.assertEqual(self.wartosc('a-test', 'w-park', '2026-10'), -15000)
+        # plan pojedynczy nie jest workiem
+        self.wiersz('w-jeden', podstawa='Bez faktury', kontrahent='Parking Centrum')
+        self.komorka('w-jeden', '2026-10', 1000)
+        self.assertIn('tylko worek', self.blad({'op': 'zamknij_worek', 'wiersz': 'w-jeden', 'miesiac': '2026-10'}))
+
+
+class TestNoweWiersze(Baza5):
+    def test_polacz_z_budzetem_nowe_wiersze_jedna_seria(self):
+        """B-LACZ-07: zaznaczone rzeczywiste jako nowe wiersze w arkuszu (1 wiersz = 1 płatność): wiersz z danymi dokumentu,
+        plan 0 w miesiącu dokumentu i połączenie jedną serią; komórka = kwota dokumentu."""
+        lista = {r['ref']: r for r in laczenie.lista(self.con, {})['wiersze']}
+        x = lista['faktura:FV2026/10/6']
+        self.assertEqual(x['termin'], '2026-10-20')   # dni na płatność z dokumentu
+        przed = len(zmiany.wczytaj()[0])
+        self.bud({'op': 'seria', 'operacje': [
+            {'op': 'wiersz', 'obiekt': {'id': 'w-nowy', 'arkusz': 'a-dwa', 'rodzaj': 1, 'podstawa': 'Faktura (jedna)', 'kontrahent': 'Gamma',
+                                        'dzien_wystawienia': '6.', 'dni_na_platnosc': 14, 'stawka_vat': 23}},
+            {'op': 'komorka', 'wiersz': 'w-nowy', 'miesiac': '2026-10', 'kwota': 0},
+            {'op': 'polacz', 'dokument': x['ref'], 'czesci': [{'wiersz': 'w-nowy', 'miesiac': '2026-10', 'kwota': x['kwota']}]}]})
+        self.assertEqual(len(zmiany.wczytaj()[0]), przed + 1)
+        self.assertEqual(self.wartosc('a-dwa', 'w-nowy', '2026-10'), 853010)
+        self.assertEqual([p['typ'] for p in self.platnosci('w-nowy', '2026-10')], ['rzeczywista'])
+
+    def test_rozjazd_faktura_bez_pozycji_ma_dokument_do_polaczenia(self):
+        """Rozjazd „Faktura bez pozycji w BS” (sprzed startu łączenia) prowadzi do dokumentu, który można połączyć."""
+        rz = [x for x in zapytania_budzet.rozjazdy(self.con) if x['rodzaj'] == 'Faktura bez pozycji w BS']
+        x = next(r for r in rz if r['ref'] == 'FV2026/09/7')
+        self.assertEqual((x['dok']['ref'], x['dok']['stan']), ('faktura:FV2026/09/7', 'sprzed'))
 
 
 class TestListaPlac(Baza5):

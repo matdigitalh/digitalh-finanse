@@ -50,7 +50,7 @@ OPERACJE_BUD = ('arkusz', 'wiersz', 'platnosc', 'komorka', 'przenies', 'decyzja_
                 # pakiet 3: akcje na wierszach i arkuszu liczone na serwerze (reguły BS w jednym miejscu)
                 'scal', 'podziel', 'duplikuj', 'przesun_arkusz', 'duplikuj_arkusz',
                 # pakiet 5: rzeczywista zastępuje plan (połącz, odłącz), ręczne dodanie, zamiana planu, lista płac
-                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac')
+                'polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac', 'zamknij_worek')
 MAKS_SERIA = 1000   # operacji w jednym wpisie „seria” (wklejenie bloku, duplikowanie wielu wierszy)
 MAKS_MIESIECY = 240   # zakres arkusza: najwyżej 20 lat (A-KOM-07)
 # Nazwy pól w komunikatach (po ludzku, jak w BS)
@@ -391,7 +391,8 @@ POLA_BUD = {
 # Pakiet 5: dokument rzeczywisty (faktura z Fakturowni, dokument z rejestru biura, przelew ING, płatność dodana ręcznie)
 # i źródła rzeczywistych, które da się odłączyć (zamiana planu, lista płac).
 _REF = re.compile(r'(faktura|zakup|operacja|reczna):[^\x00-\x1f]{1,300}')
-_REF_ODLACZ = re.compile(r'(faktura|zakup|operacja|reczna|zamiana):[^\x00-\x1f]{1,300}|lista:\d{4}-\d{2}:[^\x00-\x1f]{1,80}')
+_REF_ODLACZ = re.compile(r'(faktura|zakup|operacja|reczna|zamiana):[^\x00-\x1f]{1,300}|lista:\d{4}-\d{2}:[^\x00-\x1f]{1,80}'
+                         r'|worek:[^\x00-\x1f]{1,80}:\d{4}-\d{2}')
 
 
 def _ref(v, pole):
@@ -519,6 +520,10 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         raise ValueError('za duży wpis')
     if op in ('polacz', 'odlacz', 'rzeczywista', 'zamien', 'lista_plac'):
         return _sprawdz_laczenie(op, d)
+    if op == 'zamknij_worek':   # pakiet 5: ręczne zamknięcie worka (otwarcie: odlacz „worek:<wiersz>:<miesiąc>”)
+        if set(d) - {'op', 'wiersz', 'miesiac'}:
+            raise ValueError('zamknij_worek: tylko wiersz i miesiąc')
+        return {'op': op, 'wiersz': _niepusty(80)(d.get('wiersz'), 'wiersz'), 'miesiac': _miesiac(d.get('miesiac'), 'miesiąc')}
     if op in ('arkusz', 'wiersz', 'platnosc'):
         o = d.get('obiekt')
         if not isinstance(o, dict) or not isinstance(o.get('id'), str) or not o['id']:
@@ -586,6 +591,9 @@ def _sprawdz_bud(d: dict, w_serii=False) -> dict:
         wynik['termin'] = d['termin']
     if d.get('data'):
         wynik['data'] = _data(d['data'], 'data')
+    if d['decyzja'] == 'zaplacone' and not wynik.get('data'):   # decyzja Mata 3: opłacona z banku, ręcznie tylko z datą
+        raise ValueError('Opłaconą oznaczysz ręcznie tylko z datą przelewu (wyjątek poza bankiem: karta w walucie, kompensata). '
+                         'Zwykle opłacenie przychodzi samo z wyciągu ING.')
     return wynik
 
 
