@@ -104,8 +104,11 @@ function kafelUmow(alerty, liczniki) {
   const decyzja = (liczniki['alert'] || 0) + (liczniki['minął'] || 0);
   const brak = alerty.filter(a => a.rodzaj === 'brak umowy').length;
   const st = liczniki['minął'] ? 'zle' : decyzja || brak ? 'uwaga' : 'dobrze';
-  return `<a class="kafel-st ${st}" href="#/budzet${decyzja ? '?stan=decyzja' : ''}"><div class="tytul">Umowy z klientami ${pytajnik('alerty_umow')}</div>
-    <div class="wartosc">${decyzja} do decyzji</div>${chipSt(st, { zle: 'termin minął', uwaga: 'do decyzji', dobrze: 'w normie' }[st],
+  // bez umów do decyzji, ale z klientami bez umowy: kafel pokazuje brak umów, nie „0 do decyzji”
+  const href = decyzja ? '?stan=decyzja' : brak ? '?stan=' + encodeURIComponent('brak umowy') : '';
+  const wartosc = decyzja ? `${decyzja} do decyzji` : brak ? `${brak} bez umowy` : 'w normie';
+  return `<a class="kafel-st ${st}" href="#/budzet${href}"><div class="tytul">Umowy z klientami ${pytajnik('alerty_umow')}</div>
+    <div class="wartosc">${wartosc}</div>${chipSt(st, { zle: 'termin minął', uwaga: decyzja ? 'do decyzji' : 'brak umowy', dobrze: 'w normie' }[st],
       brak ? `${liczba(brak, ['klient', 'klientów', 'klientów'])} z planami bez umowy` : 'każdy klient z planami ma umowę')}
     <div class="dop">umowy w rejestrze: ${(liczniki.ok || 0) + decyzja}, klienci: ${Object.values(liczniki).reduce((a, x) => a + x, 0)}</div></a>`;
 }

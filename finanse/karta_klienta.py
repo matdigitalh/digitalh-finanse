@@ -14,7 +14,7 @@ karta liczy wartość zastępczą:
 „Dziś” = dzień stanu (ostatnia data księgowania ING), jak w całej apce."""
 import calendar
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from . import rentownosc, umowy as rejestr, wynik, zapytania
 from .zapytania_budzet import _dzien_stanu
@@ -104,11 +104,12 @@ def opis_umowy(u: dict, dzis: str, arkusze_klienta: list[str], plany: dict) -> d
             odejscie = u.get('koniec')
         elif not u.get('przedluzenie') or (ost and dzis <= ost['ich']):
             odejscie = u['do']
-        elif u.get('zawarta'):   # po minięciu terminu umowa przedłużyła się o ten sam okres
+        elif u.get('zawarta'):   # termin na wypowiedzenie minął: umowa przedłużyła się o ten sam okres (może kilka razy)
             koniec = date.fromisoformat(u['do'])
             start = date.fromisoformat(u['zawarta'])
-            dl = max(1, (koniec.year - start.year) * 12 + koniec.month - start.month)
-            while koniec < d:
+            po = koniec + timedelta(days=1)   # umowa 1.11.2025 do 31.10.2026 trwa 12 miesięcy
+            dl = max(1, (po.year - start.year) * 12 + po.month - start.month)
+            while _plus_miesiace(koniec, -okres) < d:
                 koniec = _plus_miesiace(koniec, dl)
             odejscie = koniec.isoformat()
     po_koncu = _z_p9(u, 'plany_po_koncu')

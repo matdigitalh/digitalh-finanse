@@ -149,7 +149,7 @@ async function kartaKlienta(p) {
   const arkusze = d.arkusze.length ? d.arkusze.map(a => `<a href="#/budzet/arkusz?id=${encodeURIComponent(a.id)}">${esc(a.nazwa)}</a> <span class="szary">${esc(a.kategoria)}</span>`).join('<br>')
     : '<span class="szary">brak arkuszy</span>';
   const r = d.rentownosc, b = d.budzet;
-  const rent = `<div class="tabela-ramka niska"><table><thead><tr><th></th><th class="liczba-kol">Faktury i bank (wynik zarządczy)</th><th class="liczba-kol">Budżet, pozycje Księgowane</th></tr></thead><tbody>
+  const rent = `<div class="tabela-ramka niska waska"><table><thead><tr><th></th><th class="liczba-kol">Faktury i bank (wynik zarządczy)</th><th class="liczba-kol">Budżet, pozycje Księgowane</th></tr></thead><tbody>
     <tr><td>Przychód (wpływy netto)</td><td class="liczba-kol">${r ? zl(r.obrot) : ''}</td><td class="liczba-kol">${b ? zl(b.wplywy) : ''}</td></tr>
     <tr><td>Koszty klienta (obciążenia netto)</td><td class="liczba-kol minus">${r ? zl(-r.koszty) : ''}</td><td class="liczba-kol minus">${b ? zl(-b.obciazenia) : ''}</td></tr>
     <tr><td>Koszt pracy zespołu${r?.udzial_czasu != null ? ` (${procent(r.udzial_czasu)} czasu)` : ''}</td><td class="liczba-kol minus">${r?.koszt_pracy != null ? zl(-r.koszt_pracy) : '<a href="#/rentownosc/rent-klienci">wpisz udział czasu</a>'}</td><td class="liczba-kol szary">w obciążeniach, gdy jest w arkuszu</td></tr>
@@ -173,9 +173,8 @@ async function kartaKlienta(p) {
     document.querySelectorAll('tr[data-q]').forEach(tr => tr.onclick = () => { location.hash = `#/platnosci/faktury?q=${encodeURIComponent(tr.dataset.q)}`; });
     document.querySelectorAll('tr[data-op]').forEach(tr => tr.onclick = () => { location.hash = `#/budzet/wydatki?klient=${encodeURIComponent(d.klient)}&rodzaj=przenoszony`; });
   });
-  return `<div class="naglowek-strony"><div><h1>${esc(d.klient)} ${pytajnik('klient')}</h1>
-      <div class="okruszki"><a href="#/budzet">Klienci</a> / karta klienta${d.rok ? ' / ' + d.rok : ''} · stan na ${dataPl(d.dzien_stanu)}</div></div>
-      <div>${chipUmowy(d.stan)}</div></div>
+  return `<div class="naglowek-strony"><div><h1>${esc(d.klient)} ${pytajnik('klient')} ${chipUmowy(d.stan)}</h1>
+      <div class="okruszki"><a href="#/budzet">Klienci</a> / karta klienta${d.rok ? ' / ' + d.rok : ''} · stan na ${dataPl(d.dzien_stanu)}</div></div></div>
     <div class="filtry">${filtr('rok', 'Rok', [['', 'Wszystko'], ...d.lata.map(x => [x, x])], d.rok || '')}</div>
     ${ostrz}
     <div class="karta-klienta">
@@ -204,13 +203,13 @@ async function kartaKlienta(p) {
     <h2 class="sekcja">Rentowność ${d.rok_rentownosci} ${d.folder ? `<a class="szary" href="#/rentownosc/przestawna?rok=${d.rok_rentownosci}&folder=${encodeURIComponent(d.folder)}&poziomy=kategoria,arkusz,kontrahent">rentowność budżetu klienta →</a>` : ''}</h2>
     ${rent}
     <h2 class="sekcja">Plany w budżecie, 12 miesięcy <span class="szary">${d.arkusze.length} arkuszy</span></h2>
-    ${d.arkusze.length ? `<div class="tabela-ramka niska"><table><thead><tr><th>Miesiąc</th><th class="liczba-kol">Plan wpływów</th><th class="liczba-kol">Wpływy rzeczywiste</th>
+    ${d.arkusze.length ? `<div class="tabela-ramka niska waska"><table><thead><tr><th>Miesiąc</th><th class="liczba-kol">Plan wpływów</th><th class="liczba-kol">Wpływy rzeczywiste</th>
       <th class="liczba-kol">Obciążenia</th><th class="liczba-kol">Saldo</th>${o?.wartosc_mies ? '<th class="liczba-kol">Wartość z umowy</th>' : ''}</tr></thead><tbody>${plany}</tbody></table></div>`
       : '<p class="szary">Klient nie ma arkuszy w budżecie.</p>'}
     <h2 class="sekcja">Faktury <span class="szary">${d.faktury.length}${d.faktury.length > 50 ? ', pokazane 50 najnowszych' : ''}</span></h2>
-    ${tf ? `<div class="tabela-ramka niska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>` : '<p class="szary">Brak faktur.</p>'}
+    ${tf ? `<div class="tabela-ramka niska waska"><table><thead><tr><th>Numer</th><th>Sprzedaż</th><th>Nabywca</th><th class="liczba-kol">Netto PLN</th><th>W banku</th></tr></thead><tbody>${tf}</tbody></table></div>` : '<p class="szary">Brak faktur.</p>'}
     <h2 class="sekcja">Koszty klienta <span class="szary">${d.koszty.length}</span></h2>
-    ${tk ? `<div class="tabela-ramka niska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Tytuł</th><th class="liczba-kol">Koszt PLN</th><th>Dokument</th></tr></thead><tbody>${tk}</tbody></table></div>` : '<p class="szary">Brak przypisanych kosztów.</p>'}`;
+    ${tk ? `<div class="tabela-ramka niska waska"><table><thead><tr><th>Data</th><th>Kontrahent</th><th>Tytuł</th><th class="liczba-kol">Koszt PLN</th><th>Dokument</th></tr></thead><tbody>${tk}</tbody></table></div>` : '<p class="szary">Brak przypisanych kosztów.</p>'}`;
 }
 
 Object.assign(WIDOKI, { budzet: listaKlientow, 'budzet/klient': kartaKlienta });

@@ -8,8 +8,7 @@
 const SKROTY = [
   ['Wszędzie', [['?', 'ta lista skrótów'], ['Cmd+K', 'pomoc z wyszukiwarką'], ['Cmd+F', 'wyszukiwarka listy albo arkusza'],
     ['Esc', 'zamyka kartę, menu i pomoc']]],
-  ['Listy', [['Cmd+Enter', 'karta zaznaczonego wiersza (albo wiersza pod kursorem)'], ['Shift+klik', 'zaznacza zakres wierszy'],
-    ['Enter w wyszukiwarce', 'szuka od razu']]],
+  ['Listy', [['Cmd+Enter', 'karta zaznaczonego wiersza (albo wiersza pod kursorem)'], ['Shift+klik', 'zaznacza zakres wierszy']]],
   ['Arkusz budżetu', [['strzałki, Tab', 'przesuwają zaznaczenie komórki'], ['Shift+strzałki', 'rozszerzają zaznaczenie'],
     ['cyfry albo Enter', 'edycja kwoty (Enter zapisuje, Esc anuluje)'], ['Cmd+Enter, Cmd+dwuklik', 'karta płatności komórki'],
     ['Cmd+C, Cmd+V', 'kopiuj i wklej, także blok z Excela'], ['Cmd+Z', 'cofnij ostatnią zmianę budżetu'], ['Cmd+A', 'zaznacz cały arkusz'],

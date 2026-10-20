@@ -475,8 +475,12 @@ Oczekiwany kształt: `{"ostrzezenia": [{"rodzaj": "lista_plac" | "estymacja" | "
 "opis": "…", "kwota": grosze albo null, "link": "#/…"}]}` (albo sama lista). `lista_plac` = miesiąc minął, lista płac niewpisana (kafel
 czerwony), pozostałe = do sprawdzenia (żółty); link kafla = `link` pierwszej pozycji, domyślnie Do weryfikacji.
 
-**Do dokończenia** (stan pośredni): testy pakietu 11 (`testy/test_pakiet11.py`, `testy_odbioru/test_pakiet11.py`), dalsze klikanie
-w przeglądarce.
+**Testy:** `testy/test_pakiet11.py` (zmyślone dane: wynik folderu = suma arkuszy, tylko Księgowane, ostrzeżenie dla worka z jedną
+płatnością miesięcznie i pozostałe reguły ostrzeżeń, terminy umowy, alerty, przypięcia i widoki z cofnięciem, licznik planów
+nieaktualnych, kolumny VAT, nowe adresy serwera), `testy_odbioru/test_pakiet11.py` (prawdziwe pliki, te same reguły).
+
+**Nie w tym pakiecie:** waluty (APK-BRAK-15, brak planów w walucie), estymata czasu per osoba (APK-BRAK-05, czeka na decyzję Mata),
+reguły listy płac i adres `/api/ostrzezenia` (pakiet 5), znacznik „plany po końcu umowy” w cash flow i pozycje „z umowy” (pakiet 9).
 
 ### Stan etapów i planowania (APK-BRAK-04)
 

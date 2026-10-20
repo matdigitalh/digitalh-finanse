@@ -21,6 +21,7 @@ tr.wiersz-danina td:not(.lp):not(.kr) { color: var(--danina); }
 .umowa-form { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin-top: 14px; }
 .karta-klienta .akcje { margin-bottom: 0; }
 tr.wynik td { border-top: 1px solid var(--linia); }
+.tabela-ramka.waska { max-width: 1160px; }
 
 /* pulpit: alerty umów i kafle dodatkowe */
 .baner.baner-umow { gap: 8px 12px; }
