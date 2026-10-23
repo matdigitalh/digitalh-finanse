@@ -17,7 +17,7 @@ Użytkownik: jeden (Mat), na jednym Macu. Nie ma zespołu, logowania ani pracy w
 2. **Surowe pliki w `Finanse/Raporty/Dane/` są tylko do odczytu.** Aplikacja ich nie zmienia ani nie przenosi.
 3. **Tylko odczyt z narzędzi zewnętrznych.** Jedyny dozwolony ruch sieciowy: `GET` do API Budget Studio (lista płatności). Zero zapisu do Budget Studio, Fakturowni, banku, Gmaila, ClickUp. Zero bibliotek z CDN, zero analityki, zero wysyłki danych gdziekolwiek.
 4. **Serwer tylko na `127.0.0.1`**, nigdy na wszystkie interfejsy (audyt Maca z 11.10 wykrył podgląd widoczny w sieci Wi-Fi).
-5. **Sekrety tylko w pęku kluczy macOS.** Budget Studio: `security find-generic-password -s digitalh-budget-studio -a BUDGET_STUDIO_API_KEY -w`. Klucz nigdy w pliku, logu ani wyjściu; do curla przez stdin (wzór w `Finanse/Raporty/Skrypty/Pobierz dane z Budget Studio.command`).
+5. **Sekrety tylko w 1Password, sejf „DigitalH API”.** Budget Studio: `~/.claude/bin/dh-sekret 'Budget Studio'` (Service Account tylko do odczytu, token w pęku kluczy). Klucz nigdy w pliku, logu ani wyjściu; do curla przez stdin (wzór w `Finanse/Raporty/Skrypty/Pobierz dane z Budget Studio.command`).
 6. **Pliki z danymi i baza z uprawnieniami 600.**
 7. **Liczby tylko z kodu, testowalne.** Każda wartość na ekranie ma źródło (plik, wiersz). Zgadywanie i ręcznie wpisane liczby w kodzie są zabronione, poza stałymi celami biznesowymi opisanymi niżej.
 8. Interfejs po polsku, prosty język, **bez długich myślników (—)** w tekstach UI. Kwoty w formacie `12 345,67 zł`.
